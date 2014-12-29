@@ -13,6 +13,13 @@ struct table_context_t {
     avro_file_writer_t output;
 };
 
+void exit_nicely(PGconn *conn);
+void exec_query(PGconn *conn, char *query);
+void binary_value(char *value, int length);
+void output_tuple(struct table_context_t *context, PGresult *res, int row_number);
+void init_table_context(PGresult *res, struct table_context_t *context);
+
+
 void exit_nicely(PGconn *conn) {
     PQfinish(conn);
     exit(1);

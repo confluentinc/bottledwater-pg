@@ -1,15 +1,14 @@
-SOURCES=test.c
-EXECUTABLE=test
+PROGRAM = test
 
-CFLAGS=-c -Wall -I`pg_config --includedir` `pkg-config --cflags avro-c`
-LDFLAGS=-L`pg_config --libdir` -lpq `pkg-config --libs avro-c`
-CC=gcc
-OBJECTS=$(SOURCES:.c=.o)
+AVRO_CFLAGS = $(shell pkg-config --cflags avro-c)
+AVRO_LDFLAGS = $(shell pkg-config --libs avro-c)
+PQ_LDFLAGS = -lpq
 
-all: $(SOURCES) $(EXECUTABLE)
-	
-$(EXECUTABLE): $(OBJECTS)
-	$(CC) $(LDFLAGS) $(OBJECTS) -o $@
+PG_CPPFLAGS += $(AVRO_CFLAGS)
+PG_LIBS += $(AVRO_LDFLAGS) $(PQ_LDFLAGS)
 
-.c.o:
-	$(CC) $(CFLAGS) $< -o $@
+OBJS = test.o
+
+PG_CONFIG = pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)
