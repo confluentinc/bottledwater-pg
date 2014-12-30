@@ -1,7 +1,8 @@
+#include "oid2avro.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "libpq-fe.h"
-#include "avro.h"
 
 #define DB_CONNECTION_INFO "postgres://localhost/martin"
 #define DB_TABLE "test"
@@ -10,6 +11,8 @@
 struct table_context_t {
     PGconn *conn;
     avro_schema_t schema;
+    avro_value_iface_t *avro_iface;
+    avro_value_t avro_value;
     avro_file_writer_t output;
 };
 
@@ -43,59 +46,39 @@ void binary_value(char *value, int length) {
 }
 
 void output_tuple(struct table_context_t *context, PGresult *res, int row_number) {
-    avro_datum_t tuple = avro_record(context->schema), value_datum, union_datum;
-    char *value;
     int columns = PQnfields(res);
 
     for (int column = 0; column < columns; column++) {
+        avro_value_t union_value, field_value;
+        const char *fieldname = NULL;
+        avro_value_get_by_index(&context->avro_value, column, &union_value, &fieldname);
         if (column > 0) printf(", ");
-        char *colname = PQfname(res, column);
-        printf("%s = ", colname);
-        avro_schema_t field_schema = avro_schema_record_field_get(context->schema, colname);
+        printf("%s = ", fieldname);
 
         if (PQgetisnull(res, row_number, column)) {
             printf("null");
-            value_datum = avro_null();
-            union_datum = avro_union(field_schema, 0, value_datum);
-            avro_record_set(tuple, colname, union_datum);
-            avro_datum_decref(value_datum);
-            avro_datum_decref(union_datum);
+            avro_value_set_branch(&union_value, 0, &field_value);
+
+        } if (PQfformat(res, column) == 1) { /* format 1 == binary */
+            char *value = PQgetvalue(res, row_number, column);
+            int length = PQgetlength(res, row_number, column);
+            binary_value(value, length);
+            avro_value_set_branch(&union_value, 1, &field_value);
+            Datum *datum_p = (Datum *) value; // FIXME not sure that is correct
+            pg_datum_to_avro(*datum_p, PQftype(res, column), &field_value);
 
         } else {
-            switch (PQfformat(res, column)) {
-                case 0: /* text */
-                    value = PQgetvalue(res, row_number, column);
-                    printf("'%s'", value);
-                    value_datum = avro_string(value);
-                    union_datum = avro_union(field_schema, 1, value_datum);
-                    avro_record_set(tuple, colname, union_datum);
-                    avro_datum_decref(value_datum);
-                    avro_datum_decref(union_datum);
-                    break;
-
-                case 1: /* binary */
-                    binary_value(PQgetvalue(res, row_number, column), PQgetlength(res, row_number, column));
-                    value_datum = avro_string(value);
-                    union_datum = avro_union(field_schema, 1, value_datum);
-                    avro_record_set(tuple, colname, union_datum);
-                    avro_datum_decref(value_datum);
-                    avro_datum_decref(union_datum);
-                    break;
-
-                default:
-                    fprintf(stderr, "Unknown response format: %d\n", PQfformat(res, column));
-                    exit_nicely(context->conn);
-            }
+            fprintf(stderr, "Unexpected response format: %d\n", PQfformat(res, column));
+            exit_nicely(context->conn);
         }
         printf(" (oid = %d, mod = %d)", PQftype(res, column), PQfmod(res, column));
     }
     printf("\n");
 
-    if (avro_file_writer_append(context->output, tuple)) {
+    if (avro_file_writer_append_value(context->output, &context->avro_value)) {
         fprintf(stderr, "Unable to write tuple to output file: %s\n", avro_strerror());
         exit_nicely(context->conn);
     }
-    avro_datum_decref(tuple);
 }
 
 /* Inspects a tuple from a result set to determine the output schema.
@@ -104,16 +87,13 @@ void init_table_context(PGresult *res, struct table_context_t *context) {
     context->schema = avro_schema_record("Tuple", "postgres");
     int columns = PQnfields(res);
     for (int column = 0; column < columns; column++) {
-        avro_schema_t null_schema = avro_schema_null();
-        avro_schema_t string_schema = avro_schema_string();
-        avro_schema_t union_schema = avro_schema_union();
-        avro_schema_union_append(union_schema, null_schema);
-        avro_schema_union_append(union_schema, string_schema);
-        avro_schema_record_field_append(context->schema, PQfname(res, column), union_schema);
-        avro_schema_decref(null_schema);
-        avro_schema_decref(string_schema);
-        avro_schema_decref(union_schema);
+        avro_schema_t column_schema = oid_to_schema(PQftype(res, column), 1);
+        avro_schema_record_field_append(context->schema, PQfname(res, column), column_schema);
+        avro_schema_decref(column_schema);
     }
+
+    context->avro_iface = avro_generic_class_from_schema(context->schema);
+    avro_generic_value_new(context->avro_iface, &context->avro_value);
 
     const char *fn = OUTPUT_FILENAME;
     remove(fn); /* Delete the output file if it exists */
@@ -137,8 +117,8 @@ int main(int argc, char **argv) {
     exec_query(conn, "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE, READ ONLY, DEFERRABLE");
     /* exec_query(conn, "SET TRANSACTION SNAPSHOT '...'"); */
 
-    /* The final parameter 0 requests the results in text format */
-    if (!PQsendQueryParams(conn, "SELECT xmin, xmax, * FROM " DB_TABLE, 0, NULL, NULL, NULL, NULL, 0)) {
+    /* The final parameter 1 requests the results in binary format */
+    if (!PQsendQueryParams(conn, "SELECT xmin, xmax, * FROM " DB_TABLE, 0, NULL, NULL, NULL, NULL, 1)) {
         fprintf(stderr, "Could not dispatch snapshot fetch: %s\n", PQerrorMessage(conn));
         exit_nicely(conn);
     }
@@ -179,6 +159,8 @@ int main(int argc, char **argv) {
 
     if (total > 0) {
         avro_file_writer_close(context.output);
+        avro_value_decref(&context.avro_value);
+        avro_value_iface_decref(context.avro_iface);
         avro_schema_decref(context.schema);
     }
     if (error) exit_nicely(conn);

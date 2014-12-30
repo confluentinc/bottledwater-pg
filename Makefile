@@ -7,7 +7,7 @@ PQ_LDFLAGS = -lpq
 PG_CPPFLAGS += $(AVRO_CFLAGS)
 PG_LIBS += $(AVRO_LDFLAGS) $(PQ_LDFLAGS)
 
-OBJS = test.o
+OBJS = test.o oid2avro.o
 
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
