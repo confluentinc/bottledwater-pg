@@ -1,11 +1,62 @@
+#include "oid2avro.h"
+
 #include <string.h>
 #include "postgres.h"
 #include "fmgr.h"
 #include "funcapi.h"
 #include "access/htup_details.h"
+#include "catalog/namespace.h"
 #include "executor/spi.h"
+#include "lib/stringinfo.h"
+#include "utils/builtins.h"
+
 
 PG_MODULE_MAGIC;
+
+#define INIT_JSON_SCHEMA_LENGTH 16384
+#define MAX_JSON_SCHEMA_LENGTH 1048576
+
+PG_FUNCTION_INFO_V1(samza_table_schema);
+
+Datum samza_table_schema(PG_FUNCTION_ARGS) {
+    /* Open the relation with the given name */
+    char *relname = NameStr(*PG_GETARG_NAME(0));
+    List *relname_list = stringToQualifiedNameList(relname);
+    RangeVar *relvar = makeRangeVarFromNameList(relname_list);
+
+    Relation rel = relation_openrv(relvar, AccessShareLock);
+    avro_schema_t schema = relation_to_avro_schema(rel);
+    relation_close(rel, AccessShareLock);
+
+    /* Try to convert the schema to JSON in a fixed-length buffer. If it doesn't fit,
+     * double the buffer size and try again. */
+    text *retval;
+    int retval_size = INIT_JSON_SCHEMA_LENGTH, err = ENOSPC;
+
+    while (err == ENOSPC && retval_size <= MAX_JSON_SCHEMA_LENGTH) {
+        retval = (text *) palloc(retval_size);
+        avro_writer_t writer = avro_writer_memory(VARDATA(retval), retval_size - VARHDRSZ);
+        err = avro_schema_to_json(schema, writer);
+
+        if (err == 0) {
+            SET_VARSIZE(retval, avro_writer_tell(writer) + VARHDRSZ);
+        } else if (err == ENOSPC) {
+            retval_size *= 2;
+            pfree(retval);
+        }
+        avro_writer_free(writer);
+    }
+
+    avro_schema_decref(schema);
+
+    if (err) {
+        elog(ERROR, "samza_table_schema: Could not encode schema as JSON: %s", avro_strerror());
+        PG_RETURN_NULL();
+    } else {
+        PG_RETURN_TEXT_P(retval);
+    }
+}
+
 
 /* State that we need to remember between calls of samza_table_export */
 typedef struct {
@@ -26,7 +77,8 @@ Datum samza_table_export(PG_FUNCTION_ARGS) {
         state = (export_state *) palloc(sizeof(export_state));
         funcctx->user_fctx = state;
 
-        /* Construct the query to execute */
+        /* Construct the query to execute. TODO needs quoting? Use quote_qualified_identifier
+         * (defined in src/backend/utils/adt/ruleutils.c). */
         char *relname = NameStr(*PG_GETARG_NAME(0));
         char *prefix = "SELECT xmin, xmax, * FROM ";
         int relname_len = strlen(relname), prefix_len = strlen(prefix);

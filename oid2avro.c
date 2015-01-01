@@ -1,10 +1,11 @@
-#include "libpq-fe.h"
 #include "oid2avro.h"
 
-#include "postgres.h"
 #include "funcapi.h"
+#include "access/sysattr.h"
+#include "catalog/heap.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
+#include "lib/stringinfo.h"
 #include "utils/lsyscache.h"
 
 /*
@@ -23,6 +24,44 @@
 
 int pg_string_to_avro(Datum pg_datum, Oid typid, avro_value_t *output_value);
 int pg_bytes_to_avro(Datum pg_datum, avro_value_t *output_value);
+
+
+/* Generates an Avro schema corresponding to a given table (relation). */
+avro_schema_t relation_to_avro_schema(Relation rel) {
+    StringInfoData namespace;
+    initStringInfo(&namespace);
+    appendStringInfoString(&namespace, GENERATED_SCHEMA_NAMESPACE);
+
+    /* TODO ensure that names abide by Avro's requirements */
+    char *rel_namespace = get_namespace_name(get_rel_namespace(RelationGetRelid(rel)));
+    if (rel_namespace) appendStringInfo(&namespace, ".%s", rel_namespace);
+
+    char *relname = NameStr(RelationGetForm(rel)->relname);
+    avro_schema_t record_schema = avro_schema_record(relname, namespace.data);
+    avro_schema_t column_schema;
+
+    Form_pg_attribute xmin = SystemAttributeDefinition(MinTransactionIdAttributeNumber, true);
+    column_schema = oid_to_schema(xmin->atttypid, 0);
+    avro_schema_record_field_append(record_schema, "xmin", column_schema);
+    avro_schema_decref(column_schema);
+
+    Form_pg_attribute xmax = SystemAttributeDefinition(MaxTransactionIdAttributeNumber, true);
+    column_schema = oid_to_schema(xmax->atttypid, 0);
+    avro_schema_record_field_append(record_schema, "xmax", column_schema);
+    avro_schema_decref(column_schema);
+
+    TupleDesc tupdesc = RelationGetDescr(rel);
+    for (int i = 0; i < tupdesc->natts; i++) {
+        Form_pg_attribute attr = tupdesc->attrs[i];
+        if (attr->attisdropped) continue; // skip dropped columns
+
+        column_schema = oid_to_schema(attr->atttypid, !(attr->attnotnull));
+        avro_schema_record_field_append(record_schema, NameStr(attr->attname), column_schema);
+        avro_schema_decref(column_schema);
+    }
+
+    return record_schema;
+}
 
 /* Generates an Avro schema that can be used to encode a Postgres type
  * with the given OID. */
