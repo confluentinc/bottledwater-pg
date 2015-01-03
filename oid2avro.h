@@ -7,8 +7,8 @@
 
 #define GENERATED_SCHEMA_NAMESPACE "org.apache.samza.postgres.dbschema"
 
-avro_schema_t relation_to_avro_schema(Relation rel);
-avro_schema_t oid_to_schema(Oid typid, int nullable);
-int pg_datum_to_avro(Datum pg_datum, Oid typid, avro_value_t *output_value);
+avro_schema_t schema_for_relation(Relation rel);
+avro_schema_t schema_for_oid(Oid typid, bool nullable);
+int update_avro_with_datum(avro_value_t *output_value, Oid typid, bool nullable, Datum pg_datum);
 
 #endif /* OID2AVRO_H */

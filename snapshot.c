@@ -25,7 +25,7 @@ Datum samza_table_schema(PG_FUNCTION_ARGS) {
     RangeVar *relvar = makeRangeVarFromNameList(relname_list);
 
     Relation rel = relation_openrv(relvar, AccessShareLock);
-    avro_schema_t schema = relation_to_avro_schema(rel);
+    avro_schema_t schema = schema_for_relation(rel);
     relation_close(rel, AccessShareLock);
 
     /* Try to convert the schema to JSON in a fixed-length buffer. If it doesn't fit,
