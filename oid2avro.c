@@ -7,6 +7,7 @@
 #include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
 #include "lib/stringinfo.h"
+#include "utils/builtins.h"
 #include "utils/cash.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -35,8 +36,9 @@ int update_avro_with_date(avro_value_t *union_val, bool nullable, DateADT date);
 int update_avro_with_time_tz(avro_value_t *record_val, TimeTzADT *time);
 int update_avro_with_timestamp(avro_value_t *union_val, bool nullable, bool with_tz, Timestamp timestamp);
 int update_avro_with_interval(avro_value_t *record_val, Interval *interval);
-int update_avro_with_string(avro_value_t *output_val, Datum pg_datum, Oid typid);
-int update_avro_with_bytes(avro_value_t *output_val, Datum pg_datum);
+int update_avro_with_bytes(avro_value_t *output_val, bytea *bytes);
+int update_avro_with_char(avro_value_t *output_val, char c);
+int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum);
 
 
 /* Generates an Avro schema corresponding to a given table (relation). */
@@ -168,6 +170,13 @@ avro_schema_t schema_for_oid(Oid typid, bool nullable) {
         case BYTEAOID:   /* bytea: variable-length byte array */
             value_schema = avro_schema_bytes();
             break;
+
+        /* String-like types: fall through to the default, which is to create a string representation */
+        case CHAROID:    /* "char": single character */
+        case NAMEOID:    /* name: 63-byte type for storing system identifiers */
+        case TEXTOID:    /* text: variable-length string, no limit specified */
+        case BPCHAROID:  /* character(n), char(length): blank-padded string, fixed storage length */
+        case VARCHAROID: /* varchar(length): non-blank-padded string, variable storage length */
         default:
             value_schema = avro_schema_string();
             break;
@@ -253,10 +262,21 @@ int update_avro_with_datum(avro_value_t *output_val, Oid typid, bool nullable, D
             check(err, update_avro_with_interval(&branch_val, DatumGetIntervalP(pg_datum)));
             break;
         case BYTEAOID:
-            check(err, update_avro_with_bytes(&branch_val, pg_datum));
+            check(err, update_avro_with_bytes(&branch_val, DatumGetByteaP(pg_datum)));
+            break;
+        case CHAROID:
+            check(err, update_avro_with_char(&branch_val, DatumGetChar(pg_datum)));
+            break;
+        case NAMEOID:
+            check(err, avro_value_set_string(&branch_val, NameStr(*DatumGetName(pg_datum))));
+            break;
+        case TEXTOID:
+        case BPCHAROID:
+        case VARCHAROID:
+            check(err, avro_value_set_string(&branch_val, TextDatumGetCString(pg_datum)));
             break;
         default:
-            check(err, update_avro_with_string(&branch_val, pg_datum, typid));
+            check(err, update_avro_with_string(&branch_val, typid, pg_datum));
             break;
     }
 
@@ -491,43 +511,34 @@ int update_avro_with_interval(avro_value_t *record_val, Interval *interval) {
     return err;
 }
 
-int update_avro_with_string(avro_value_t *output_val, Datum pg_datum, Oid typid) {
+int update_avro_with_bytes(avro_value_t *output_val, bytea *bytes) {
+    return avro_value_set_bytes(output_val, VARDATA(bytes), VARSIZE(bytes) - VARHDRSZ);
+}
+
+int update_avro_with_char(avro_value_t *output_val, char c) {
+    char str[2];
+    str[0] = c;
+    str[1] = '\0';
+    return avro_value_set_string(output_val, str);
+}
+
+/* For any datatypes that we don't know, this function converts them into a string
+ * representation (which is always required by a datatype). */
+int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum) {
     int err = 0;
-    avro_value_set_string(output_val, "FIXME");
-    return err;
-
-    /* The following looks plausible, but unfortunately doesn't build...
-
     Oid output_func;
     bool is_varlena;
 
     getTypeOutputInfo(typid, &output_func, &is_varlena);
-
-    if (is_varlena && VARATT_IS_EXTERNAL_ONDISK(pg_datum)) {
-        // TODO can we load this from disk?
-        *avro_out = avro_string("TODO load from disk");
-        return 1;
-    } else if (is_varlena) {
+    if (is_varlena) {
         pg_datum = PointerGetDatum(PG_DETOAST_DATUM(pg_datum));
     }
 
-    // TODO fmgr.c says about OidOutputFunctionCall: "These functions are only to be used
-    // in seldom-executed code paths.  They are not only slow but leak memory.
+    /* This looks up the output function by OID on every call. Might be a bit faster
+     * to do cache the output function info (like how printtup() does it). */
     char *str = OidOutputFunctionCall(output_func, pg_datum);
-    *avro_out = avro_string(str);
+    err = avro_value_set_string(output_val, str);
     pfree(str);
 
-    return 0;
-    */
-}
-
-int update_avro_with_bytes(avro_value_t *output_val, Datum pg_datum) {
-    /* Linker error: undefined symbol _pg_detoast_datum
-
-    text *txt = DatumGetByteaP(pg_datum);
-    char *str = VARDATA(txt);
-    size_t size = VARSIZE(txt) - VARHDRSZ;
-    avro_value_set_bytes(output_val, str, size);
-    */
-    return 0;
+    return err;
 }
