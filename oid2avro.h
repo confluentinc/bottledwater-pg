@@ -6,6 +6,7 @@
 #include "utils/rel.h"
 
 #define GENERATED_SCHEMA_NAMESPACE "org.apache.samza.postgres.dbschema"
+#define PREDEFINED_SCHEMA_NAMESPACE "org.apache.samza.postgres.datatypes"
 
 avro_schema_t schema_for_relation(Relation rel);
 avro_schema_t schema_for_oid(Oid typid, bool nullable);
