@@ -1,6 +1,7 @@
 #include "oid2avro.h"
 
 #include "funcapi.h"
+#include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "catalog/heap.h"
 #include "catalog/pg_class.h"
@@ -13,25 +14,13 @@
 #include "utils/numeric.h"
 #include "utils/timestamp.h"
 
-/*
-#include "replication/output_plugin.h"
-#include "replication/logical.h"
-#include "utils/builtins.h"
-#include "utils/lsyscache.h"
-#include "utils/json.h"
-#include "utils/memutils.h"
-#include "utils/rel.h"
-#include "utils/relcache.h"
-#include "utils/syscache.h"
-#include "utils/typcache.h"
-*/
-
 #define check(err, call) { err = call; if (err) return err; }
 
 #ifndef HAVE_INT64_TIMESTAMP
 #error Expecting timestamps to be represented as integers, not as floating-point.
 #endif
 
+avro_schema_t schema_for_oid(Oid typid, bool nullable);
 avro_schema_t schema_for_numeric(void);
 avro_schema_t schema_for_date(bool nullable);
 avro_schema_t schema_for_time_tz(void);
@@ -40,12 +29,14 @@ avro_schema_t schema_for_interval(void);
 void schema_for_date_fields(avro_schema_t record_schema);
 void schema_for_time_fields(avro_schema_t record_schema);
 avro_schema_t schema_for_special_times(avro_schema_t record_schema, bool nullable);
-int update_avro_with_date(avro_value_t *record, bool nullable, DateADT date);
-int update_avro_with_time_tz(avro_value_t *output_value, bool nullable, TimeTzADT *time);
-int update_avro_with_timestamp(avro_value_t *output_value, bool nullable, bool with_tz, Timestamp timestamp);
-int update_avro_with_interval(avro_value_t *output_value, Interval *interval);
-int update_avro_with_string(avro_value_t *output_value, Datum pg_datum, Oid typid);
-int update_avro_with_bytes(avro_value_t *output_value, Datum pg_datum);
+
+int update_avro_with_datum(avro_value_t *output_val, Oid typid, bool nullable, Datum pg_datum);
+int update_avro_with_date(avro_value_t *union_val, bool nullable, DateADT date);
+int update_avro_with_time_tz(avro_value_t *record_val, TimeTzADT *time);
+int update_avro_with_timestamp(avro_value_t *union_val, bool nullable, bool with_tz, Timestamp timestamp);
+int update_avro_with_interval(avro_value_t *record_val, Interval *interval);
+int update_avro_with_string(avro_value_t *output_val, Datum pg_datum, Oid typid);
+int update_avro_with_bytes(avro_value_t *output_val, Datum pg_datum);
 
 
 /* Generates an Avro schema corresponding to a given table (relation). */
@@ -75,7 +66,7 @@ avro_schema_t schema_for_relation(Relation rel) {
     TupleDesc tupdesc = RelationGetDescr(rel);
     for (int i = 0; i < tupdesc->natts; i++) {
         Form_pg_attribute attr = tupdesc->attrs[i];
-        if (attr->attisdropped) continue; // skip dropped columns
+        if (attr->attisdropped) continue; /* skip dropped columns */
 
         column_schema = schema_for_oid(attr->atttypid, !(attr->attnotnull));
         avro_schema_record_field_append(record_schema, NameStr(attr->attname), column_schema);
@@ -83,6 +74,44 @@ avro_schema_t schema_for_relation(Relation rel) {
     }
 
     return record_schema;
+}
+
+/* Translates a Postgres heap tuple (one row of a table) into the Avro schema generated
+ * by schema_for_relation. */
+int update_avro_with_tuple(avro_value_t *output_val, avro_schema_t schema,
+        TupleDesc tupdesc, HeapTuple tuple) {
+    int err = 0, field = 0;
+    check(err, avro_value_reset(output_val));
+
+    for (int i = 0; i < tupdesc->natts; i++) {
+        Form_pg_attribute attr = tupdesc->attrs[i];
+        if (attr->attisdropped) continue; /* skip dropped columns */
+
+        avro_value_t field_val;
+        avro_schema_t field_schema = avro_schema_record_field_get_by_index(schema, field);
+        check(err, avro_value_get_by_index(output_val, field, &field_val, NULL));
+
+        bool isnull, nullable = false;
+        if (is_avro_union(field_schema)) {
+            nullable = is_avro_null(avro_schema_union_branch(field_schema, 0));
+        }
+
+        Datum datum = heap_getattr(tuple, i + 1, tupdesc, &isnull);
+        if (isnull && !nullable) {
+            elog(ERROR, "got a null value on a column with non-null constraint");
+            return 1;
+        }
+
+        if (isnull) {
+            check(err, avro_value_set_branch(&field_val, 0, NULL));
+        } else {
+            check(err, update_avro_with_datum(&field_val, attr->atttypid, nullable, datum));
+        }
+
+        field++;
+    }
+
+    return err;
 }
 
 /* Generates an Avro schema that can be used to encode a Postgres type
@@ -155,6 +184,83 @@ avro_schema_t schema_for_oid(Oid typid, bool nullable) {
     } else {
         return value_schema;
     }
+}
+
+
+/* Translates a Postgres datum into an Avro value. */
+int update_avro_with_datum(avro_value_t *output_val, Oid typid, bool nullable, Datum pg_datum) {
+    int err = 0;
+    avro_value_t branch_val;
+
+    /* Types that handle nullability themselves */
+    if (!nullable || typid == DATEOID || typid == TIMESTAMPOID || typid == TIMESTAMPTZOID) {
+        branch_val = *output_val;
+    } else {
+        check(err, avro_value_set_branch(output_val, 1, &branch_val));
+    }
+
+    switch (typid) {
+        case BOOLOID:
+            check(err, avro_value_set_boolean(&branch_val, DatumGetBool(pg_datum)));
+            break;
+        case FLOAT4OID:
+            check(err, avro_value_set_float(&branch_val, DatumGetFloat4(pg_datum)));
+            break;
+        case FLOAT8OID:
+            check(err, avro_value_set_double(&branch_val, DatumGetFloat8(pg_datum)));
+            break;
+        case INT2OID:
+            check(err, avro_value_set_int(&branch_val, DatumGetInt16(pg_datum)));
+            break;
+        case INT4OID:
+            check(err, avro_value_set_int(&branch_val, DatumGetInt32(pg_datum)));
+            break;
+        case INT8OID:
+            check(err, avro_value_set_long(&branch_val, DatumGetInt64(pg_datum)));
+            break;
+        case CASHOID:
+            check(err, avro_value_set_long(&branch_val, DatumGetCash(pg_datum)));
+            break;
+        case OIDOID:
+        case REGPROCOID:
+            check(err, avro_value_set_long(&branch_val, DatumGetObjectId(pg_datum)));
+            break;
+        case XIDOID:
+            check(err, avro_value_set_long(&branch_val, DatumGetTransactionId(pg_datum)));
+            break;
+        case CIDOID:
+            check(err, avro_value_set_long(&branch_val, DatumGetCommandId(pg_datum)));
+            break;
+        case NUMERICOID:
+            DatumGetNumeric(pg_datum); // TODO
+            break;
+        case DATEOID:
+            check(err, update_avro_with_date(output_val, nullable, DatumGetDateADT(pg_datum)));
+            break;
+        case TIMEOID:
+            check(err, avro_value_set_long(&branch_val, DatumGetTimeADT(pg_datum)));
+            break;
+        case TIMETZOID:
+            check(err, update_avro_with_time_tz(&branch_val, DatumGetTimeTzADTP(pg_datum)));
+            break;
+        case TIMESTAMPOID:
+            check(err, update_avro_with_timestamp(output_val, nullable, false, DatumGetTimestamp(pg_datum)));
+            break;
+        case TIMESTAMPTZOID:
+            check(err, update_avro_with_timestamp(output_val, nullable, true, DatumGetTimestampTz(pg_datum)));
+            break;
+        case INTERVALOID:
+            check(err, update_avro_with_interval(&branch_val, DatumGetIntervalP(pg_datum)));
+            break;
+        case BYTEAOID:
+            check(err, update_avro_with_bytes(&branch_val, pg_datum));
+            break;
+        default:
+            check(err, update_avro_with_string(&branch_val, pg_datum, typid));
+            break;
+    }
+
+    return err;
 }
 
 avro_schema_t schema_for_numeric() {
@@ -260,7 +366,7 @@ avro_schema_t schema_for_time_tz() {
     return record_schema;
 }
 
-int update_avro_with_time_tz(avro_value_t *record_val, bool nullable, TimeTzADT *time) {
+int update_avro_with_time_tz(avro_value_t *record_val, TimeTzADT *time) {
     int err = 0;
     avro_value_t micro_val, zone_val;
 
@@ -385,9 +491,9 @@ int update_avro_with_interval(avro_value_t *record_val, Interval *interval) {
     return err;
 }
 
-int update_avro_with_string(avro_value_t *output_value, Datum pg_datum, Oid typid) {
+int update_avro_with_string(avro_value_t *output_val, Datum pg_datum, Oid typid) {
     int err = 0;
-    avro_value_set_string(output_value, "FIXME");
+    avro_value_set_string(output_val, "FIXME");
     return err;
 
     /* The following looks plausible, but unfortunately doesn't build...
@@ -415,83 +521,13 @@ int update_avro_with_string(avro_value_t *output_value, Datum pg_datum, Oid typi
     */
 }
 
-int update_avro_with_bytes(avro_value_t *output_value, Datum pg_datum) {
+int update_avro_with_bytes(avro_value_t *output_val, Datum pg_datum) {
     /* Linker error: undefined symbol _pg_detoast_datum
 
     text *txt = DatumGetByteaP(pg_datum);
     char *str = VARDATA(txt);
     size_t size = VARSIZE(txt) - VARHDRSZ;
-    avro_value_set_bytes(output_value, str, size);
+    avro_value_set_bytes(output_val, str, size);
     */
     return 0;
-}
-
-
-/* Translates a Postgres datum into an Avro value. */
-int update_avro_with_datum(avro_value_t *output_value, Oid typid, bool nullable, Datum pg_datum) {
-    int err = 0;
-    check(err, avro_value_reset(output_value));
-
-    switch (typid) {
-        case BOOLOID:
-            check(err, avro_value_set_boolean(output_value, DatumGetBool(pg_datum)));
-            break;
-        case FLOAT4OID:
-            check(err, avro_value_set_float(output_value, DatumGetFloat4(pg_datum)));
-            break;
-        case FLOAT8OID:
-            check(err, avro_value_set_double(output_value, DatumGetFloat8(pg_datum)));
-            break;
-        case INT2OID:
-            check(err, avro_value_set_int(output_value, DatumGetInt16(pg_datum)));
-            break;
-        case INT4OID:
-            check(err, avro_value_set_int(output_value, DatumGetInt32(pg_datum)));
-            break;
-        case INT8OID:
-            check(err, avro_value_set_long(output_value, DatumGetInt64(pg_datum)));
-            break;
-        case CASHOID:
-            check(err, avro_value_set_long(output_value, DatumGetCash(pg_datum)));
-            break;
-        case OIDOID:
-        case REGPROCOID:
-            check(err, avro_value_set_long(output_value, DatumGetObjectId(pg_datum)));
-            break;
-        case XIDOID:
-            check(err, avro_value_set_long(output_value, DatumGetTransactionId(pg_datum)));
-            break;
-        case CIDOID:
-            check(err, avro_value_set_long(output_value, DatumGetCommandId(pg_datum)));
-            break;
-        case NUMERICOID:
-            DatumGetNumeric(pg_datum); // TODO
-            break;
-        case DATEOID:
-            check(err, update_avro_with_date(output_value, nullable, DatumGetDateADT(pg_datum)));
-            break;
-        case TIMEOID:
-            check(err, avro_value_set_long(output_value, DatumGetTimeADT(pg_datum)));
-            break;
-        case TIMETZOID:
-            check(err, update_avro_with_time_tz(output_value, nullable, DatumGetTimeTzADTP(pg_datum)));
-            break;
-        case TIMESTAMPOID:
-            check(err, update_avro_with_timestamp(output_value, nullable, false, DatumGetTimestamp(pg_datum)));
-            break;
-        case TIMESTAMPTZOID:
-            check(err, update_avro_with_timestamp(output_value, nullable, true, DatumGetTimestampTz(pg_datum)));
-            break;
-        case INTERVALOID:
-            check(err, update_avro_with_interval(output_value, DatumGetIntervalP(pg_datum)));
-            break;
-        case BYTEAOID:
-            check(err, update_avro_with_bytes(output_value, pg_datum));
-            break;
-        default:
-            check(err, update_avro_with_string(output_value, pg_datum, typid));
-            break;
-    }
-
-    return err;
 }

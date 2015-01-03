@@ -4,5 +4,5 @@
 CREATE OR REPLACE FUNCTION samza_table_schema(name) RETURNS text
     AS 'samza_postgres', 'samza_table_schema' LANGUAGE C VOLATILE STRICT;
 
-CREATE OR REPLACE FUNCTION samza_table_export(name) RETURNS setof text
+CREATE OR REPLACE FUNCTION samza_table_export(name) RETURNS setof bytea
     AS 'samza_postgres', 'samza_table_export' LANGUAGE C VOLATILE STRICT;
