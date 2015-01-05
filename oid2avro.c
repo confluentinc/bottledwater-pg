@@ -1,3 +1,4 @@
+#include "io_util.h"
 #include "oid2avro.h"
 
 #include "funcapi.h"
@@ -14,8 +15,6 @@
 #include "utils/lsyscache.h"
 #include "utils/numeric.h"
 #include "utils/timestamp.h"
-
-#define check(err, call) { err = call; if (err) return err; }
 
 #ifndef HAVE_INT64_TIMESTAMP
 #error Expecting timestamps to be represented as integers, not as floating-point.

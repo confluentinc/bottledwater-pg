@@ -1,4 +1,6 @@
+#include "io_util.h"
 #include "oid2avro.h"
+#include "protocol.h"
 
 #include <string.h>
 #include "postgres.h"
@@ -12,15 +14,6 @@
 
 PG_MODULE_MAGIC;
 
-#define INIT_BUFFER_LENGTH 16384
-#define MAX_BUFFER_LENGTH 1048576
-
-/* Function that writes something using the Avro writer that is passed to it. Must return 0
- * on success, ENOSPC if the buffer was too small (the operation will be retried), and any
- * other value to indicate any other error (the operation will not be retried). */
-typedef int (*try_writing_cb)(avro_writer_t, void *);
-
-int try_writing(bytea **output, try_writing_cb cb, void *context);
 avro_schema_t schema_for_relname(char *relname);
 int write_schema_json(avro_writer_t writer, void *context);
 int write_avro_binary(avro_writer_t writer, void *context);
@@ -44,8 +37,23 @@ Datum samza_table_schema(PG_FUNCTION_ARGS) {
     }
 }
 
-int write_schema_json(avro_writer_t writer, void *context) {
-    return avro_schema_to_json((avro_schema_t) context, writer);
+PG_FUNCTION_INFO_V1(samza_frame_schema);
+
+/* Returns a JSON string containing the frame schema of the logical log output plugin.
+ * This should be used by clients to decode the data streamed from the log, allowing
+ * schema evolution to handle version changes of the plugin. */
+Datum samza_frame_schema(PG_FUNCTION_ARGS) {
+    bytea *json;
+    avro_schema_t schema = schema_for_frame();
+    int err = try_writing(&json, &write_schema_json, schema);
+    avro_schema_decref(schema);
+
+    if (err) {
+        elog(ERROR, "samza_frame_schema: Could not encode schema as JSON: %s", avro_strerror());
+        PG_RETURN_NULL();
+    } else {
+        PG_RETURN_TEXT_P(json);
+    }
 }
 
 
@@ -140,10 +148,6 @@ Datum samza_table_export(PG_FUNCTION_ARGS) {
     }
 }
 
-int write_avro_binary(avro_writer_t writer, void *context) {
-    return avro_value_write(writer, (avro_value_t *) context);
-}
-
 
 /* Given the name of a table (relation), generates an Avro schema for it. */
 avro_schema_t schema_for_relname(char *relname) {
@@ -153,28 +157,4 @@ avro_schema_t schema_for_relname(char *relname) {
     avro_schema_t schema = schema_for_relation(rel);
     relation_close(rel, AccessShareLock);
     return schema;
-}
-
-/* Allocates a fixed-length buffer and tries to write something to it using the Avro writer API.
- * If it doesn't fit, increases the buffer size and tries again. The actual writing operation
- * is given as a callback; the context argument is passed to the callback. On success (return
- * value 0), output is set to a palloc'ed byte array of the right size. */
-int try_writing(bytea **output, try_writing_cb cb, void *context) {
-    int size = INIT_BUFFER_LENGTH, err = ENOSPC;
-
-    while (err == ENOSPC && size <= MAX_BUFFER_LENGTH) {
-        *output = (bytea *) palloc(size);
-        avro_writer_t writer = avro_writer_memory(VARDATA(*output), size - VARHDRSZ);
-        err = (*cb)(writer, context);
-
-        if (err == 0) {
-            SET_VARSIZE(*output, avro_writer_tell(writer) + VARHDRSZ);
-        } else if (err == ENOSPC) {
-            size *= 4;
-            pfree(*output);
-        }
-        avro_writer_free(writer);
-    }
-
-    return err;
 }
