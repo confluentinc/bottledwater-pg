@@ -399,21 +399,33 @@ int update_avro_with_time_tz(avro_value_t *record_val, TimeTzADT *time) {
     return err;
 }
 
-/* We represent a timestamp using a record of year, month, day, hours, minutes, seconds and
- * microseconds. We do this rather than a simple microseconds-since-epoch value because
- * PG's timestamp uses the Julian calendar internally. The Julian calendar avoids the
- * complexities of special-cased leap years and leap seconds, but means that a epoch-based
- * timestamp may be interpreted differently by a consumer that is expecting a Gregorian
- * calendar. We can side-step the problem of calendar conversion by instead returning a
- * value broken down by year, month, day etc. -- because that's most likely the format
- * in which the data was inserted into the database in the first place, so this format
- * hopefully minimizes surprises.
+/* Should a date/time value be represented using a record (year, month, day, hours, minutes,
+ * seconds and microseconds), or a ISO8601 string, or a timestamp (number of microseconds
+ * since epoch)? Depends how the data is going to be consumed -- the formats ought to be
+ * equivalent.
  *
- * For timestamp (without time zone), the values are returned in GMT. For timestamp with
+ * If HAVE_INT64_TIMESTAMP (a compile-time option) is defined, Postgres internally stores
+ * timestamps as a microsecond-resolution 64-bit integer with an epoch of 1 January 2000.
+ * If it is not defined, Postgres uses a floating-point representation instead -- however,
+ * the integer representation seems to be the default and the common case, so we only support
+ * that for now.
+ *
+ * The Postgres docs and source code comments claim that Postgres internally uses the Julian
+ * calendar, but that doesn't seem to be true: it treats years that are divisible by 100
+ * (but not divisible by 400) as non-leapyears, which means it's actually using the Gregorian
+ * calendar. That's fortunate, because Unix timestamps also use the Gregorian calendar, so
+ * conversion between Postgres timestamps and Unix timestamps is easy. (Leap seconds are
+ * ignored by both Postgres and Unix timestamps.)
+ *
+ * For timestamp (without time zone), the values are returned in UTC. For timestamp with
  * time zone, the time is converted into the time zone configured on the PG server:
  * http://www.postgresql.org/docs/9.4/static/runtime-config-client.html#GUC-TIMEZONE
- * Postgres internally stores the value in GMT either way (and doesn't store the time
- * zone), so the datatype only determines whether time zone conversion happens on output. */
+ * Postgres internally stores the value in UTC either way (and doesn't store the time
+ * zone), so the datatype only determines whether time zone conversion happens on output.
+ *
+ * Clients can force UTC output by setting the environment variable PGTZ=UTC, or by
+ * executing "SET SESSION TIME ZONE UTC;".
+ */
 avro_schema_t schema_for_timestamp(bool nullable, bool with_tz) {
     avro_schema_t record_schema = avro_schema_record("DateTime", PREDEFINED_SCHEMA_NAMESPACE);
     schema_for_date_fields(record_schema);
@@ -444,6 +456,13 @@ int update_avro_with_timestamp(avro_value_t *union_val, bool nullable, bool with
         }
         return err;
     }
+
+    // Postgres timestamp is microseconds since 2000-01-01. You can convert it to the
+    // Unix epoch (1970-01-01) like this:
+    //    timestamp + (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * USECS_PER_DAY
+    //
+    // To get a Unix timestamp (with second resolution rather than microsecond), further
+    // divide by 1e6.
 
     err = timestamp2tm(timestamp, with_tz ? &tz_offset : NULL, &decoded, &fsec, NULL, NULL);
     if (err) {
