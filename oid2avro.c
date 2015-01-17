@@ -169,6 +169,28 @@ avro_schema_t schema_for_oid(Oid typid, bool nullable) {
         case BYTEAOID:   /* bytea: variable-length byte array */
             value_schema = avro_schema_bytes();
             break;
+        case BITOID:     /* fixed-length bit string */
+        case VARBITOID:  /* variable-length bit string */
+        case UUIDOID:    /* UUID datatype */
+        case LSNOID:     /* PostgreSQL LSN datatype */
+        case MACADDROID: /* XX:XX:XX:XX:XX:XX, MAC address */
+        case INETOID:    /* IP address/netmask, host address, netmask optional */
+        case CIDROID:    /* network IP address/netmask, network address */
+
+        /* Geometric types */
+        case POINTOID:   /* geometric point '(x, y)' */
+        case LSEGOID:    /* geometric line segment '(pt1,pt2)' */
+        case PATHOID:    /* geometric path '(pt1,...)' */
+        case BOXOID:     /* geometric box '(lower left,upper right)' */
+        case POLYGONOID: /* geometric polygon '(pt1,...)' */
+        case LINEOID:    /* geometric line */
+        case CIRCLEOID:  /* geometric circle '(center,radius)' */
+
+            /* range types... decompose like array types? */
+
+        /* JSON types */
+        case JSONOID:    /* json: Text-based JSON */
+        case JSONBOID:   /* jsonb: Binary JSON */
 
         /* String-like types: fall through to the default, which is to create a string representation */
         case CHAROID:    /* "char": single character */
