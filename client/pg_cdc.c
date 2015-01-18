@@ -1,8 +1,7 @@
-#include "oid2avro.h"
-
 #include <stdio.h>
 #include <stdlib.h>
-#include "libpq-fe.h"
+#include <libpq-fe.h>
+#include <avro.h>
 
 #define DB_CONNECTION_INFO "postgres://localhost/martin"
 #define DB_TABLE "test"
@@ -12,6 +11,7 @@ struct table_context_t {
     PGconn *conn;
     avro_schema_t schema;
     avro_value_iface_t *avro_iface;
+    avro_reader_t avro_reader;
     avro_value_t avro_value;
     avro_file_writer_t output;
 };
@@ -20,7 +20,7 @@ void exit_nicely(PGconn *conn);
 void exec_query(PGconn *conn, char *query);
 void binary_value(char *value, int length);
 void output_tuple(struct table_context_t *context, PGresult *res, int row_number);
-void init_table_context(PGresult *res, struct table_context_t *context);
+void init_table_context(PGconn *conn, struct table_context_t *context);
 
 
 void exit_nicely(PGconn *conn) {
@@ -39,41 +39,28 @@ void exec_query(PGconn *conn, char *query) {
     }
 }
 
-void binary_value(char *value, int length) {
-    for (int i = 0; i < length; i++) {
-        printf("%02hhx", value[i]);
-    }
-}
-
 void output_tuple(struct table_context_t *context, PGresult *res, int row_number) {
-    int columns = PQnfields(res);
-
-    for (int column = 0; column < columns; column++) {
-        avro_value_t union_value, field_value;
-        const char *fieldname = NULL;
-        avro_value_get_by_index(&context->avro_value, column, &union_value, &fieldname);
-        if (column > 0) printf(", ");
-        printf("%s = ", fieldname);
-
-        if (PQgetisnull(res, row_number, column)) {
-            printf("null");
-            avro_value_set_branch(&union_value, 0, &field_value);
-
-        } if (PQfformat(res, column) == 1) { /* format 1 == binary */
-            char *value = PQgetvalue(res, row_number, column);
-            int length = PQgetlength(res, row_number, column);
-            binary_value(value, length);
-            avro_value_set_branch(&union_value, 1, &field_value);
-            Datum *datum_p = (Datum *) value; // FIXME not sure that is correct
-            pg_datum_to_avro(*datum_p, PQftype(res, column), &field_value);
-
-        } else {
-            fprintf(stderr, "Unexpected response format: %d\n", PQfformat(res, column));
-            exit_nicely(context->conn);
-        }
-        printf(" (oid = %d, mod = %d)", PQftype(res, column), PQfmod(res, column));
+    if (PQnfields(res) != 1) {
+        fprintf(stderr, "Unexpected response with %d fields\n", PQnfields(res));
+        exit_nicely(context->conn);
     }
-    printf("\n");
+    if (PQgetisnull(res, row_number, 0)) {
+        fprintf(stderr, "Unexpected null response value\n");
+        exit_nicely(context->conn);
+    }
+    if (PQfformat(res, 0) != 1) { /* format 1 == binary */
+        fprintf(stderr, "Unexpected response format: %d\n", PQfformat(res, 0));
+        exit_nicely(context->conn);
+    }
+
+    avro_reader_memory_set_source(context->avro_reader,
+            PQgetvalue(res, row_number, 0),
+            PQgetlength(res, row_number, 0));
+
+    if (avro_value_read(context->avro_reader, &context->avro_value)) {
+        fprintf(stderr, "Unable to parse Avro data: %s\n", avro_strerror());
+        exit_nicely(context->conn);
+    }
 
     if (avro_file_writer_append_value(context->output, &context->avro_value)) {
         fprintf(stderr, "Unable to write tuple to output file: %s\n", avro_strerror());
@@ -81,17 +68,33 @@ void output_tuple(struct table_context_t *context, PGresult *res, int row_number
     }
 }
 
-/* Inspects a tuple from a result set to determine the output schema.
+/* Queries the database for the Avro schema of a table.
  * Creates an Avro output file with that schema. */
-void init_table_context(PGresult *res, struct table_context_t *context) {
-    context->schema = avro_schema_record("Tuple", "postgres");
-    int columns = PQnfields(res);
-    for (int column = 0; column < columns; column++) {
-        avro_schema_t column_schema = oid_to_schema(PQftype(res, column), 1);
-        avro_schema_record_field_append(context->schema, PQfname(res, column), column_schema);
-        avro_schema_decref(column_schema);
+void init_table_context(PGconn *conn, struct table_context_t *context) {
+    PGresult *res = PQexec(conn, "SELECT samza_table_schema('" DB_TABLE "')");
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        fprintf(stderr, "Schema query failed: %s\n", PQerrorMessage(conn));
+        PQclear(res);
+        exit_nicely(conn);
     }
 
+    if (PQntuples(res) != 1 || PQnfields(res) != 1) {
+        fprintf(stderr, "Unexpected schema query result format: %d tuples with %d fields\n",
+                PQntuples(res), PQnfields(res));
+        PQclear(res);
+        exit_nicely(conn);
+    }
+
+    int err = avro_schema_from_json_length(PQgetvalue(res, 0, 0), PQgetlength(res, 0, 0),
+            &context->schema);
+    if (err) {
+        fprintf(stderr, "Could not parse table schema: %s", avro_strerror());
+        PQclear(res);
+        exit_nicely(conn);
+    }
+    PQclear(res);
+
+    context->avro_reader = avro_reader_memory(NULL, 0);
     context->avro_iface = avro_generic_class_from_schema(context->schema);
     avro_generic_value_new(context->avro_iface, &context->avro_value);
 
@@ -117,8 +120,12 @@ int main(int argc, char **argv) {
     exec_query(conn, "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE, READ ONLY, DEFERRABLE");
     /* exec_query(conn, "SET TRANSACTION SNAPSHOT '...'"); */
 
+    struct table_context_t context;
+    context.conn = conn;
+    init_table_context(conn, &context);
+
     /* The final parameter 1 requests the results in binary format */
-    if (!PQsendQueryParams(conn, "SELECT xmin, xmax, * FROM " DB_TABLE, 0, NULL, NULL, NULL, NULL, 1)) {
+    if (!PQsendQueryParams(conn, "SELECT samza_table_export('" DB_TABLE "')", 0, NULL, NULL, NULL, NULL, 1)) {
         fprintf(stderr, "Could not dispatch snapshot fetch: %s\n", PQerrorMessage(conn));
         exit_nicely(conn);
     }
@@ -130,9 +137,6 @@ int main(int argc, char **argv) {
 
     int error = 0, tuples, total = 0;
 
-    struct table_context_t context;
-    context.conn = conn;
-
     for (;;) {
         PGresult *res = PQgetResult(conn);
         if (!res) break; /* null result indicates that there are no more rows */
@@ -142,7 +146,6 @@ int main(int argc, char **argv) {
             case PGRES_TUPLES_OK:
                 tuples = PQntuples(res);
                 for (int tuple = 0; tuple < tuples; tuple++) {
-                    if (total == 0) init_table_context(res, &context);
                     total++;
                     output_tuple(&context, res, tuple);
                 }
@@ -157,12 +160,12 @@ int main(int argc, char **argv) {
         PQclear(res);
     }
 
-    if (total > 0) {
-        avro_file_writer_close(context.output);
-        avro_value_decref(&context.avro_value);
-        avro_value_iface_decref(context.avro_iface);
-        avro_schema_decref(context.schema);
-    }
+    avro_file_writer_close(context.output);
+    avro_value_decref(&context.avro_value);
+    avro_reader_free(context.avro_reader);
+    avro_value_iface_decref(context.avro_iface);
+    avro_schema_decref(context.schema);
+
     if (error) exit_nicely(conn);
 
     exec_query(conn, "COMMIT");

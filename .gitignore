@@ -1,4 +1,4 @@
 *.o
 *.so
-/test
+/client/pg_cdc
 /output.avro
