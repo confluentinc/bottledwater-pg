@@ -6,6 +6,8 @@ LDFLAGS=-L`pg_config --libdir` -lpq `pkg-config --libs avro-c`
 CC=gcc
 OBJECTS=$(SOURCES:.c=.o)
 
+.PHONY: all clean
+
 all: $(SOURCES) $(EXECUTABLE)
 
 $(EXECUTABLE): $(OBJECTS)
