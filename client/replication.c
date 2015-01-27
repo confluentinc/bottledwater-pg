@@ -3,6 +3,7 @@
  * http://www.postgresql.org/docs/9.4/static/protocol-replication.html */
 
 #include "replication.h"
+#include "protocol.h"
 
 #include <arpa/inet.h>
 #include <sys/time.h>
@@ -22,10 +23,25 @@ void sendint64(int64 i64, char *buf);
 int64 recvint64(char *buf);
 
 bool stream_parse_frame_cb(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen) {
-    for (int i = 0; i < buflen; i++) {
-        printf("%02hhx", buf[i]);
+    avro_reader_memory_set_source(stream->frame_reader, buf, buflen);
+
+    if (avro_value_read(stream->frame_reader, &stream->frame_value)) {
+        fprintf(stderr, "Unable to parse Avro data: %s\n", avro_strerror());
+        return false;
     }
-    printf("\n");
+
+    char *json;
+    if (avro_value_to_json(&stream->frame_value, 1, &json)) {
+        fprintf(stderr, "Error converting value to JSON: %s\n", avro_strerror());
+        return false;
+    }
+
+    printf("%s\n", json);
+    free(json);
+
+    /* NOTE: when sending messages to an external system, this should only be done
+     * after the message has been written durably. */
+    stream->fsync_lsn = stream->recvd_lsn;
     return true;
 }
 
@@ -39,6 +55,11 @@ bool consume_stream(PGconn *conn, char *slot_name) {
     stream.recvd_lsn = InvalidXLogRecPtr;
     stream.fsync_lsn = InvalidXLogRecPtr;
     stream.last_checkpoint = 0;
+
+    stream.frame_schema = schema_for_frame();
+    stream.frame_reader = avro_reader_memory(NULL, 0);
+    stream.frame_iface = avro_generic_class_from_schema(stream.frame_schema);
+    avro_generic_value_new(stream.frame_iface, &stream.frame_value);
 
     bool success = true;
     while (success) { // TODO while not aborted
@@ -83,6 +104,12 @@ bool consume_stream(PGconn *conn, char *slot_name) {
                 PQresultErrorMessage(res));
     }
     PQclear(res);
+
+    avro_value_decref(&stream.frame_value);
+    avro_reader_free(stream.frame_reader);
+    avro_value_iface_decref(stream.frame_iface);
+    avro_schema_decref(stream.frame_schema);
+
     return success;
 }
 
