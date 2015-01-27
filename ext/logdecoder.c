@@ -1,5 +1,5 @@
 #include "io_util.h"
-#include "protocol.h"
+#include "protocol_server.h"
 #include "oid2avro.h"
 
 #include "replication/logical.h"
