@@ -13,6 +13,7 @@
 #define CHECKPOINT_INTERVAL_SEC 10
 
 
+bool check_replication_connection(PGconn *conn);
 bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
 bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen);
 bool stream_parse_frame_cb(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen);
@@ -29,6 +30,7 @@ bool stream_parse_frame_cb(replication_stream_t stream, XLogRecPtr wal_pos, char
 }
 
 bool consume_stream(PGconn *conn, char *slot_name) {
+    if (!check_replication_connection(conn)) return false;
     if (!start_stream(conn, slot_name, InvalidXLogRecPtr)) return false;
 
     struct replication_stream stream;
@@ -82,6 +84,34 @@ bool consume_stream(PGconn *conn, char *slot_name) {
     }
     PQclear(res);
     return success;
+}
+
+/* Checks that the connection to the database server supports logical replication. */
+bool check_replication_connection(PGconn *conn) {
+    PGresult *res = PQexec(conn, "IDENTIFY_SYSTEM");
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        fprintf(stderr, "IDENTIFY_SYSTEM failed: %s", PQerrorMessage(conn));
+        PQclear(res);
+        return false;
+    }
+
+    if (PQntuples(res) != 1 || PQnfields(res) < 4) {
+        fprintf(stderr, "Unexpected IDENTIFY_SYSTEM result (%d rows, %d fields).\n",
+                PQntuples(res), PQnfields(res));
+        PQclear(res);
+        return false;
+    }
+
+    /* Check that the database name (fourth column of the result tuple) is non-null,
+     * implying a database-specific connection. */
+    if (PQgetisnull(res, 0, 3)) {
+        fprintf(stderr, "Not using a database-specific replication connection.\n");
+        PQclear(res);
+        return false;
+    }
+
+    PQclear(res);
+    return true;
 }
 
 /* Send a "Standby status update" message to server, indicating the LSN up to which we
