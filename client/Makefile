@@ -1,7 +1,8 @@
-SOURCES=pg_cdc.c
+SOURCES=pg_cdc.c replication.c
 EXECUTABLE=pg_cdc
 
-CFLAGS=-c -Wall -I`pg_config --includedir` `pkg-config --cflags avro-c`
+WARNINGS=-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security
+CFLAGS=-c -I`pg_config --includedir` `pkg-config --cflags avro-c` $(WARNINGS)
 LDFLAGS=-L`pg_config --libdir` -lpq `pkg-config --libs avro-c`
 CC=gcc
 OBJECTS=$(SOURCES:.c=.o)

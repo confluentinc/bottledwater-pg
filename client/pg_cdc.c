@@ -1,10 +1,14 @@
+#include "replication.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <libpq-fe.h>
 #include <avro.h>
 
 #define DB_CONNECTION_INFO "postgres://localhost/martin"
+#define DB_REPLICATION_INFO "postgres://localhost/martin?replication=database&fallback_application_name=pg_to_kafka"
 #define DB_TABLE "test"
+#define DB_REPLICATION_SLOT "samza"
 
 struct table_context_t {
     PGconn *conn;
@@ -152,6 +156,14 @@ int main(int argc, char **argv) {
         PQclear(res);
     }
 
+    if (!error) {
+        exec_query(conn, "COMMIT");
+        PQfinish(conn);
+
+        conn = PQconnectdb(DB_REPLICATION_INFO);
+        consume_stream(conn, DB_REPLICATION_SLOT);
+    }
+
     avro_value_decref(&context.avro_value);
     avro_reader_free(context.avro_reader);
     avro_value_iface_decref(context.avro_iface);
@@ -159,7 +171,6 @@ int main(int argc, char **argv) {
 
     if (error) exit_nicely(conn);
 
-    exec_query(conn, "COMMIT");
     PQfinish(conn);
     return 0;
 }
