@@ -204,7 +204,7 @@ int poll_stream(replication_stream_t stream) {
     int ret = PQgetCopyData(stream->conn, &buf, 1);
     bool success = true;
 
-    if (ret <= 0) {
+    if (ret < 0) {
         if (ret == -2) {
             fprintf(stderr, "Could not read COPY data: %s\n", PQerrorMessage(stream->conn));
         }
@@ -212,16 +212,18 @@ int poll_stream(replication_stream_t stream) {
         return ret;
     }
 
-    switch (buf[0]) {
-        case 'k':
-            success = parse_keepalive_message(stream, buf, ret);
-            break;
-        case 'w':
-            success = parse_xlogdata_message(stream, buf, ret);
-            break;
-        default:
-            fprintf(stderr, "Unknown streaming message type: \"%c\"\n", buf[0]);
-            success = false;
+    if (ret > 0) {
+        switch (buf[0]) {
+            case 'k':
+                success = parse_keepalive_message(stream, buf, ret);
+                break;
+            case 'w':
+                success = parse_xlogdata_message(stream, buf, ret);
+                break;
+            default:
+                fprintf(stderr, "Unknown streaming message type: \"%c\"\n", buf[0]);
+                success = false;
+        }
     }
 
     /* Periodically let the server know up to which point we've consumed the stream. */
@@ -232,7 +234,8 @@ int poll_stream(replication_stream_t stream) {
         }
     }
 
-    PQfreemem(buf);
+    if (buf) PQfreemem(buf);
+    if (ret == 0) return 0;
     return success ? 1 : -2;
 }
 
