@@ -5,7 +5,6 @@
 
 #define DB_CONNECTION_INFO "postgres://localhost/martin"
 #define DB_TABLE "test"
-#define OUTPUT_FILENAME "output.avro"
 
 struct table_context_t {
     PGconn *conn;
@@ -13,7 +12,6 @@ struct table_context_t {
     avro_value_iface_t *avro_iface;
     avro_reader_t avro_reader;
     avro_value_t avro_value;
-    avro_file_writer_t output;
 };
 
 void exit_nicely(PGconn *conn);
@@ -62,14 +60,17 @@ void output_tuple(struct table_context_t *context, PGresult *res, int row_number
         exit_nicely(context->conn);
     }
 
-    if (avro_file_writer_append_value(context->output, &context->avro_value)) {
-        fprintf(stderr, "Unable to write tuple to output file: %s\n", avro_strerror());
+    char *json;
+    if (avro_value_to_json(&context->avro_value, 1, &json)) {
+        fprintf(stderr, "Error converting value to JSON: %s\n", avro_strerror());
         exit_nicely(context->conn);
     }
+
+    printf("%s\n", json);
+    free(json);
 }
 
-/* Queries the database for the Avro schema of a table.
- * Creates an Avro output file with that schema. */
+/* Queries the database for the Avro schema of a table. */
 void init_table_context(PGconn *conn, struct table_context_t *context) {
     PGresult *res = PQexec(conn, "SELECT samza_table_schema('" DB_TABLE "')");
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
@@ -97,15 +98,6 @@ void init_table_context(PGconn *conn, struct table_context_t *context) {
     context->avro_reader = avro_reader_memory(NULL, 0);
     context->avro_iface = avro_generic_class_from_schema(context->schema);
     avro_generic_value_new(context->avro_iface, &context->avro_value);
-
-    const char *fn = OUTPUT_FILENAME;
-    remove(fn); /* Delete the output file if it exists */
-
-    int error = avro_file_writer_create(fn, context->schema, &context->output);
-    if (error) {
-        fprintf(stderr, "Error creating %s: %s\n", fn, avro_strerror());
-        exit_nicely(context->conn);
-    }
 }
 
 int main(int argc, char **argv) {
@@ -160,7 +152,6 @@ int main(int argc, char **argv) {
         PQclear(res);
     }
 
-    avro_file_writer_close(context.output);
     avro_value_decref(&context.avro_value);
     avro_reader_free(context.avro_reader);
     avro_value_iface_decref(context.avro_iface);
@@ -170,7 +161,5 @@ int main(int argc, char **argv) {
 
     exec_query(conn, "COMMIT");
     PQfinish(conn);
-
-    fprintf(stderr, "%d rows exported\n", total);
     return 0;
 }
