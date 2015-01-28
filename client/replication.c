@@ -30,6 +30,15 @@ bool stream_parse_frame_cb(replication_stream_t stream, XLogRecPtr wal_pos, char
         return false;
     }
 
+    // Expect the reading of the Avro value from the buffer to entirely consume the
+    // buffer contents. If there's anything left at the end, something must be wrong.
+    // Avro doesn't seem to provide a way of checking how many bytes remain, so we
+    // test indirectly by trying to seek forward (expecting to see an error).
+    if (avro_skip(stream->frame_reader, 1) != ENOSPC) {
+        fprintf(stderr, "Unexpected trailing bytes in the replication buffer\n");
+        return false;
+    }
+
     char *json;
     if (avro_value_to_json(&stream->frame_value, 1, &json)) {
         fprintf(stderr, "Error converting value to JSON: %s\n", avro_strerror());
