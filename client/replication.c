@@ -13,6 +13,7 @@
 
 #define CHECKPOINT_INTERVAL_SEC 10
 
+// #define DEBUG 1
 
 bool check_replication_connection(PGconn *conn);
 bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
@@ -48,9 +49,6 @@ bool stream_parse_frame_cb(replication_stream_t stream, XLogRecPtr wal_pos, char
     printf("%s\n", json);
     free(json);
 
-    /* NOTE: when sending messages to an external system, this should only be done
-     * after the message has been written durably. */
-    stream->fsync_lsn = stream->recvd_lsn;
     return true;
 }
 
@@ -177,6 +175,12 @@ bool checkpoint(replication_stream_t stream, int64 now) {
         return false;
     }
 
+#ifdef DEBUG
+    fprintf(stderr, "Checkpoint: recvd_lsn %X/%X, fsync_lsn %X/%X\n",
+            (uint32) (stream->recvd_lsn >> 32), (uint32) stream->recvd_lsn,
+            (uint32) (stream->fsync_lsn >> 32), (uint32) stream->fsync_lsn);
+#endif
+
     stream->last_checkpoint = now;
     return true;
 }
@@ -239,6 +243,10 @@ int poll_stream(replication_stream_t stream) {
     if (success && stream->recvd_lsn != InvalidXLogRecPtr) {
         int64 now = current_time();
         if (now - stream->last_checkpoint > CHECKPOINT_INTERVAL_SEC * USECS_PER_SEC) {
+            /* TODO: when sending messages to an external system, this should only be done
+             * after the message has been written durably. */
+            stream->fsync_lsn = stream->recvd_lsn;
+
             success = checkpoint(stream, now);
         }
     }
@@ -277,6 +285,11 @@ bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen)
      * pg_recvlogical does, so it's probably ok. */
     stream->recvd_lsn = Max(wal_pos, stream->recvd_lsn);
 
+#ifdef DEBUG
+    fprintf(stderr, "Keepalive: wal_pos %X/%X, reply_requested %d\n",
+            (uint32) (wal_pos >> 32), (uint32) wal_pos, reply_requested);
+#endif
+
     if (reply_requested) {
         return checkpoint(stream, current_time());
     }
@@ -303,6 +316,10 @@ bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen) 
     }
 
     XLogRecPtr wal_pos = recvint64(&buf[1]);
+
+#ifdef DEBUG
+    fprintf(stderr, "XLogData: wal_pos %X/%X\n", (uint32) (wal_pos >> 32), (uint32) wal_pos);
+#endif
 
     bool success = stream->frame_cb(stream, wal_pos, buf + hdrlen, buflen - hdrlen);
 
