@@ -21,3 +21,9 @@ with contents something like the following:
     URL: https://code.google.com/p/snappy/
     Libs: -L/usr/local/lib -lsnappy
     Cflags: -I/usr/local/include
+
+Config changes to `pg_hba.conf`. (If you're using Homebrew, you can probably find it in
+`/usr/local/var/postgres`. On Linux, it's probably in `/etc/postgres`.)
+
+    create extension samza_postgres;
+    select pg_create_logical_replication_slot('samza', 'samza_postgres');
