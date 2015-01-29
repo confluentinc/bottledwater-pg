@@ -116,9 +116,63 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         Relation rel, ReorderBufferChange *change) {
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
+    avro_schema_t row_schema = NULL;
+    avro_value_iface_t *row_iface = NULL;
+    avro_value_t row_value;
+    bytea *schema_json = NULL, *value_bin = NULL, *output = NULL;
 
-    // ...
+    fprintf(stderr, "output_avro_change called\n");
 
+    // Only support inserts for now
+    if (change->action != REORDER_BUFFER_CHANGE_INSERT) goto error;
+
+    row_schema = schema_for_relation(rel, false);
+    int err = try_writing(&schema_json, &write_schema_json, row_schema);
+    if (err) {
+        elog(ERROR, "output_avro_change: writing row schema failed: %s", avro_strerror());
+        goto error;
+    }
+
+    row_iface = avro_generic_class_from_schema(row_schema);
+    avro_generic_value_new(row_iface, &row_value);
+    err = update_avro_with_tuple(&row_value, row_schema, RelationGetDescr(rel),
+            &change->data.tp.newtuple->tuple);
+    if (err) {
+        elog(ERROR, "output_avro_change: row conversion failed: %s", avro_strerror());
+        goto error;
+    }
+
+    err = try_writing(&value_bin, &write_avro_binary, &row_value);
+    if (err) {
+        elog(ERROR, "output_avro_change: writing row binary failed: %s", avro_strerror());
+        goto error;
+    }
+
+    err = update_frame_with_insert(&state->frame_value, schema_json, value_bin);
+    if (err) {
+        elog(ERROR, "output_avro_change: frame conversion failed: %s", avro_strerror());
+        goto error;
+    }
+
+    err = try_writing(&output, &write_avro_binary, &state->frame_value);
+    if (err) {
+        elog(ERROR, "output_avro_change: writing frame binary failed: %s", avro_strerror());
+        goto error;
+    }
+
+    OutputPluginPrepareWrite(ctx, true);
+    appendBinaryStringInfo(ctx->out, VARDATA(output), VARSIZE(output) - VARHDRSZ);
+    OutputPluginWrite(ctx, true);
+
+error:
+    if (output) pfree(output);
+    if (value_bin) pfree(value_bin);
+    if (schema_json) pfree(schema_json);
+    if (row_iface) {
+        avro_value_iface_decref(row_iface);
+        avro_value_decref(&row_value);
+    }
+    if (row_schema) avro_schema_decref(row_schema);
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }

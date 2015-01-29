@@ -41,7 +41,7 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
 
 
 /* Generates an Avro schema corresponding to a given table (relation). */
-avro_schema_t schema_for_relation(Relation rel) {
+avro_schema_t schema_for_relation(Relation rel, bool with_meta) {
     StringInfoData namespace;
     initStringInfo(&namespace);
     appendStringInfoString(&namespace, GENERATED_SCHEMA_NAMESPACE);
@@ -54,15 +54,17 @@ avro_schema_t schema_for_relation(Relation rel) {
     avro_schema_t record_schema = avro_schema_record(relname, namespace.data);
     avro_schema_t column_schema;
 
-    Form_pg_attribute xmin = SystemAttributeDefinition(MinTransactionIdAttributeNumber, true);
-    column_schema = schema_for_oid(xmin->atttypid, false);
-    avro_schema_record_field_append(record_schema, "xmin", column_schema);
-    avro_schema_decref(column_schema);
+    if (with_meta) {
+        Form_pg_attribute xmin = SystemAttributeDefinition(MinTransactionIdAttributeNumber, true);
+        column_schema = schema_for_oid(xmin->atttypid, false);
+        avro_schema_record_field_append(record_schema, "xmin", column_schema);
+        avro_schema_decref(column_schema);
 
-    Form_pg_attribute xmax = SystemAttributeDefinition(MaxTransactionIdAttributeNumber, true);
-    column_schema = schema_for_oid(xmax->atttypid, false);
-    avro_schema_record_field_append(record_schema, "xmax", column_schema);
-    avro_schema_decref(column_schema);
+        Form_pg_attribute xmax = SystemAttributeDefinition(MaxTransactionIdAttributeNumber, true);
+        column_schema = schema_for_oid(xmax->atttypid, false);
+        avro_schema_record_field_append(record_schema, "xmax", column_schema);
+        avro_schema_decref(column_schema);
+    }
 
     TupleDesc tupdesc = RelationGetDescr(rel);
     for (int i = 0; i < tupdesc->natts; i++) {

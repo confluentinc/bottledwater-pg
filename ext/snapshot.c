@@ -15,8 +15,6 @@
 PG_MODULE_MAGIC;
 
 avro_schema_t schema_for_relname(char *relname);
-int write_schema_json(avro_writer_t writer, void *context);
-int write_avro_binary(avro_writer_t writer, void *context);
 
 
 PG_FUNCTION_INFO_V1(samza_table_schema);
@@ -154,7 +152,7 @@ avro_schema_t schema_for_relname(char *relname) {
     List *relname_list = stringToQualifiedNameList(relname);
     RangeVar *relvar = makeRangeVarFromNameList(relname_list);
     Relation rel = relation_openrv(relvar, AccessShareLock);
-    avro_schema_t schema = schema_for_relation(rel);
+    avro_schema_t schema = schema_for_relation(rel, true);
     relation_close(rel, AccessShareLock);
     return schema;
 }
