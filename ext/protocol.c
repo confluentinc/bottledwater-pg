@@ -23,7 +23,13 @@ avro_schema_t schema_for_frame() {
     avro_schema_union_append(union_schema, branch_schema);
     avro_schema_decref(branch_schema);
 
-    return union_schema;
+    avro_schema_t array_schema = avro_schema_array(union_schema);
+    avro_schema_decref(union_schema);
+
+    avro_schema_t record_schema = avro_schema_record("Frame", PROTOCOL_SCHEMA_NAMESPACE);
+    avro_schema_record_field_append(record_schema, "msg", array_schema);
+    avro_schema_decref(array_schema);
+    return record_schema;
 }
 
 avro_schema_t schema_for_begin_txn() {
