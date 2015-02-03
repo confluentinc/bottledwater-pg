@@ -1,4 +1,4 @@
-SOURCES=pg_cdc.c replication.c protocol.c
+SOURCES=pg_cdc.c replication.c protocol.c protocol_client.c
 EXECUTABLE=pg_cdc
 
 WARNINGS=-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security

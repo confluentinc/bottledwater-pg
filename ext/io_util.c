@@ -7,7 +7,9 @@
 /* Allocates a fixed-length buffer and tries to write something to it using the Avro writer API.
  * If it doesn't fit, increases the buffer size and tries again. The actual writing operation
  * is given as a callback; the context argument is passed to the callback. On success (return
- * value 0), output is set to a palloc'ed byte array of the right size. */
+ * value 0), output is set to a palloc'ed byte array of the right size. The VARSIZE of the
+ * output array does not include a terminating null byte, but we guarantee that the following
+ * byte is indeed 0, so it's safe to increment VARSIZE if you need the null byte included. */
 int try_writing(bytea **output, try_writing_cb cb, void *context) {
     int size = INIT_BUFFER_LENGTH, err = ENOSPC;
 
@@ -18,7 +20,10 @@ int try_writing(bytea **output, try_writing_cb cb, void *context) {
 
         if (err == 0) {
             SET_VARSIZE(*output, avro_writer_tell(writer) + VARHDRSZ);
-        } else if (err == ENOSPC) {
+            err = avro_write(writer, "\x00", 1);
+        }
+
+        if (err == ENOSPC) {
             size *= 4;
             pfree(*output);
         }

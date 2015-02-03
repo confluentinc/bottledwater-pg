@@ -11,6 +11,5 @@ int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Rela
 
 schema_cache_t schema_cache_new(MemoryContext context);
 void schema_cache_free(schema_cache_t cache);
-int row_value_for_relation(schema_cache_t cache, Relation rel, avro_value_t *row_val);
 
 #endif /* PROTOCOL_SERVER_H */

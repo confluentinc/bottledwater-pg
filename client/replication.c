@@ -3,7 +3,6 @@
  * http://www.postgresql.org/docs/9.4/static/protocol-replication.html */
 
 #include "replication.h"
-#include "protocol.h"
 
 #include <arpa/inet.h>
 #include <sys/time.h>
@@ -18,39 +17,10 @@
 bool check_replication_connection(PGconn *conn);
 bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
 bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen);
-bool stream_parse_frame_cb(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen);
+bool parse_frame(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen);
 int64 current_time(void);
 void sendint64(int64 i64, char *buf);
 int64 recvint64(char *buf);
-
-bool stream_parse_frame_cb(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen) {
-    avro_reader_memory_set_source(stream->frame_reader, buf, buflen);
-
-    if (avro_value_read(stream->frame_reader, &stream->frame_value)) {
-        fprintf(stderr, "Unable to parse Avro data: %s\n", avro_strerror());
-        return false;
-    }
-
-    // Expect the reading of the Avro value from the buffer to entirely consume the
-    // buffer contents. If there's anything left at the end, something must be wrong.
-    // Avro doesn't seem to provide a way of checking how many bytes remain, so we
-    // test indirectly by trying to seek forward (expecting to see an error).
-    if (avro_skip(stream->frame_reader, 1) != ENOSPC) {
-        fprintf(stderr, "Unexpected trailing bytes in the replication buffer\n");
-        return false;
-    }
-
-    char *json;
-    if (avro_value_to_json(&stream->frame_value, 1, &json)) {
-        fprintf(stderr, "Error converting value to JSON: %s\n", avro_strerror());
-        return false;
-    }
-
-    printf("%s\n", json);
-    free(json);
-
-    return true;
-}
 
 bool consume_stream(PGconn *conn, char *slot_name) {
     if (!check_replication_connection(conn)) return false;
@@ -58,7 +28,6 @@ bool consume_stream(PGconn *conn, char *slot_name) {
 
     struct replication_stream stream;
     stream.conn = conn;
-    stream.frame_cb = stream_parse_frame_cb;
     stream.recvd_lsn = InvalidXLogRecPtr;
     stream.fsync_lsn = InvalidXLogRecPtr;
     stream.last_checkpoint = 0;
@@ -67,6 +36,7 @@ bool consume_stream(PGconn *conn, char *slot_name) {
     stream.frame_reader = avro_reader_memory(NULL, 0);
     stream.frame_iface = avro_generic_class_from_schema(stream.frame_schema);
     avro_generic_value_new(stream.frame_iface, &stream.frame_value);
+    stream.schema_cache = schema_cache_new();
 
     bool success = true;
     while (success) { // TODO while not aborted
@@ -112,6 +82,7 @@ bool consume_stream(PGconn *conn, char *slot_name) {
     }
     PQclear(res);
 
+    schema_cache_free(stream.schema_cache);
     avro_value_decref(&stream.frame_value);
     avro_reader_free(stream.frame_reader);
     avro_value_iface_decref(stream.frame_iface);
@@ -321,12 +292,37 @@ bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen) 
     fprintf(stderr, "XLogData: wal_pos %X/%X\n", (uint32) (wal_pos >> 32), (uint32) wal_pos);
 #endif
 
-    bool success = stream->frame_cb(stream, wal_pos, buf + hdrlen, buflen - hdrlen);
+    bool success = parse_frame(stream, wal_pos, buf + hdrlen, buflen - hdrlen);
 
     stream->recvd_lsn = Max(wal_pos, stream->recvd_lsn);
 
     return success;
 }
+
+bool parse_frame(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen) {
+    avro_reader_memory_set_source(stream->frame_reader, buf, buflen);
+
+    if (avro_value_read(stream->frame_reader, &stream->frame_value)) {
+        fprintf(stderr, "Unable to parse Avro data: %s\n", avro_strerror());
+        return false;
+    }
+
+    // Expect the reading of the Avro value from the buffer to entirely consume the
+    // buffer contents. If there's anything left at the end, something must be wrong.
+    // Avro doesn't seem to provide a way of checking how many bytes remain, so we
+    // test indirectly by trying to seek forward (expecting to see an error).
+    if (avro_skip(stream->frame_reader, 1) != ENOSPC) {
+        fprintf(stderr, "Unexpected trailing bytes in the replication buffer\n");
+        return false;
+    }
+
+    if (process_frame(&stream->frame_value, stream->schema_cache, wal_pos)) {
+        fprintf(stderr, "Error parsing frame data: %s\n", avro_strerror());
+        return false;
+    }
+    return true;
+}
+
 
 /* Returns the current date and time (according to the local system clock) in the
  * representation used by Postgres: microseconds since midnight on 2000-01-01. */

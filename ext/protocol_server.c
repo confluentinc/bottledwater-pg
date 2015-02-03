@@ -82,7 +82,7 @@ int update_frame_with_table_schema(avro_value_t *frame_val, struct schema_cache_
     check(err, avro_value_get_by_index(&record_val, 2, &schema_val, NULL));
     check(err, avro_value_set_long(&relid_val, entry->relid));
     check(err, avro_value_set_fixed(&hash_val, &entry->hash, 8));
-    check(err, avro_value_set_string_len(&schema_val, VARDATA(json), VARSIZE(json) - VARHDRSZ));
+    check(err, avro_value_set_string_len(&schema_val, VARDATA(json), VARSIZE(json) - VARHDRSZ + 1));
 
     pfree(json);
     return err;
