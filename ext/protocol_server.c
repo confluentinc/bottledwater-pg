@@ -28,7 +28,7 @@ int update_frame_with_begin_txn(avro_value_t *frame_val, ReorderBufferTXN *txn) 
 
     check(err, avro_value_get_by_index(frame_val, 0, &msg_val, NULL));
     check(err, avro_value_append(&msg_val, &union_val, NULL));
-    check(err, avro_value_set_branch(&union_val, 0, &record_val));
+    check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_BEGIN_TXN, &record_val));
     check(err, avro_value_get_by_index(&record_val, 0, &xid_val, NULL));
     check(err, avro_value_set_long(&xid_val, txn->xid));
     return err;
@@ -41,7 +41,7 @@ int update_frame_with_commit_txn(avro_value_t *frame_val, ReorderBufferTXN *txn,
 
     check(err, avro_value_get_by_index(frame_val, 0, &msg_val, NULL));
     check(err, avro_value_append(&msg_val, &union_val, NULL));
-    check(err, avro_value_set_branch(&union_val, 1, &record_val));
+    check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_COMMIT_TXN, &record_val));
     check(err, avro_value_get_by_index(&record_val, 0, &xid_val, NULL));
     check(err, avro_value_get_by_index(&record_val, 1, &lsn_val, NULL));
     check(err, avro_value_set_long(&xid_val, txn->xid));
@@ -76,7 +76,7 @@ int update_frame_with_table_schema(avro_value_t *frame_val, struct schema_cache_
     check(err, try_writing(&json, &write_schema_json, entry->row_schema));
     check(err, avro_value_get_by_index(frame_val, 0, &msg_val, NULL));
     check(err, avro_value_append(&msg_val, &union_val, NULL));
-    check(err, avro_value_set_branch(&union_val, 2, &record_val));
+    check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_TABLE_SCHEMA, &record_val));
     check(err, avro_value_get_by_index(&record_val, 0, &relid_val,  NULL));
     check(err, avro_value_get_by_index(&record_val, 1, &hash_val,   NULL));
     check(err, avro_value_get_by_index(&record_val, 2, &schema_val, NULL));
@@ -94,7 +94,7 @@ int update_frame_with_insert_raw(avro_value_t *frame_val, Oid relid, bytea *valu
 
     check(err, avro_value_get_by_index(frame_val, 0, &msg_val, NULL));
     check(err, avro_value_append(&msg_val, &union_val, NULL));
-    check(err, avro_value_set_branch(&union_val, 3, &record_val));
+    check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_INSERT, &record_val));
     check(err, avro_value_get_by_index(&record_val, 0, &relid_val, NULL));
     check(err, avro_value_get_by_index(&record_val, 1, &value_val,  NULL));
     check(err, avro_value_set_long(&relid_val, relid));

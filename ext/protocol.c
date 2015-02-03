@@ -3,6 +3,7 @@
  * This file is linked into both server and client. */
 
 #include "protocol.h"
+#include <assert.h>
 
 avro_schema_t schema_for_begin_txn(void);
 avro_schema_t schema_for_commit_txn(void);
@@ -12,18 +13,22 @@ avro_schema_t schema_for_insert(void);
 avro_schema_t schema_for_frame() {
     avro_schema_t union_schema = avro_schema_union();
 
+    assert(avro_schema_union_size(union_schema) == PROTOCOL_MSG_BEGIN_TXN);
     avro_schema_t branch_schema = schema_for_begin_txn();
     avro_schema_union_append(union_schema, branch_schema);
     avro_schema_decref(branch_schema);
 
+    assert(avro_schema_union_size(union_schema) == PROTOCOL_MSG_COMMIT_TXN);
     branch_schema = schema_for_commit_txn();
     avro_schema_union_append(union_schema, branch_schema);
     avro_schema_decref(branch_schema);
 
+    assert(avro_schema_union_size(union_schema) == PROTOCOL_MSG_TABLE_SCHEMA);
     branch_schema = schema_for_table_schema();
     avro_schema_union_append(union_schema, branch_schema);
     avro_schema_decref(branch_schema);
 
+    assert(avro_schema_union_size(union_schema) == PROTOCOL_MSG_INSERT);
     branch_schema = schema_for_insert();
     avro_schema_union_append(union_schema, branch_schema);
     avro_schema_decref(branch_schema);

@@ -24,6 +24,13 @@
 /* Namespace for Avro records of the frame protocol */
 #define PROTOCOL_SCHEMA_NAMESPACE "org.apache.samza.postgres.protocol"
 
+/* Each message in the wire protocol is of one of these types */
+#define PROTOCOL_MSG_BEGIN_TXN      0
+#define PROTOCOL_MSG_COMMIT_TXN     1
+#define PROTOCOL_MSG_TABLE_SCHEMA   2
+#define PROTOCOL_MSG_INSERT         3
+
+
 struct schema_cache_entry {
     Oid relid;                     /* Uniquely identifies a table, even when it is renamed */
     uint64_t hash;                 /* Hash of table schema, to detect changes */
