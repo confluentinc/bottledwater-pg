@@ -47,10 +47,10 @@ avro_schema_t schema_for_relation(Relation rel, bool with_meta) {
     appendStringInfoString(&namespace, GENERATED_SCHEMA_NAMESPACE);
 
     /* TODO ensure that names abide by Avro's requirements */
-    char *rel_namespace = get_namespace_name(get_rel_namespace(RelationGetRelid(rel)));
+    char *rel_namespace = get_namespace_name(RelationGetNamespace(rel));
     if (rel_namespace) appendStringInfo(&namespace, ".%s", rel_namespace);
 
-    char *relname = NameStr(RelationGetForm(rel)->relname);
+    char *relname = RelationGetRelationName(rel);
     avro_schema_t record_schema = avro_schema_record(relname, namespace.data);
     avro_schema_t column_schema;
 

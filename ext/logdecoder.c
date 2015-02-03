@@ -21,7 +21,12 @@ typedef struct {
     avro_schema_t frame_schema;
     avro_value_iface_t *frame_iface;
     avro_value_t frame_value;
+    schema_cache_t schema_cache;
 } plugin_state;
+
+void reset_frame(plugin_state *state);
+int write_frame(LogicalDecodingContext *ctx, plugin_state *state);
+
 
 void _PG_init() {
 }
@@ -48,12 +53,14 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     state->frame_schema = schema_for_frame();
     state->frame_iface = avro_generic_class_from_schema(state->frame_schema);
     avro_generic_value_new(state->frame_iface, &state->frame_value);
+    state->schema_cache = schema_cache_new(ctx->context);
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {
     plugin_state *state = ctx->output_plugin_private;
     MemoryContextDelete(state->memctx);
 
+    schema_cache_free(state->schema_cache);
     avro_value_decref(&state->frame_value);
     avro_value_iface_decref(state->frame_iface);
     avro_schema_decref(state->frame_schema);
@@ -62,25 +69,15 @@ static void output_avro_shutdown(LogicalDecodingContext *ctx) {
 static void output_avro_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn) {
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
-    bytea *output = NULL;
+    reset_frame(state);
 
-    int err = update_frame_with_begin_txn(&state->frame_value, txn);
-    if (err) {
+    if (update_frame_with_begin_txn(&state->frame_value, txn)) {
         elog(ERROR, "output_avro_begin_txn: Avro conversion failed: %s", avro_strerror());
-    } else {
-        err = try_writing(&output, &write_avro_binary, &state->frame_value);
-        if (err) {
-            elog(ERROR, "output_avro_begin_txn: writing Avro binary failed: %s", avro_strerror());
-        }
+    }
+    if (write_frame(ctx, state)) {
+        elog(ERROR, "output_avro_begin_txn: writing Avro binary failed: %s", avro_strerror());
     }
 
-    if (!err) {
-        OutputPluginPrepareWrite(ctx, true);
-        appendBinaryStringInfo(ctx->out, VARDATA(output), VARSIZE(output) - VARHDRSZ);
-        OutputPluginWrite(ctx, true);
-    }
-
-    if (output) pfree(output);
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }
@@ -89,25 +86,15 @@ static void output_avro_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN
         XLogRecPtr commit_lsn) {
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
-    bytea *output = NULL;
+    reset_frame(state);
 
-    int err = update_frame_with_commit_txn(&state->frame_value, txn, commit_lsn);
-    if (err) {
+    if (update_frame_with_commit_txn(&state->frame_value, txn, commit_lsn)) {
         elog(ERROR, "output_avro_commit_txn: Avro conversion failed: %s", avro_strerror());
-    } else {
-        err = try_writing(&output, &write_avro_binary, &state->frame_value);
-        if (err) {
-            elog(ERROR, "output_avro_commit_txn: writing Avro binary failed: %s", avro_strerror());
-        }
+    }
+    if (write_frame(ctx, state)) {
+        elog(ERROR, "output_avro_commit_txn: writing Avro binary failed: %s", avro_strerror());
     }
 
-    if (!err) {
-        OutputPluginPrepareWrite(ctx, true);
-        appendBinaryStringInfo(ctx->out, VARDATA(output), VARSIZE(output) - VARHDRSZ);
-        OutputPluginWrite(ctx, true);
-    }
-
-    if (output) pfree(output);
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }
@@ -116,63 +103,40 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         Relation rel, ReorderBufferChange *change) {
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
-    avro_schema_t row_schema = NULL;
-    avro_value_iface_t *row_iface = NULL;
-    avro_value_t row_value;
-    bytea *schema_json = NULL, *value_bin = NULL, *output = NULL;
-
-    fprintf(stderr, "output_avro_change called\n");
+    reset_frame(state);
 
     // Only support inserts for now
     if (change->action != REORDER_BUFFER_CHANGE_INSERT) goto error;
 
-    row_schema = schema_for_relation(rel, false);
-    int err = try_writing(&schema_json, &write_schema_json, row_schema);
-    if (err) {
-        elog(ERROR, "output_avro_change: writing row schema failed: %s", avro_strerror());
-        goto error;
-    }
-
-    row_iface = avro_generic_class_from_schema(row_schema);
-    avro_generic_value_new(row_iface, &row_value);
-    err = update_avro_with_tuple(&row_value, row_schema, RelationGetDescr(rel),
-            &change->data.tp.newtuple->tuple);
-    if (err) {
+    if (update_frame_with_insert(&state->frame_value, state->schema_cache, rel,
+                &change->data.tp.newtuple->tuple)) {
         elog(ERROR, "output_avro_change: row conversion failed: %s", avro_strerror());
-        goto error;
+    }
+    if (write_frame(ctx, state)) {
+        elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
     }
 
-    err = try_writing(&value_bin, &write_avro_binary, &row_value);
-    if (err) {
-        elog(ERROR, "output_avro_change: writing row binary failed: %s", avro_strerror());
-        goto error;
-    }
+error:
+    MemoryContextSwitchTo(oldctx);
+    MemoryContextReset(state->memctx);
+}
 
-    err = update_frame_with_insert(&state->frame_value, schema_json, value_bin);
-    if (err) {
-        elog(ERROR, "output_avro_change: frame conversion failed: %s", avro_strerror());
-        goto error;
+void reset_frame(plugin_state *state) {
+    if (avro_value_reset(&state->frame_value)) {
+        elog(ERROR, "Avro value reset failed: %s", avro_strerror());
     }
+}
 
-    err = try_writing(&output, &write_avro_binary, &state->frame_value);
-    if (err) {
-        elog(ERROR, "output_avro_change: writing frame binary failed: %s", avro_strerror());
-        goto error;
-    }
+int write_frame(LogicalDecodingContext *ctx, plugin_state *state) {
+    int err = 0;
+    bytea *output = NULL;
+
+    check(err, try_writing(&output, &write_avro_binary, &state->frame_value));
 
     OutputPluginPrepareWrite(ctx, true);
     appendBinaryStringInfo(ctx->out, VARDATA(output), VARSIZE(output) - VARHDRSZ);
     OutputPluginWrite(ctx, true);
 
-error:
-    if (output) pfree(output);
-    if (value_bin) pfree(value_bin);
-    if (schema_json) pfree(schema_json);
-    if (row_iface) {
-        avro_value_iface_decref(row_iface);
-        avro_value_decref(&row_value);
-    }
-    if (row_schema) avro_schema_decref(row_schema);
-    MemoryContextSwitchTo(oldctx);
-    MemoryContextReset(state->memctx);
+    pfree(output);
+    return err;
 }

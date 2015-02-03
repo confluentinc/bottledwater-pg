@@ -7,6 +7,10 @@
 
 int update_frame_with_begin_txn(avro_value_t *frame_val, ReorderBufferTXN *txn);
 int update_frame_with_commit_txn(avro_value_t *frame_val, ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
-int update_frame_with_insert(avro_value_t *frame_val, bytea *schema_json, bytea *value_bin);
+int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Relation rel, HeapTuple tuple);
+
+schema_cache_t schema_cache_new(MemoryContext context);
+void schema_cache_free(schema_cache_t cache);
+int row_value_for_relation(schema_cache_t cache, Relation rel, avro_value_t *row_val);
 
 #endif /* PROTOCOL_SERVER_H */
