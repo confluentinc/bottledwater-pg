@@ -11,8 +11,8 @@
 int update_frame_with_table_schema(avro_value_t *frame_val, struct schema_cache_entry *entry);
 int update_frame_with_insert_raw(avro_value_t *frame_val, Oid relid, bytea *value_bin);
 int schema_cache_lookup(schema_cache_t cache, Relation rel, struct schema_cache_entry **entry_out);
-struct schema_cache_entry *cache_entry_new(schema_cache_t cache);
-void cache_entry_update(struct schema_cache_entry *entry, Relation rel);
+struct schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
+void schema_cache_entry_update(struct schema_cache_entry *entry, Relation rel);
 uint64 fnv_hash(uint64 base, char *str, int len);
 uint64 fnv_format(uint64 base, char *fmt, ...);
 uint64 schema_hash_for_relation(Relation rel);
@@ -136,22 +136,22 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, struct schema_cache_
             avro_value_decref(&entry->row_value);
             avro_value_iface_decref(entry->row_iface);
             avro_schema_decref(entry->row_schema);
-            cache_entry_update(entry, rel);
+            schema_cache_entry_update(entry, rel);
             *entry_out = entry;
             return 1;
         }
     }
 
     /* Schema not previously seen -- create a new cache entry */
-    struct schema_cache_entry *entry = cache_entry_new(cache);
-    cache_entry_update(entry, rel);
+    struct schema_cache_entry *entry = schema_cache_entry_new(cache);
+    schema_cache_entry_update(entry, rel);
     *entry_out = entry;
     return 2;
 }
 
 /* Adds a new entry to the cache, allocated within the cache's memory context.
  * Returns a pointer to the new entry. */
-struct schema_cache_entry *cache_entry_new(schema_cache_t cache) {
+struct schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
     MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
     if (cache->num_entries == cache->capacity) {
         cache->capacity *= 4;
@@ -166,7 +166,7 @@ struct schema_cache_entry *cache_entry_new(schema_cache_t cache) {
     return new_entry;
 }
 
-void cache_entry_update(struct schema_cache_entry *entry, Relation rel) {
+void schema_cache_entry_update(struct schema_cache_entry *entry, Relation rel) {
     entry->relid = RelationGetRelid(rel);
     entry->hash = schema_hash_for_relation(rel);
     entry->row_schema = schema_for_relation(rel, false);
