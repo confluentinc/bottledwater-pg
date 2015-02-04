@@ -29,6 +29,8 @@
 #define PROTOCOL_MSG_COMMIT_TXN     1
 #define PROTOCOL_MSG_TABLE_SCHEMA   2
 #define PROTOCOL_MSG_INSERT         3
+#define PROTOCOL_MSG_UPDATE         4
+#define PROTOCOL_MSG_DELETE         5
 
 
 struct schema_cache_entry {
@@ -37,6 +39,7 @@ struct schema_cache_entry {
     avro_schema_t row_schema;      /* Avro schema for one row of the table */
     avro_value_iface_t *row_iface; /* Avro generic interface for creating row values */
     avro_value_t row_value;        /* Avro row value, for encoding one row */
+    avro_value_t old_value;        /* Avro row value, for encoding the old value (in updates, deletes) */
 };
 
 struct schema_cache {

@@ -9,6 +9,9 @@ avro_schema_t schema_for_begin_txn(void);
 avro_schema_t schema_for_commit_txn(void);
 avro_schema_t schema_for_table_schema(void);
 avro_schema_t schema_for_insert(void);
+avro_schema_t schema_for_update(void);
+avro_schema_t schema_for_delete(void);
+avro_schema_t nullable_schema(avro_schema_t value_schema);
 
 avro_schema_t schema_for_frame() {
     avro_schema_t union_schema = avro_schema_union();
@@ -30,6 +33,16 @@ avro_schema_t schema_for_frame() {
 
     assert(avro_schema_union_size(union_schema) == PROTOCOL_MSG_INSERT);
     branch_schema = schema_for_insert();
+    avro_schema_union_append(union_schema, branch_schema);
+    avro_schema_decref(branch_schema);
+
+    assert(avro_schema_union_size(union_schema) == PROTOCOL_MSG_UPDATE);
+    branch_schema = schema_for_update();
+    avro_schema_union_append(union_schema, branch_schema);
+    avro_schema_decref(branch_schema);
+
+    assert(avro_schema_union_size(union_schema) == PROTOCOL_MSG_DELETE);
+    branch_schema = schema_for_delete();
     avro_schema_union_append(union_schema, branch_schema);
     avro_schema_decref(branch_schema);
 
@@ -92,8 +105,50 @@ avro_schema_t schema_for_insert() {
     avro_schema_decref(field_schema);
 
     field_schema = avro_schema_bytes();
-    avro_schema_record_field_append(record_schema, "row", field_schema);
+    avro_schema_record_field_append(record_schema, "newrow", field_schema);
     avro_schema_decref(field_schema);
 
     return record_schema;
+}
+
+avro_schema_t schema_for_update() {
+    avro_schema_t record_schema = avro_schema_record("Update", PROTOCOL_SCHEMA_NAMESPACE);
+
+    avro_schema_t field_schema = avro_schema_long();
+    avro_schema_record_field_append(record_schema, "relid", field_schema);
+    avro_schema_decref(field_schema);
+
+    field_schema = nullable_schema(avro_schema_bytes());
+    avro_schema_record_field_append(record_schema, "oldrow", field_schema);
+    avro_schema_decref(field_schema);
+
+    field_schema = avro_schema_bytes();
+    avro_schema_record_field_append(record_schema, "newrow", field_schema);
+    avro_schema_decref(field_schema);
+
+    return record_schema;
+}
+
+avro_schema_t schema_for_delete() {
+    avro_schema_t record_schema = avro_schema_record("Delete", PROTOCOL_SCHEMA_NAMESPACE);
+
+    avro_schema_t field_schema = avro_schema_long();
+    avro_schema_record_field_append(record_schema, "relid", field_schema);
+    avro_schema_decref(field_schema);
+
+    field_schema = nullable_schema(avro_schema_bytes());
+    avro_schema_record_field_append(record_schema, "oldrow", field_schema);
+    avro_schema_decref(field_schema);
+
+    return record_schema;
+}
+
+avro_schema_t nullable_schema(avro_schema_t value_schema) {
+    avro_schema_t null_schema = avro_schema_null();
+    avro_schema_t union_schema = avro_schema_union();
+    avro_schema_union_append(union_schema, null_schema);
+    avro_schema_union_append(union_schema, value_schema);
+    avro_schema_decref(null_schema);
+    avro_schema_decref(value_schema);
+    return union_schema;
 }

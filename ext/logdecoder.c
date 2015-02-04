@@ -101,22 +101,50 @@ static void output_avro_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN
 
 static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
         Relation rel, ReorderBufferChange *change) {
+    int err = 0;
+    HeapTuple oldtuple = NULL, newtuple = NULL;
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
     reset_frame(state);
 
-    // Only support inserts for now
-    if (change->action != REORDER_BUFFER_CHANGE_INSERT) goto error;
+    switch (change->action) {
+        case REORDER_BUFFER_CHANGE_INSERT:
+            if (!change->data.tp.newtuple) {
+                elog(ERROR, "output_avro_change: insert action without a tuple");
+            }
+            newtuple = &change->data.tp.newtuple->tuple;
+            err = update_frame_with_insert(&state->frame_value, state->schema_cache, rel, newtuple);
+            break;
 
-    if (update_frame_with_insert(&state->frame_value, state->schema_cache, rel,
-                &change->data.tp.newtuple->tuple)) {
+        case REORDER_BUFFER_CHANGE_UPDATE:
+            if (!change->data.tp.newtuple) {
+                elog(ERROR, "output_avro_change: update action without a tuple");
+            }
+            if (change->data.tp.oldtuple) {
+                oldtuple = &change->data.tp.oldtuple->tuple;
+            }
+            newtuple = &change->data.tp.newtuple->tuple;
+            err = update_frame_with_update(&state->frame_value, state->schema_cache, rel, oldtuple, newtuple);
+            break;
+
+        case REORDER_BUFFER_CHANGE_DELETE:
+            if (change->data.tp.oldtuple) {
+                oldtuple = &change->data.tp.oldtuple->tuple;
+            }
+            err = update_frame_with_delete(&state->frame_value, state->schema_cache, rel, oldtuple);
+            break;
+
+        default:
+            elog(ERROR, "output_avro_change: unknown change action %d", change->action);
+    }
+
+    if (err) {
         elog(ERROR, "output_avro_change: row conversion failed: %s", avro_strerror());
     }
     if (write_frame(ctx, state)) {
         elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
     }
 
-error:
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }

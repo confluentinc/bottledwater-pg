@@ -19,10 +19,15 @@ int process_frame_begin_txn(avro_value_t *record_val);
 int process_frame_commit_txn(avro_value_t *record_val);
 int process_frame_table_schema(avro_value_t *record_val, schema_cache_t cache);
 int process_frame_insert(avro_value_t *record_val, schema_cache_t cache);
-int process_frame_insert_decoded(Oid relid, avro_schema_t schema, avro_value_t *row_val);
+int process_frame_update(avro_value_t *record_val, schema_cache_t cache);
+int process_frame_delete(avro_value_t *record_val, schema_cache_t cache);
+int process_frame_insert_decoded(Oid relid, avro_schema_t schema, avro_value_t *newrow_val);
+int process_frame_update_decoded(Oid relid, avro_schema_t schema, avro_value_t *oldrow_val, avro_value_t *newrow_val);
+int process_frame_delete_decoded(Oid relid, avro_schema_t schema, avro_value_t *oldrow_val);
 struct schema_cache_entry *schema_cache_lookup(schema_cache_t cache, int64_t relid);
 struct schema_cache_entry *schema_cache_replace(schema_cache_t cache, int64_t relid);
 struct schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
+int read_entirely(avro_value_t *value, const void *buf, size_t len);
 
 
 int process_frame(avro_value_t *frame_val, schema_cache_t cache, uint64_t wal_pos) {
@@ -50,6 +55,12 @@ int process_frame(avro_value_t *frame_val, schema_cache_t cache, uint64_t wal_po
                 break;
             case PROTOCOL_MSG_INSERT:
                 check(err, process_frame_insert(&record_val, cache));
+                break;
+            case PROTOCOL_MSG_UPDATE:
+                check(err, process_frame_update(&record_val, cache));
+                break;
+            case PROTOCOL_MSG_DELETE:
+                check(err, process_frame_delete(&record_val, cache));
                 break;
             default:
                 avro_set_error("Unknown message type %d", msg_type);
@@ -102,21 +113,22 @@ int process_frame_table_schema(avro_value_t *record_val, schema_cache_t cache) {
     entry->row_schema = schema;
     entry->row_iface = avro_generic_class_from_schema(schema);
     avro_generic_value_new(entry->row_iface, &entry->row_value);
+    avro_generic_value_new(entry->row_iface, &entry->old_value);
 
     return err;
 }
 
 int process_frame_insert(avro_value_t *record_val, schema_cache_t cache) {
     int err = 0;
-    avro_value_t relid_val, value_val;
+    avro_value_t relid_val, newrow_val;
     int64_t relid;
-    const void *value_bin;
-    size_t value_len;
+    const void *new_bin;
+    size_t new_len;
 
-    check(err, avro_value_get_by_index(record_val, 0, &relid_val, NULL));
-    check(err, avro_value_get_by_index(record_val, 1, &value_val,  NULL));
+    check(err, avro_value_get_by_index(record_val, 0, &relid_val,  NULL));
+    check(err, avro_value_get_by_index(record_val, 1, &newrow_val, NULL));
     check(err, avro_value_get_long(&relid_val, &relid));
-    check(err, avro_value_get_bytes(&value_val, &value_bin, &value_len));
+    check(err, avro_value_get_bytes(&newrow_val, &new_bin, &new_len));
 
     struct schema_cache_entry *entry = schema_cache_lookup(cache, relid);
     if (!entry) {
@@ -124,35 +136,109 @@ int process_frame_insert(avro_value_t *record_val, schema_cache_t cache) {
         return EINVAL;
     }
 
-    avro_reader_t reader = avro_reader_memory(value_bin, value_len);
-    err = avro_value_read(reader, &entry->row_value);
-    if (err) {
-        avro_reader_free(reader);
-        return err;
-    }
-
-    // Expect the reading of the Avro value from the buffer to entirely consume the
-    // buffer contents. If there's anything left at the end, something must be wrong.
-    // Avro doesn't seem to provide a way of checking how many bytes remain, so we
-    // test indirectly by trying to seek forward (expecting to see an error).
-    if (avro_skip(reader, 1) != ENOSPC) {
-        avro_reader_free(reader);
-        avro_set_error("Unexpected trailing bytes at the end of row data");
-        return EINVAL;
-    }
-
-    avro_reader_free(reader);
-
+    check(err, read_entirely(&entry->row_value, new_bin, new_len));
     check(err, process_frame_insert_decoded(relid, entry->row_schema, &entry->row_value));
     return err;
 }
 
-int process_frame_insert_decoded(Oid relid, avro_schema_t schema, avro_value_t *row_val) {
+int process_frame_update(avro_value_t *record_val, schema_cache_t cache) {
+    int err = 0, oldrow_present;
+    avro_value_t relid_val, oldrow_val, newrow_val, branch_val;
+    int64_t relid;
+    const void *old_bin = NULL, *new_bin = NULL;
+    size_t old_len, new_len;
+
+    check(err, avro_value_get_by_index(record_val, 0, &relid_val,  NULL));
+    check(err, avro_value_get_by_index(record_val, 1, &oldrow_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 2, &newrow_val, NULL));
+    check(err, avro_value_get_long(&relid_val, &relid));
+    check(err, avro_value_get_discriminant(&oldrow_val, &oldrow_present));
+    check(err, avro_value_get_bytes(&newrow_val, &new_bin, &new_len));
+
+    struct schema_cache_entry *entry = schema_cache_lookup(cache, relid);
+    if (!entry) {
+        avro_set_error("Received update for unknown relid %u", relid);
+        return EINVAL;
+    }
+
+    if (oldrow_present) {
+        check(err, avro_value_get_current_branch(&oldrow_val, &branch_val));
+        check(err, avro_value_get_bytes(&branch_val, &old_bin, &old_len));
+        check(err, read_entirely(&entry->old_value, old_bin, old_len));
+    }
+
+    check(err, read_entirely(&entry->row_value, new_bin, new_len));
+    check(err, process_frame_update_decoded(relid, entry->row_schema,
+                old_bin ? &entry->old_value : NULL, &entry->row_value));
+    return err;
+}
+
+int process_frame_delete(avro_value_t *record_val, schema_cache_t cache) {
+    int err = 0, oldrow_present;
+    avro_value_t relid_val, oldrow_val, branch_val;
+    int64_t relid;
+    const void *old_bin = NULL;
+    size_t old_len;
+
+    check(err, avro_value_get_by_index(record_val, 0, &relid_val,  NULL));
+    check(err, avro_value_get_by_index(record_val, 1, &oldrow_val, NULL));
+    check(err, avro_value_get_long(&relid_val, &relid));
+    check(err, avro_value_get_discriminant(&oldrow_val, &oldrow_present));
+
+    struct schema_cache_entry *entry = schema_cache_lookup(cache, relid);
+    if (!entry) {
+        avro_set_error("Received delete for unknown relid %u", relid);
+        return EINVAL;
+    }
+
+    if (oldrow_present) {
+        check(err, avro_value_get_current_branch(&oldrow_val, &branch_val));
+        check(err, avro_value_get_bytes(&branch_val, &old_bin, &old_len));
+        check(err, read_entirely(&entry->old_value, old_bin, old_len));
+    }
+
+    check(err, process_frame_delete_decoded(relid, entry->row_schema,
+                old_bin ? &entry->old_value : NULL));
+    return err;
+}
+
+int process_frame_insert_decoded(Oid relid, avro_schema_t schema, avro_value_t *newrow_val) {
     int err = 0;
-    char *json;
-    check(err, avro_value_to_json(row_val, 1, &json));
-    printf("insert to %s: %s\n", avro_schema_name(schema), json);
-    free(json);
+    char *newrow_json;
+    check(err, avro_value_to_json(newrow_val, 1, &newrow_json));
+    printf("insert to %s: %s\n", avro_schema_name(schema), newrow_json);
+    free(newrow_json);
+    return err;
+}
+
+int process_frame_update_decoded(Oid relid, avro_schema_t schema, avro_value_t *oldrow_val, avro_value_t *newrow_val) {
+    int err = 0;
+    char *oldrow_json, *newrow_json;
+    check(err, avro_value_to_json(newrow_val, 1, &newrow_json));
+
+    if (oldrow_val) {
+        check(err, avro_value_to_json(oldrow_val, 1, &oldrow_json));
+        printf("update to %s: %s --> %s\n", avro_schema_name(schema), oldrow_json, newrow_json);
+        free(oldrow_json);
+    } else {
+        printf("update to %s: (?) --> %s\n", avro_schema_name(schema), newrow_json);
+    }
+
+    free(newrow_json);
+    return err;
+}
+
+int process_frame_delete_decoded(Oid relid, avro_schema_t schema, avro_value_t *oldrow_val) {
+    int err = 0;
+    char *oldrow_json;
+
+    if (oldrow_val) {
+        check(err, avro_value_to_json(oldrow_val, 1, &oldrow_json));
+        printf("delete to %s: %s\n", avro_schema_name(schema), oldrow_json);
+        free(oldrow_json);
+    } else {
+        printf("delete to %s (?)\n", avro_schema_name(schema));
+    }
     return err;
 }
 
@@ -182,6 +268,7 @@ struct schema_cache_entry *schema_cache_lookup(schema_cache_t cache, int64_t rel
 struct schema_cache_entry *schema_cache_replace(schema_cache_t cache, int64_t relid) {
     struct schema_cache_entry *entry = schema_cache_lookup(cache, relid);
     if (entry) {
+        avro_value_decref(&entry->old_value);
         avro_value_decref(&entry->row_value);
         avro_value_iface_decref(entry->row_iface);
         avro_schema_decref(entry->row_schema);
@@ -211,6 +298,7 @@ struct schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
 void schema_cache_free(schema_cache_t cache) {
     for (int i = 0; i < cache->num_entries; i++) {
         struct schema_cache_entry *entry = cache->entries[i];
+        avro_value_decref(&entry->old_value);
         avro_value_decref(&entry->row_value);
         avro_value_iface_decref(entry->row_iface);
         avro_schema_decref(entry->row_schema);
@@ -219,4 +307,30 @@ void schema_cache_free(schema_cache_t cache) {
 
     free(cache->entries);
     free(cache);
+}
+
+/* Parses the contents of a binary-encoded Avro buffer into an Avro value, ensuring
+ * that the entire buffer is read. */
+int read_entirely(avro_value_t *value, const void *buf, size_t len) {
+    avro_reader_t reader = avro_reader_memory(buf, len);
+    if (!reader) return ENOMEM;
+
+    int err = avro_value_read(reader, value);
+    if (err) {
+        avro_reader_free(reader);
+        return err;
+    }
+
+    // Expect the reading of the Avro value from the buffer to entirely consume the
+    // buffer contents. If there's anything left at the end, something must be wrong.
+    // Avro doesn't seem to provide a way of checking how many bytes remain, so we
+    // test indirectly by trying to seek forward (expecting to see an error).
+    if (avro_skip(reader, 1) != ENOSPC) {
+        avro_reader_free(reader);
+        avro_set_error("Unexpected trailing bytes at the end of row data");
+        return EINVAL;
+    }
+
+    avro_reader_free(reader);
+    return 0;
 }
