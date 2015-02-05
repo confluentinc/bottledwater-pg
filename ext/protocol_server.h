@@ -5,6 +5,23 @@
 #include "postgres.h"
 #include "replication/output_plugin.h"
 
+typedef struct {
+    Oid relid;                     /* Uniquely identifies a table, even when it is renamed */
+    uint64_t hash;                 /* Hash of table schema, to detect changes */
+    avro_schema_t row_schema;      /* Avro schema for one row of the table */
+    avro_value_iface_t *row_iface; /* Avro generic interface for creating row values */
+    avro_value_t row_value;        /* Avro row value, for encoding one row */
+} schema_cache_entry;
+
+typedef struct {
+    MemoryContext context;         /* Context in which cache entries are allocated */
+    int num_entries;               /* Number of entries in use */
+    int capacity;                  /* Allocated size of entries array */
+    schema_cache_entry **entries;  /* Array of pointers to cache entries */
+} schema_cache;
+
+typedef schema_cache *schema_cache_t;
+
 int update_frame_with_begin_txn(avro_value_t *frame_val, ReorderBufferTXN *txn);
 int update_frame_with_commit_txn(avro_value_t *frame_val, ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Relation rel, HeapTuple newtuple);

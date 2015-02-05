@@ -12,11 +12,7 @@ struct replication_stream {
     XLogRecPtr recvd_lsn;
     XLogRecPtr fsync_lsn;
     int64 last_checkpoint;
-    avro_schema_t frame_schema;
-    avro_value_iface_t *frame_iface;
-    avro_reader_t frame_reader;
-    avro_value_t frame_value;
-    schema_cache_t schema_cache;
+    frame_reader_t frame_reader;
 };
 
 typedef struct replication_stream *replication_stream_t;

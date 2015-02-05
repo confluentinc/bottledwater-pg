@@ -12,15 +12,6 @@
 
 #include "avro.h"
 
-/* When compiling for the client side, PG_CDC_CLIENT is defined. The only
- * difference is that on the server, Postgres memory contexts are used for heap
- * memory allocation, whereas on the client, regular malloc is used. */
-#ifdef PG_CDC_CLIENT
-#include "postgres_ext.h"
-#else
-#include "postgres.h"
-#endif
-
 /* Namespace for Avro records of the frame protocol */
 #define PROTOCOL_SCHEMA_NAMESPACE "org.apache.samza.postgres.protocol"
 
@@ -31,27 +22,6 @@
 #define PROTOCOL_MSG_INSERT         3
 #define PROTOCOL_MSG_UPDATE         4
 #define PROTOCOL_MSG_DELETE         5
-
-
-struct schema_cache_entry {
-    Oid relid;                     /* Uniquely identifies a table, even when it is renamed */
-    uint64_t hash;                 /* Hash of table schema, to detect changes */
-    avro_schema_t row_schema;      /* Avro schema for one row of the table */
-    avro_value_iface_t *row_iface; /* Avro generic interface for creating row values */
-    avro_value_t row_value;        /* Avro row value, for encoding one row */
-    avro_value_t old_value;        /* Avro row value, for encoding the old value (in updates, deletes) */
-};
-
-struct schema_cache {
-#ifndef PG_CDC_CLIENT /* Memory contexts are only used on the server side */
-    MemoryContext context;               /* Context in which cache entries are allocated */
-#endif
-    int num_entries;                     /* Number of entries in use */
-    int capacity;                        /* Allocated size of entries array */
-    struct schema_cache_entry **entries; /* Array of pointers to cache entries */
-};
-
-typedef struct schema_cache *schema_cache_t;
 
 
 avro_schema_t schema_for_frame(void);

@@ -8,13 +8,13 @@
 #include <stdarg.h>
 #include "utils/lsyscache.h"
 
-int update_frame_with_table_schema(avro_value_t *frame_val, struct schema_cache_entry *entry);
+int update_frame_with_table_schema(avro_value_t *frame_val, schema_cache_entry *entry);
 int update_frame_with_insert_raw(avro_value_t *frame_val, Oid relid, bytea *value_bin);
 int update_frame_with_update_raw(avro_value_t *frame_val, Oid relid, bytea *old_bin, bytea *new_bin);
 int update_frame_with_delete_raw(avro_value_t *frame_val, Oid relid, bytea *old_bin);
-int schema_cache_lookup(schema_cache_t cache, Relation rel, struct schema_cache_entry **entry_out);
-struct schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
-void schema_cache_entry_update(struct schema_cache_entry *entry, Relation rel);
+int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry **entry_out);
+schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
+void schema_cache_entry_update(schema_cache_entry *entry, Relation rel);
 uint64 fnv_hash(uint64 base, char *str, int len);
 uint64 fnv_format(uint64 base, char *fmt, ...);
 uint64 schema_hash_for_relation(Relation rel);
@@ -53,7 +53,7 @@ int update_frame_with_commit_txn(avro_value_t *frame_val, ReorderBufferTXN *txn,
 
 int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Relation rel, HeapTuple newtuple) {
     int err = 0;
-    struct schema_cache_entry *entry;
+    schema_cache_entry *entry;
     bytea *new_bin = NULL;
 
     int changed = schema_cache_lookup(cache, rel, &entry);
@@ -72,7 +72,7 @@ int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Rela
 
 int update_frame_with_update(avro_value_t *frame_val, schema_cache_t cache, Relation rel, HeapTuple oldtuple, HeapTuple newtuple) {
     int err = 0;
-    struct schema_cache_entry *entry;
+    schema_cache_entry *entry;
     bytea *old_bin = NULL, *new_bin = NULL;
 
     int changed = schema_cache_lookup(cache, rel, &entry);
@@ -98,7 +98,7 @@ int update_frame_with_update(avro_value_t *frame_val, schema_cache_t cache, Rela
 
 int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Relation rel, HeapTuple oldtuple) {
     int err = 0;
-    struct schema_cache_entry *entry;
+    schema_cache_entry *entry;
     bytea *old_bin = NULL;
 
     int changed = schema_cache_lookup(cache, rel, &entry);
@@ -117,7 +117,7 @@ int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Rela
     return err;
 }
 
-int update_frame_with_table_schema(avro_value_t *frame_val, struct schema_cache_entry *entry) {
+int update_frame_with_table_schema(avro_value_t *frame_val, schema_cache_entry *entry) {
     int err = 0;
     avro_value_t msg_val, union_val, record_val, relid_val, hash_val, schema_val;
     bytea *json = NULL;
@@ -197,7 +197,7 @@ int update_frame_with_delete_raw(avro_value_t *frame_val, Oid relid, bytea *old_
  * performed in the given memory context. */
 schema_cache_t schema_cache_new(MemoryContext context) {
     MemoryContext oldctx = MemoryContextSwitchTo(context);
-    schema_cache_t cache = palloc0(sizeof(struct schema_cache));
+    schema_cache_t cache = palloc0(sizeof(schema_cache));
     cache->context = context;
     cache->num_entries = 0;
     cache->capacity = 16;
@@ -209,11 +209,11 @@ schema_cache_t schema_cache_new(MemoryContext context) {
 /* Obtains the schema cache entry for the given relation, creating or updating it if necessary.
  * If the schema hasn't changed since the last invocation, a cached value is used and 0 is returned.
  * If the schema has changed, 1 is returned. If the schema has not been seen before, 2 is returned. */
-int schema_cache_lookup(schema_cache_t cache, Relation rel, struct schema_cache_entry **entry_out) {
+int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry **entry_out) {
     Oid relid = RelationGetRelid(rel);
 
     for (int i = 0; i < cache->num_entries; i++) {
-        struct schema_cache_entry *entry = cache->entries[i];
+        schema_cache_entry *entry = cache->entries[i];
         if (entry->relid != relid) continue;
 
         uint64 hash = schema_hash_for_relation(rel);
@@ -234,7 +234,7 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, struct schema_cache_
     }
 
     /* Schema not previously seen -- create a new cache entry */
-    struct schema_cache_entry *entry = schema_cache_entry_new(cache);
+    schema_cache_entry *entry = schema_cache_entry_new(cache);
     schema_cache_entry_update(entry, rel);
     *entry_out = entry;
     return 2;
@@ -242,14 +242,14 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, struct schema_cache_
 
 /* Adds a new entry to the cache, allocated within the cache's memory context.
  * Returns a pointer to the new entry. */
-struct schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
+schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
     MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
     if (cache->num_entries == cache->capacity) {
         cache->capacity *= 4;
         cache->entries = repalloc(cache->entries, cache->capacity * sizeof(void*));
     }
 
-    struct schema_cache_entry *new_entry = palloc0(sizeof(struct schema_cache_entry));
+    schema_cache_entry *new_entry = palloc0(sizeof(schema_cache_entry));
     cache->entries[cache->num_entries] = new_entry;
     cache->num_entries++;
 
@@ -257,7 +257,7 @@ struct schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
     return new_entry;
 }
 
-void schema_cache_entry_update(struct schema_cache_entry *entry, Relation rel) {
+void schema_cache_entry_update(schema_cache_entry *entry, Relation rel) {
     entry->relid = RelationGetRelid(rel);
     entry->hash = schema_hash_for_relation(rel);
     entry->row_schema = schema_for_relation(rel, false);
@@ -270,7 +270,7 @@ void schema_cache_free(schema_cache_t cache) {
     MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
 
     for (int i = 0; i < cache->num_entries; i++) {
-        struct schema_cache_entry *entry = cache->entries[i];
+        schema_cache_entry *entry = cache->entries[i];
         avro_value_decref(&entry->row_value);
         avro_value_iface_decref(entry->row_iface);
         avro_schema_decref(entry->row_schema);

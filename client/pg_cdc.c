@@ -14,11 +14,7 @@
 
 struct table_context_t {
     PGconn *sql_conn, *rep_conn;
-    avro_schema_t frame_schema;
-    avro_value_iface_t *frame_iface;
-    avro_reader_t frame_reader;
-    avro_value_t frame_value;
-    schema_cache_t schema_cache;
+    frame_reader_t frame_reader;
 };
 
 void exit_nicely(struct table_context_t *context);
@@ -63,11 +59,7 @@ void init_table_context(struct table_context_t *context) {
         exit(1);
     }
 
-    context->frame_schema = schema_for_frame();
-    context->frame_iface = avro_generic_class_from_schema(context->frame_schema);
-    context->frame_reader = avro_reader_memory(NULL, 0);
-    avro_generic_value_new(context->frame_iface, &context->frame_value);
-    context->schema_cache = schema_cache_new();
+    context->frame_reader = frame_reader_new();
 }
 
 /* Returns true if a replication slot with the given name already exists, and false if not.
@@ -166,22 +158,14 @@ void output_tuple(struct table_context_t *context, PGresult *res, int row_number
         exit_nicely(context);
     }
 
-    avro_reader_memory_set_source(context->frame_reader,
+    /* wal_pos == 0 == InvalidXLogRecPtr */
+    int err = parse_frame(context->frame_reader, 0,
             PQgetvalue(res, row_number, 0),
             PQgetlength(res, row_number, 0));
 
-    // TODO use read_entirely()
-    if (avro_value_read(context->frame_reader, &context->frame_value)) {
-        fprintf(stderr, "Unable to parse Avro data: %s\n", avro_strerror());
-        exit_nicely(context);
-    }
-
-    /* wal_pos == 0 == InvalidXLogRecPtr */
-    if (process_frame(&context->frame_value, context->schema_cache, 0)) {
-        fprintf(stderr, "Error processing frame data: %s\n", avro_strerror());
-        exit_nicely(context);
-    }
+    if (err) exit_nicely(context);
 }
+
 
 int main(int argc, char **argv) {
     char *slot_name = DB_REPLICATION_SLOT, *snapshot_name = NULL;
@@ -212,12 +196,7 @@ int main(int argc, char **argv) {
     PQfinish(context.sql_conn);
     consume_stream(context.rep_conn, slot_name, start_pos);
 
-    schema_cache_free(context.schema_cache);
-    avro_value_decref(&context.frame_value);
-    avro_reader_free(context.frame_reader);
-    avro_value_iface_decref(context.frame_iface);
-    avro_schema_decref(context.frame_schema);
-
+    frame_reader_free(context.frame_reader);
     PQfinish(context.rep_conn);
     return 0;
 }

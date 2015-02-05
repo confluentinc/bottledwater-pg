@@ -19,7 +19,6 @@ bool start_stream(PGconn *conn, char *slot_name, XLogRecPtr position);
 int poll_stream(replication_stream_t stream);
 bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
 bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen);
-bool parse_frame(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen);
 int64 current_time(void);
 void sendint64(int64 i64, char *buf);
 int64 recvint64(char *buf);
@@ -33,12 +32,7 @@ bool consume_stream(PGconn *conn, char *slot_name, XLogRecPtr start_pos) {
     stream.recvd_lsn = InvalidXLogRecPtr;
     stream.fsync_lsn = InvalidXLogRecPtr;
     stream.last_checkpoint = 0;
-
-    stream.frame_schema = schema_for_frame();
-    stream.frame_reader = avro_reader_memory(NULL, 0);
-    stream.frame_iface = avro_generic_class_from_schema(stream.frame_schema);
-    avro_generic_value_new(stream.frame_iface, &stream.frame_value);
-    stream.schema_cache = schema_cache_new();
+    stream.frame_reader = frame_reader_new();
 
     bool success = true;
     while (success) { // TODO while not aborted
@@ -84,12 +78,7 @@ bool consume_stream(PGconn *conn, char *slot_name, XLogRecPtr start_pos) {
     }
     PQclear(res);
 
-    schema_cache_free(stream.schema_cache);
-    avro_value_decref(&stream.frame_value);
-    avro_reader_free(stream.frame_reader);
-    avro_value_iface_decref(stream.frame_iface);
-    avro_schema_decref(stream.frame_schema);
-
+    frame_reader_free(stream.frame_reader);
     return success;
 }
 
@@ -356,35 +345,11 @@ bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen) 
     fprintf(stderr, "XLogData: wal_pos %X/%X\n", (uint32) (wal_pos >> 32), (uint32) wal_pos);
 #endif
 
-    bool success = parse_frame(stream, wal_pos, buf + hdrlen, buflen - hdrlen);
+    int err = parse_frame(stream->frame_reader, wal_pos, buf + hdrlen, buflen - hdrlen);
 
     stream->recvd_lsn = Max(wal_pos, stream->recvd_lsn);
 
-    return success;
-}
-
-bool parse_frame(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen) {
-    avro_reader_memory_set_source(stream->frame_reader, buf, buflen);
-
-    if (avro_value_read(stream->frame_reader, &stream->frame_value)) {
-        fprintf(stderr, "Unable to parse Avro data: %s\n", avro_strerror());
-        return false;
-    }
-
-    // Expect the reading of the Avro value from the buffer to entirely consume the
-    // buffer contents. If there's anything left at the end, something must be wrong.
-    // Avro doesn't seem to provide a way of checking how many bytes remain, so we
-    // test indirectly by trying to seek forward (expecting to see an error).
-    if (avro_skip(stream->frame_reader, 1) != ENOSPC) {
-        fprintf(stderr, "Unexpected trailing bytes in the replication buffer\n");
-        return false;
-    }
-
-    if (process_frame(&stream->frame_value, stream->schema_cache, wal_pos)) {
-        fprintf(stderr, "Error parsing frame data: %s\n", avro_strerror());
-        return false;
-    }
-    return true;
+    return !err;
 }
 
 
