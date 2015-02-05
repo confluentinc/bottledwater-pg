@@ -80,21 +80,29 @@ Datum samza_frame_schema(PG_FUNCTION_ARGS) {
 
 PG_FUNCTION_INFO_V1(samza_table_export);
 
-/* Given the name of a table, returns a set of byte array values containing the table contents
- * encoded as Avro (one byte array per row of the table). */
+/* Given a search pattern for tables ('%' matches all tables), returns a set of byte array values.
+ * Each byte array is a frame of our wire protocol, containing schemas and/or rows of the selected
+ * tables. This is a set-returning function (SRF), which means it gets called once for each row of
+ * output, allowing us to stream through large datasets without loading everything into memory.
+ *
+ * SRF docs: http://www.postgresql.org/docs/9.4/static/xfunc-c.html#XFUNC-C-RETURN-SET */
 Datum samza_table_export(PG_FUNCTION_ARGS) {
     FuncCallContext *funcctx;
     export_state *state;
     int ret;
 
     if (SRF_IS_FIRSTCALL()) {
-        /* On first call of the function, determine the list of tables to export */
         funcctx = SRF_FIRSTCALL_INIT();
-        MemoryContext oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
+        /* Initialize the SPI (server programming interface), which allows us to make SQL queries
+         * within this function. Note SPI_connect() switches to its own memory context, but we
+         * actually want to use multi_call_memory_ctx, so we call SPI_connect() first. */
         if ((ret = SPI_connect()) < 0) {
             elog(ERROR, "samza_table_export: SPI_connect returned %d", ret);
         }
+
+        /* Things allocated in this memory context will live until SRF_RETURN_DONE(). */
+        MemoryContext oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
         state = (export_state *) palloc(sizeof(export_state));
         state->current_table = 0;
