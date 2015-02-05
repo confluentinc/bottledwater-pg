@@ -14,7 +14,9 @@
 
 // #define DEBUG 1
 
-bool check_replication_connection(PGconn *conn);
+bool checkpoint(replication_stream_t stream, int64 now);
+bool start_stream(PGconn *conn, char *slot_name, XLogRecPtr position);
+int poll_stream(replication_stream_t stream);
 bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
 bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen);
 bool parse_frame(replication_stream_t stream, XLogRecPtr wal_pos, char *buf, int buflen);
@@ -22,9 +24,9 @@ int64 current_time(void);
 void sendint64(int64 i64, char *buf);
 int64 recvint64(char *buf);
 
-bool consume_stream(PGconn *conn, char *slot_name) {
+bool consume_stream(PGconn *conn, char *slot_name, XLogRecPtr start_pos) {
     if (!check_replication_connection(conn)) return false;
-    if (!start_stream(conn, slot_name, InvalidXLogRecPtr)) return false;
+    if (!start_stream(conn, slot_name, start_pos)) return false;
 
     struct replication_stream stream;
     stream.conn = conn;
@@ -117,6 +119,68 @@ bool check_replication_connection(PGconn *conn) {
 
     PQclear(res);
     return true;
+}
+
+/* Send a CREATE_REPLICATION_SLOT ... LOGICAL command to the server. This is similar to
+ * the pg_create_logical_replication_slot() function you can call from SQL, but with a
+ * crucial addition: it exports a consistent snapshot which we can use to dump a copy
+ * of the database contents at the start of the replication slot. Note that the snapshot
+ * is deleted when the next command is sent to the server on this replication connection,
+ * so the snapshot name should be used immediately after the replication slot has been
+ * created.
+ *
+ * The server response to the CREATE_REPLICATION_SLOT doesn't seem to be documented
+ * anywhere, but based on reading the code, it's a tuple with the following fields:
+ *
+ *   1. "slot_name": name of the slot that was created, as requested
+ *   2. "consistent_point": LSN at which we became consistent
+ *   3. "snapshot_name": exported snapshot's name
+ *   4. "output_plugin": name of the output plugin, as requested
+ */
+bool create_replication_slot(PGconn *conn, const char *slot_name, const char *output_plugin,
+        XLogRecPtr *start_pos, char **snapshot_name) {
+    PQExpBuffer query = createPQExpBuffer();
+    appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"",
+            slot_name, output_plugin);
+
+    PGresult *res = PQexec(conn, query->data);
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        fprintf(stderr, "Command failed: %s: %s", query->data, PQerrorMessage(conn));
+        goto error;
+    }
+
+    if (PQntuples(res) != 1 || PQnfields(res) != 4) {
+        fprintf(stderr, "Unexpected CREATE_REPLICATION_SLOT result (%d rows, %d fields)\n",
+                PQntuples(res), PQnfields(res));
+        goto error;
+    }
+
+    if (PQgetisnull(res, 0, 1) || PQgetisnull(res, 0, 2)) {
+        fprintf(stderr, "Unexpected null value in CREATE_REPLICATION_SLOT response\n");
+        goto error;
+    }
+
+    if (start_pos) {
+        uint32 h32, l32;
+        if (sscanf(PQgetvalue(res, 0, 1), "%X/%X", &h32, &l32) != 2) {
+            fprintf(stderr, "Could not parse LSN: \"%s\"\n", PQgetvalue(res, 0, 1));
+            goto error;
+        }
+        *start_pos = ((uint64) h32) << 32 | l32;
+    }
+
+    if (snapshot_name) {
+        *snapshot_name = strdup(PQgetvalue(res, 0, 2));
+    }
+
+    destroyPQExpBuffer(query);
+    PQclear(res);
+    return true;
+
+error:
+    destroyPQExpBuffer(query);
+    PQclear(res);
+    return false;
 }
 
 /* Send a "Standby status update" message to server, indicating the LSN up to which we

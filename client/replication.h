@@ -21,9 +21,9 @@ struct replication_stream {
 
 typedef struct replication_stream *replication_stream_t;
 
-bool checkpoint(replication_stream_t stream, int64 now);
-bool start_stream(PGconn *conn, char *slot_name, XLogRecPtr position);
-int poll_stream(replication_stream_t stream);
-bool consume_stream(PGconn *conn, char *slot_name);
+bool consume_stream(PGconn *conn, char *slot_name, XLogRecPtr start_pos);
+bool check_replication_connection(PGconn *conn);
+bool create_replication_slot(PGconn *conn, const char *slot_name, const char *output_plugin,
+        XLogRecPtr *startpos, char **snapshot_name);
 
 #endif /* REPLICATION_H */
