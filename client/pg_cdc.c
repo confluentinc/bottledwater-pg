@@ -1,4 +1,5 @@
 #include "replication.h"
+#include "protocol_client.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,15 +8,15 @@
 
 #define DB_CONNECTION_INFO "postgres://localhost/martin"
 #define DB_REPLICATION_INFO "postgres://localhost/martin?replication=database&fallback_application_name=pg_to_kafka"
-#define DB_TABLE "test"
 #define DB_REPLICATION_SLOT "samza"
 
 struct table_context_t {
     PGconn *conn;
-    avro_schema_t schema;
-    avro_value_iface_t *avro_iface;
-    avro_reader_t avro_reader;
-    avro_value_t avro_value;
+    avro_schema_t frame_schema;
+    avro_value_iface_t *frame_iface;
+    avro_reader_t frame_reader;
+    avro_value_t frame_value;
+    schema_cache_t schema_cache;
 };
 
 void exit_nicely(PGconn *conn);
@@ -55,53 +56,29 @@ void output_tuple(struct table_context_t *context, PGresult *res, int row_number
         exit_nicely(context->conn);
     }
 
-    avro_reader_memory_set_source(context->avro_reader,
+    avro_reader_memory_set_source(context->frame_reader,
             PQgetvalue(res, row_number, 0),
             PQgetlength(res, row_number, 0));
 
-    if (avro_value_read(context->avro_reader, &context->avro_value)) {
+    // TODO use read_entirely()
+    if (avro_value_read(context->frame_reader, &context->frame_value)) {
         fprintf(stderr, "Unable to parse Avro data: %s\n", avro_strerror());
         exit_nicely(context->conn);
     }
 
-    char *json;
-    if (avro_value_to_json(&context->avro_value, 1, &json)) {
-        fprintf(stderr, "Error converting value to JSON: %s\n", avro_strerror());
+    /* wal_pos == 0 == InvalidXLogRecPtr */
+    if (process_frame(&context->frame_value, context->schema_cache, 0)) {
+        fprintf(stderr, "Error processing frame data: %s\n", avro_strerror());
         exit_nicely(context->conn);
     }
-
-    printf("%s\n", json);
-    free(json);
 }
 
-/* Queries the database for the Avro schema of a table. */
 void init_table_context(PGconn *conn, struct table_context_t *context) {
-    PGresult *res = PQexec(conn, "SELECT samza_table_schema('" DB_TABLE "')");
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "Schema query failed: %s\n", PQerrorMessage(conn));
-        PQclear(res);
-        exit_nicely(conn);
-    }
-
-    if (PQntuples(res) != 1 || PQnfields(res) != 1) {
-        fprintf(stderr, "Unexpected schema query result format: %d tuples with %d fields\n",
-                PQntuples(res), PQnfields(res));
-        PQclear(res);
-        exit_nicely(conn);
-    }
-
-    int err = avro_schema_from_json_length(PQgetvalue(res, 0, 0), PQgetlength(res, 0, 0),
-            &context->schema);
-    if (err) {
-        fprintf(stderr, "Could not parse table schema: %s", avro_strerror());
-        PQclear(res);
-        exit_nicely(conn);
-    }
-    PQclear(res);
-
-    context->avro_reader = avro_reader_memory(NULL, 0);
-    context->avro_iface = avro_generic_class_from_schema(context->schema);
-    avro_generic_value_new(context->avro_iface, &context->avro_value);
+    context->frame_schema = schema_for_frame();
+    context->frame_iface = avro_generic_class_from_schema(context->frame_schema);
+    context->frame_reader = avro_reader_memory(NULL, 0);
+    avro_generic_value_new(context->frame_iface, &context->frame_value);
+    context->schema_cache = schema_cache_new();
 }
 
 int main(int argc, char **argv) {
@@ -121,7 +98,7 @@ int main(int argc, char **argv) {
     init_table_context(conn, &context);
 
     /* The final parameter 1 requests the results in binary format */
-    if (!PQsendQueryParams(conn, "SELECT samza_table_export('" DB_TABLE "')", 0, NULL, NULL, NULL, NULL, 1)) {
+    if (!PQsendQueryParams(conn, "SELECT samza_table_export('%')", 0, NULL, NULL, NULL, NULL, 1)) {
         fprintf(stderr, "Could not dispatch snapshot fetch: %s\n", PQerrorMessage(conn));
         exit_nicely(conn);
     }
@@ -131,7 +108,7 @@ int main(int argc, char **argv) {
         exit_nicely(conn);
     }
 
-    int error = 0, tuples, total = 0;
+    int error = 0, tuples;
 
     for (;;) {
         PGresult *res = PQgetResult(conn);
@@ -142,7 +119,6 @@ int main(int argc, char **argv) {
             case PGRES_TUPLES_OK:
                 tuples = PQntuples(res);
                 for (int tuple = 0; tuple < tuples; tuple++) {
-                    total++;
                     output_tuple(&context, res, tuple);
                 }
                 break;
@@ -164,10 +140,11 @@ int main(int argc, char **argv) {
         consume_stream(conn, DB_REPLICATION_SLOT);
     }
 
-    avro_value_decref(&context.avro_value);
-    avro_reader_free(context.avro_reader);
-    avro_value_iface_decref(context.avro_iface);
-    avro_schema_decref(context.schema);
+    schema_cache_free(context.schema_cache);
+    avro_value_decref(&context.frame_value);
+    avro_reader_free(context.frame_reader);
+    avro_value_iface_decref(context.frame_iface);
+    avro_schema_decref(context.frame_schema);
 
     if (error) exit_nicely(conn);
 

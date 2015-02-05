@@ -1,6 +1,6 @@
 #include "io_util.h"
 #include "oid2avro.h"
-#include "protocol.h"
+#include "protocol_server.h"
 
 #include <string.h>
 #include "postgres.h"
@@ -19,20 +19,21 @@ typedef struct {
     Oid relid;
     char *namespace;
     char *relname;
+    Relation rel;
 } export_table;
 
 /* State that we need to remember between calls of samza_table_export */
 typedef struct {
     export_table *tables;
     int num_tables, current_table;
+    avro_schema_t frame_schema;
+    avro_value_iface_t *frame_iface;
+    avro_value_t frame_value;
+    schema_cache_t schema_cache;
     Portal cursor;
-    avro_schema_t schema;
-    avro_value_iface_t *avro_iface;
-    avro_value_t avro_value;
 } export_state;
 
 void get_table_list(export_state *state, text *table_pattern);
-void lock_tables(export_state *state);
 void open_next_table(export_state *state);
 void close_current_table(export_state *state);
 bytea *format_snapshot_row(export_state *state);
@@ -97,10 +98,13 @@ Datum samza_table_export(PG_FUNCTION_ARGS) {
 
         state = (export_state *) palloc(sizeof(export_state));
         state->current_table = 0;
+        state->frame_schema = schema_for_frame();
+        state->frame_iface = avro_generic_class_from_schema(state->frame_schema);
+        avro_generic_value_new(state->frame_iface, &state->frame_value);
+        state->schema_cache = schema_cache_new(funcctx->multi_call_memory_ctx);
         funcctx->user_fctx = state;
 
         get_table_list(state, PG_GETARG_TEXT_P(0));
-        lock_tables(state);
         if (state->num_tables > 0) open_next_table(state);
 
         MemoryContextSwitchTo(oldcontext);
@@ -124,6 +128,10 @@ Datum samza_table_export(PG_FUNCTION_ARGS) {
         }
     }
 
+    schema_cache_free(state->schema_cache);
+    avro_value_decref(&state->frame_value);
+    avro_value_iface_decref(state->frame_iface);
+    avro_schema_decref(state->frame_schema);
     SPI_finish();
     SRF_RETURN_DONE(funcctx);
 }
@@ -131,7 +139,11 @@ Datum samza_table_export(PG_FUNCTION_ARGS) {
 /* Queries the PG catalog to get a list of tables (matching the given table name pattern)
  * that we should export. The pattern is given to the LIKE operator, so "%" means any
  * table. Selects only ordinary tables (no views, foreign tables, etc) and excludes any
- * PG system tables. Updates export_state with the list of tables. */
+ * PG system tables. Updates export_state with the list of tables.
+ *
+ * Also takes a shared lock on all the tables we're going to export, to make sure they
+ * aren't dropped or schema-altered before we get around to reading them. (Ordinary
+ * writes to the table, i.e. insert/update/delete, are not affected.) */
 void get_table_list(export_state *state, text *table_pattern) {
     Oid argtypes[] = { TEXTOID };
     Datum args[] = { PointerGetDatum(table_pattern) };
@@ -167,28 +179,10 @@ void get_table_list(export_state *state, text *table_pattern) {
         table->relid     = DatumGetObjectId(oid_d);
         table->namespace = NameStr(*DatumGetName(namespace_d));
         table->relname   = NameStr(*DatumGetName(relname_d));
+        table->rel       = relation_open(table->relid, AccessShareLock);
     }
 
     SPI_freetuptable(SPI_tuptable);
-}
-
-/* Take a shared lock on all the tables we're going to export, to make sure they
- * aren't dropped or schema-altered before we get around to reading them. (Ordinary
- * writes to the table, i.e. insert/update/delete, are not affected.) */
-void lock_tables(export_state *state) {
-    for (int i = 0; i < state->num_tables; i++) {
-        export_table *table = &state->tables[i];
-        StringInfoData query;
-        initStringInfo(&query);
-        appendStringInfo(&query, "LOCK TABLE %s IN ACCESS SHARE MODE",
-                quote_qualified_identifier(table->namespace, table->relname));
-
-        int ret = SPI_exec(query.data, 0);
-        if (ret != SPI_OK_UTILITY) {
-            elog(ERROR, "Query failed with error %d: %s", ret, query.data);
-        }
-        SPI_freetuptable(SPI_tuptable);
-    }
 }
 
 /* Starts a query to dump all the rows from state->tables[state->current_table].
@@ -196,16 +190,9 @@ void lock_tables(export_state *state) {
 void open_next_table(export_state *state) {
     export_table *table = &state->tables[state->current_table];
 
-    /* Don't need a lock here because lock_tables() already obtained a lock */
-    Relation rel = relation_open(table->relid, NoLock);
-    state->schema = schema_for_relation(rel, true);
-    state->avro_iface = avro_generic_class_from_schema(state->schema);
-    avro_generic_value_new(state->avro_iface, &state->avro_value);
-    relation_close(rel, NoLock);
-
     StringInfoData query;
     initStringInfo(&query);
-    appendStringInfo(&query, "SELECT xmin, xmax, * FROM %s",
+    appendStringInfo(&query, "SELECT * FROM %s",
             quote_qualified_identifier(table->namespace, table->relname));
 
     SPIPlanPtr plan = SPI_prepare_cursor(query.data, 0, NULL, CURSOR_OPT_NO_SCROLL);
@@ -215,12 +202,12 @@ void open_next_table(export_state *state) {
     state->cursor = SPI_cursor_open(NULL, plan, NULL, NULL, true);
 }
 
-/* When the current cursor has no more rows to return, this function closes it and
- * frees the associated resources. */
+/* When the current cursor has no more rows to return, this function closes it,
+ * frees the associated resources, and releases the table lock. */
 void close_current_table(export_state *state) {
-    avro_value_decref(&state->avro_value);
-    avro_value_iface_decref(state->avro_iface);
-    avro_schema_decref(state->schema);
+    export_table *table = &state->tables[state->current_table];
+    relation_close(table->rel, AccessShareLock);
+
     SPI_cursor_close(state->cursor);
     SPI_freetuptable(SPI_tuptable);
 }
@@ -228,20 +215,21 @@ void close_current_table(export_state *state) {
 /* Call this when SPI_tuptable contains one row of a table, fetched from a cursor.
  * This function encodes that tuple as Avro and returns it as a byte array. */
 bytea *format_snapshot_row(export_state *state) {
-    HeapTuple row = SPI_tuptable->vals[0];
+    export_table *table = &state->tables[state->current_table];
     bytea *output;
 
     if (SPI_processed != 1) {
         elog(ERROR, "Expected exactly 1 row from cursor, but got %d rows", SPI_processed);
     }
-
-    int err = update_avro_with_tuple(&state->avro_value, state->schema, SPI_tuptable->tupdesc, row);
-    if (err) {
-        elog(ERROR, "samza_table_export: Avro conversion failed: %s", avro_strerror());
+    if (avro_value_reset(&state->frame_value)) {
+        elog(ERROR, "Avro value reset failed: %s", avro_strerror());
     }
 
-    err = try_writing(&output, &write_avro_binary, &state->avro_value);
-    if (err) {
+    HeapTuple row = SPI_tuptable->vals[0];
+    if (update_frame_with_insert(&state->frame_value, state->schema_cache, table->rel, row)) {
+        elog(ERROR, "samza_table_export: Avro conversion failed: %s", avro_strerror());
+    }
+    if (try_writing(&output, &write_avro_binary, &state->frame_value)) {
         elog(ERROR, "samza_table_export: writing Avro binary failed: %s", avro_strerror());
     }
 
