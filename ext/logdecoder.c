@@ -113,7 +113,8 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
                 elog(ERROR, "output_avro_change: insert action without a tuple");
             }
             newtuple = &change->data.tp.newtuple->tuple;
-            err = update_frame_with_insert(&state->frame_value, state->schema_cache, rel, newtuple);
+            err = update_frame_with_insert(&state->frame_value, state->schema_cache, rel,
+                    RelationGetDescr(rel), newtuple);
             break;
 
         case REORDER_BUFFER_CHANGE_UPDATE:

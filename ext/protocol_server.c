@@ -51,7 +51,7 @@ int update_frame_with_commit_txn(avro_value_t *frame_val, ReorderBufferTXN *txn,
     return err;
 }
 
-int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Relation rel, HeapTuple newtuple) {
+int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Relation rel, TupleDesc tupdesc, HeapTuple newtuple) {
     int err = 0;
     schema_cache_entry *entry;
     bytea *new_bin = NULL;
@@ -62,7 +62,7 @@ int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Rela
     }
 
     check(err, avro_value_reset(&entry->row_value));
-    check(err, update_avro_with_tuple(&entry->row_value, entry->row_schema, RelationGetDescr(rel), newtuple));
+    check(err, update_avro_with_tuple(&entry->row_value, entry->row_schema, tupdesc, newtuple));
     check(err, try_writing(&new_bin, &write_avro_binary, &entry->row_value));
     check(err, update_frame_with_insert_raw(frame_val, RelationGetRelid(rel), new_bin));
 

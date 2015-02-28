@@ -13,6 +13,8 @@
 #include "lib/stringinfo.h"
 #include "utils/builtins.h"
 
+// #define DEBUG
+
 PG_MODULE_MAGIC;
 
 typedef struct {
@@ -33,6 +35,7 @@ typedef struct {
     Portal cursor;
 } export_state;
 
+void print_tupdesc(char *title, TupleDesc tupdesc);
 void get_table_list(export_state *state, text *table_pattern);
 void open_next_table(export_state *state);
 void close_current_table(export_state *state);
@@ -233,8 +236,14 @@ bytea *format_snapshot_row(export_state *state) {
         elog(ERROR, "Avro value reset failed: %s", avro_strerror());
     }
 
+#ifdef DEBUG
+    print_tupdesc("Tuptable tupdesc", SPI_tuptable->tupdesc);
+    print_tupdesc("Relation tupdesc", RelationGetDescr(table->rel));
+#endif
+
+    TupleDesc tupdesc = SPI_tuptable->tupdesc;
     HeapTuple row = SPI_tuptable->vals[0];
-    if (update_frame_with_insert(&state->frame_value, state->schema_cache, table->rel, row)) {
+    if (update_frame_with_insert(&state->frame_value, state->schema_cache, table->rel, tupdesc, row)) {
         elog(ERROR, "samza_table_export: Avro conversion failed: %s", avro_strerror());
     }
     if (try_writing(&output, &write_avro_binary, &state->frame_value)) {
@@ -243,6 +252,18 @@ bytea *format_snapshot_row(export_state *state) {
 
     SPI_freetuptable(SPI_tuptable);
     return output;
+}
+
+void print_tupdesc(char *title, TupleDesc tupdesc) {
+    fprintf(stderr, "\n%s:\n", title);
+    for (int i = 0; i < tupdesc->natts; i++) {
+        Form_pg_attribute attr = tupdesc->attrs[i];
+        fprintf(stderr, "%4d. attrelid = %u, attname = %s, atttypid = %u, attnotnull = %d, "
+                "atthasdef = %d, attisdropped = %d, attndims = %d, atttypmod = %d\n",
+                i, attr->attrelid, NameStr(attr->attname), attr->atttypid, attr->attnotnull,
+                attr->atthasdef, attr->attisdropped, attr->attndims, attr->atttypmod);
+    }
+    fprintf(stderr, "\n");
 }
 
 /* Given the name of a table (relation), generates an Avro schema for it. */
