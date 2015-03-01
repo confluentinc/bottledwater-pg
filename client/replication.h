@@ -7,19 +7,25 @@
 #include <server/postgres_fe.h>
 #include <server/access/xlogdefs.h>
 
-struct replication_stream {
+#define REPLICATION_STREAM_ERROR_LEN 512
+
+typedef struct {
+    char *slot_name, *output_plugin, *snapshot_name;
     PGconn *conn;
+    XLogRecPtr start_lsn;
     XLogRecPtr recvd_lsn;
     XLogRecPtr fsync_lsn;
     int64 last_checkpoint;
     frame_reader_t frame_reader;
-};
+    int status; /* 1 = message was processed on last poll; 0 = no data available right now; -1 = stream ended */
+	char error[REPLICATION_STREAM_ERROR_LEN];
+} replication_stream;
 
-typedef struct replication_stream *replication_stream_t;
+typedef replication_stream *replication_stream_t;
 
-bool consume_stream(PGconn *conn, frame_reader_t frame_reader, char *slot_name, XLogRecPtr start_pos);
-bool check_replication_connection(PGconn *conn);
-bool create_replication_slot(PGconn *conn, const char *slot_name, const char *output_plugin,
-        XLogRecPtr *startpos, char **snapshot_name);
+int replication_slot_create(replication_stream_t stream);
+int replication_stream_check(replication_stream_t stream);
+int replication_stream_start(replication_stream_t stream);
+int replication_stream_poll(replication_stream_t stream);
 
 #endif /* REPLICATION_H */

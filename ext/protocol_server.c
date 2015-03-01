@@ -16,7 +16,7 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
 schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
 void schema_cache_entry_update(schema_cache_entry *entry, Relation rel);
 uint64 fnv_hash(uint64 base, char *str, int len);
-uint64 fnv_format(uint64 base, char *fmt, ...);
+uint64 fnv_format(uint64 base, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
 uint64 schema_hash_for_relation(Relation rel);
 
 /* http://www.isthe.com/chongo/tech/comp/fnv/index.html#FNV-param */

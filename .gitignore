@@ -1,4 +1,4 @@
 *.o
 *.so
-/client/pg_cdc
+/client/bottledwater
 /output.avro

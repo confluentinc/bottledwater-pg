@@ -4,6 +4,7 @@
 
 #include "replication.h"
 
+#include <stdarg.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
 
@@ -14,99 +15,15 @@
 
 // #define DEBUG 1
 
-bool checkpoint(replication_stream_t stream, int64 now);
-bool start_stream(PGconn *conn, char *slot_name, XLogRecPtr position);
-int poll_stream(replication_stream_t stream);
-bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
-bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen);
+int replication_stream_finish(replication_stream_t stream);
+int parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
+int parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen);
+int send_checkpoint(replication_stream_t stream, int64 now);
+void repl_error(replication_stream_t stream, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
 int64 current_time(void);
 void sendint64(int64 i64, char *buf);
 int64 recvint64(char *buf);
 
-bool consume_stream(PGconn *conn, frame_reader_t frame_reader, char *slot_name, XLogRecPtr start_pos) {
-    if (!check_replication_connection(conn)) return false;
-    if (!start_stream(conn, slot_name, start_pos)) return false;
-
-    struct replication_stream stream;
-    stream.conn = conn;
-    stream.recvd_lsn = InvalidXLogRecPtr;
-    stream.fsync_lsn = InvalidXLogRecPtr;
-    stream.last_checkpoint = 0;
-    stream.frame_reader = frame_reader;
-
-    bool success = true;
-    while (success) { // TODO while not aborted
-        int ret = poll_stream(&stream);
-
-        /* End of stream */
-        if (ret == -1) break;
-
-        /* Some error occurred (message has already been logged) */
-        if (ret == -2) success = false;
-
-        /* Nothing available to read right now. Wait on the socket until data arrives */
-        if (ret == 0) {
-            fd_set input_mask;
-            FD_ZERO(&input_mask);
-            FD_SET(PQsocket(conn), &input_mask);
-
-            struct timeval timeout;
-            timeout.tv_sec = 1;
-            timeout.tv_usec = 0;
-
-            ret = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, &timeout);
-
-            if (ret == 0 || (ret < 0 && errno == EINTR)) {
-                continue; /* timeout or signal */
-            } else if (ret < 0) {
-                fprintf(stderr, "select() failed: %s\n", strerror(errno));
-                success = false;
-            }
-
-            /* Data has arrived on the socket */
-            if (PQconsumeInput(conn) == 0) {
-                fprintf(stderr, "Could not receive data from server: %s", PQerrorMessage(conn));
-                success = false;
-            }
-        }
-    }
-
-    PGresult *res = PQgetResult(conn);
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        fprintf(stderr, "Replication stream was unexpectedly terminated: %s",
-                PQresultErrorMessage(res));
-    }
-    PQclear(res);
-    return success;
-}
-
-/* Checks that the connection to the database server supports logical replication. */
-bool check_replication_connection(PGconn *conn) {
-    PGresult *res = PQexec(conn, "IDENTIFY_SYSTEM");
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "IDENTIFY_SYSTEM failed: %s", PQerrorMessage(conn));
-        PQclear(res);
-        return false;
-    }
-
-    if (PQntuples(res) != 1 || PQnfields(res) < 4) {
-        fprintf(stderr, "Unexpected IDENTIFY_SYSTEM result (%d rows, %d fields).\n",
-                PQntuples(res), PQnfields(res));
-        PQclear(res);
-        return false;
-    }
-
-    /* Check that the database name (fourth column of the result tuple) is non-null,
-     * implying a database-specific connection. */
-    if (PQgetisnull(res, 0, 3)) {
-        fprintf(stderr, "Not using a database-specific replication connection.\n");
-        PQclear(res);
-        return false;
-    }
-
-    PQclear(res);
-    return true;
-}
 
 /* Send a CREATE_REPLICATION_SLOT ... LOGICAL command to the server. This is similar to
  * the pg_create_logical_replication_slot() function you can call from SQL, but with a
@@ -124,158 +41,175 @@ bool check_replication_connection(PGconn *conn) {
  *   3. "snapshot_name": exported snapshot's name
  *   4. "output_plugin": name of the output plugin, as requested
  */
-bool create_replication_slot(PGconn *conn, const char *slot_name, const char *output_plugin,
-        XLogRecPtr *start_pos, char **snapshot_name) {
+int replication_slot_create(replication_stream_t stream) {
+    if (!stream->slot_name || stream->slot_name[0] == '\0') {
+        repl_error(stream, "slot_name must be set in replication stream");
+        return EINVAL;
+    }
+    if (!stream->output_plugin || stream->output_plugin[0] == '\0') {
+        repl_error(stream, "output_plugin must be set in replication stream");
+        return EINVAL;
+    }
+
     PQExpBuffer query = createPQExpBuffer();
     appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"",
-            slot_name, output_plugin);
+            stream->slot_name, stream->output_plugin);
 
-    PGresult *res = PQexec(conn, query->data);
+    PGresult *res = PQexec(stream->conn, query->data);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "Command failed: %s: %s", query->data, PQerrorMessage(conn));
+        repl_error(stream, "Command failed: %s: %s", query->data, PQerrorMessage(stream->conn));
         goto error;
     }
 
     if (PQntuples(res) != 1 || PQnfields(res) != 4) {
-        fprintf(stderr, "Unexpected CREATE_REPLICATION_SLOT result (%d rows, %d fields)\n",
+        repl_error(stream, "Unexpected CREATE_REPLICATION_SLOT result (%d rows, %d fields)",
                 PQntuples(res), PQnfields(res));
         goto error;
     }
 
     if (PQgetisnull(res, 0, 1) || PQgetisnull(res, 0, 2)) {
-        fprintf(stderr, "Unexpected null value in CREATE_REPLICATION_SLOT response\n");
+        repl_error(stream, "Unexpected null value in CREATE_REPLICATION_SLOT response");
         goto error;
     }
 
-    if (start_pos) {
-        uint32 h32, l32;
-        if (sscanf(PQgetvalue(res, 0, 1), "%X/%X", &h32, &l32) != 2) {
-            fprintf(stderr, "Could not parse LSN: \"%s\"\n", PQgetvalue(res, 0, 1));
-            goto error;
-        }
-        *start_pos = ((uint64) h32) << 32 | l32;
-    }
+	uint32 h32, l32;
+	if (sscanf(PQgetvalue(res, 0, 1), "%X/%X", &h32, &l32) != 2) {
+		repl_error(stream, "Could not parse LSN: \"%s\"", PQgetvalue(res, 0, 1));
+		goto error;
+	}
 
-    if (snapshot_name) {
-        *snapshot_name = strdup(PQgetvalue(res, 0, 2));
-    }
+	stream->start_lsn = ((uint64) h32) << 32 | l32;
+    stream->snapshot_name = strdup(PQgetvalue(res, 0, 2));
 
     destroyPQExpBuffer(query);
     PQclear(res);
-    return true;
+    return 0;
 
 error:
     destroyPQExpBuffer(query);
     PQclear(res);
-    return false;
+    return EIO;
 }
 
-/* Send a "Standby status update" message to server, indicating the LSN up to which we
- * have received logs. This message is packed binary with the following structure:
- *
- *   - Byte1('r'): Identifies the message as a receiver status update.
- *   - Int64: The location of the last WAL byte + 1 received by the client.
- *   - Int64: The location of the last WAL byte + 1 stored durably by the client.
- *   - Int64: The location of the last WAL byte + 1 applied to the client DB.
- *   - Int64: The client's system clock, as microseconds since midnight on 2000-01-01.
- *   - Byte1: If 1, the client requests the server to reply to this message immediately.
- */
-bool checkpoint(replication_stream_t stream, int64 now) {
-    char buf[1 + 8 + 8 + 8 + 8 + 1];
-    int offset = 0;
 
-    buf[offset] = 'r';                          offset += 1;
-    sendint64(stream->recvd_lsn, &buf[offset]); offset += 8;
-    sendint64(stream->fsync_lsn, &buf[offset]); offset += 8;
-    sendint64(InvalidXLogRecPtr, &buf[offset]); offset += 8; // only used by physical replication
-    sendint64(now,               &buf[offset]); offset += 8;
-    buf[offset] = 0;                            offset += 1;
-
-    if (PQputCopyData(stream->conn, buf, offset) <= 0 || PQflush(stream->conn)) {
-        fprintf(stderr, "Could not send checkpoint to server: %s\n",
-                PQerrorMessage(stream->conn));
-        return false;
+/* Checks that the connection to the database server supports logical replication. */
+int replication_stream_check(replication_stream_t stream) {
+    PGresult *res = PQexec(stream->conn, "IDENTIFY_SYSTEM");
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        repl_error(stream, "IDENTIFY_SYSTEM failed: %s", PQerrorMessage(stream->conn));
+        PQclear(res);
+        return EIO;
     }
 
-#ifdef DEBUG
-    fprintf(stderr, "Checkpoint: recvd_lsn %X/%X, fsync_lsn %X/%X\n",
-            (uint32) (stream->recvd_lsn >> 32), (uint32) stream->recvd_lsn,
-            (uint32) (stream->fsync_lsn >> 32), (uint32) stream->fsync_lsn);
-#endif
+    if (PQntuples(res) != 1 || PQnfields(res) < 4) {
+        repl_error(stream, "Unexpected IDENTIFY_SYSTEM result (%d rows, %d fields).",
+                PQntuples(res), PQnfields(res));
+        PQclear(res);
+        return EIO;
+    }
 
-    stream->last_checkpoint = now;
-    return true;
+    /* Check that the database name (fourth column of the result tuple) is non-null,
+     * implying a database-specific connection. */
+    if (PQgetisnull(res, 0, 3)) {
+        repl_error(stream, "Not using a database-specific replication connection.");
+        PQclear(res);
+        return EIO;
+    }
+
+    PQclear(res);
+    return 0;
 }
 
-bool start_stream(PGconn *conn, char *slot_name, XLogRecPtr position) {
+
+/* Starts streaming logical changes from replication slot stream->slot_name,
+ * starting from position stream->start_lsn. */
+int replication_stream_start(replication_stream_t stream) {
     PQExpBuffer query = createPQExpBuffer();
     appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X",
-            slot_name, (uint32) (position >> 32), (uint32) position);
+            stream->slot_name,
+			(uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
 
-    PGresult *res = PQexec(conn, query->data);
+    PGresult *res = PQexec(stream->conn, query->data);
 
     if (PQresultStatus(res) != PGRES_COPY_BOTH) {
-        fprintf(stderr, "Could not send replication command \"%s\": %s\n",
+        repl_error(stream, "Could not send replication command \"%s\": %s",
                 query->data, PQresultErrorMessage(res));
         PQclear(res);
-        goto error;
+		destroyPQExpBuffer(query);
+		return EIO;
     }
 
     PQclear(res);
     destroyPQExpBuffer(query);
-    return true;
+    return 0;
+}
 
-error:
-    destroyPQExpBuffer(query);
-    return false;
+
+/* Finish off after the server stopped sending us COPY data. */
+int replication_stream_finish(replication_stream_t stream) {
+    PGresult *res = PQgetResult(stream->conn);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        repl_error(stream, "Replication stream was unexpectedly terminated: %s",
+                PQresultErrorMessage(res));
+		return EIO;
+    }
+    PQclear(res);
+	return 0;
 }
 
 
 /* Tries to read and process one message from a replication stream, using async I/O.
- * Returns 1 if a message was processed, 0 if there is no data available right now,
- * -1 if the stream has ended, and -2 if an error occurred. */
-int poll_stream(replication_stream_t stream) {
+ * Updates stream->status to 1 if a message was processed, 0 if there is no data
+ * available right now, or -1 if the stream has ended. Does not block. */
+int replication_stream_poll(replication_stream_t stream) {
     char *buf = NULL;
     int ret = PQgetCopyData(stream->conn, &buf, 1);
-    bool success = true;
+	int err = 0;
 
     if (ret < 0) {
-        if (ret == -2) {
-            fprintf(stderr, "Could not read COPY data: %s\n", PQerrorMessage(stream->conn));
+		if (ret == -1) {
+			err = replication_stream_finish(stream);
+		} else {
+            repl_error(stream, "Could not read from replication stream: %s",
+					PQerrorMessage(stream->conn));
+			err = EIO;
         }
         if (buf) PQfreemem(buf);
-        return ret;
+		stream->status = ret;
+        return err;
     }
 
     if (ret > 0) {
+		stream->status = 1;
         switch (buf[0]) {
             case 'k':
-                success = parse_keepalive_message(stream, buf, ret);
+                err = parse_keepalive_message(stream, buf, ret);
                 break;
             case 'w':
-                success = parse_xlogdata_message(stream, buf, ret);
+                err = parse_xlogdata_message(stream, buf, ret);
                 break;
             default:
-                fprintf(stderr, "Unknown streaming message type: \"%c\"\n", buf[0]);
-                success = false;
+                repl_error(stream, "Unknown streaming message type: \"%c\"", buf[0]);
+                err = EIO;
         }
-    }
+    } else {
+		stream->status = 0;
+	}
 
     /* Periodically let the server know up to which point we've consumed the stream. */
-    if (success && stream->recvd_lsn != InvalidXLogRecPtr) {
+    if (!err && stream->recvd_lsn != InvalidXLogRecPtr) {
         int64 now = current_time();
         if (now - stream->last_checkpoint > CHECKPOINT_INTERVAL_SEC * USECS_PER_SEC) {
             /* TODO: when sending messages to an external system, this should only be done
              * after the message has been written durably. */
             stream->fsync_lsn = stream->recvd_lsn;
 
-            success = checkpoint(stream, now);
+            err = send_checkpoint(stream, now);
         }
     }
 
     if (buf) PQfreemem(buf);
-    if (ret == 0) return 0;
-    return success ? 1 : -2;
+	return err;
 }
 
 
@@ -289,10 +223,10 @@ int poll_stream(replication_stream_t stream) {
  *   - Byte1: 1 means that the client should reply to this message as soon as possible,
  *            to avoid a timeout disconnect. 0 otherwise.
  */
-bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen) {
+int parse_keepalive_message(replication_stream_t stream, char *buf, int buflen) {
     if (buflen < 1 + 8 + 8 + 1) {
-        fprintf(stderr, "Keepalive message too small: %d bytes\n", buflen);
-        return false;
+        repl_error(stream, "Keepalive message too small: %d bytes", buflen);
+        return EIO;
     }
 
     int offset = 1; // start with 1 to skip the initial 'k' byte
@@ -313,9 +247,9 @@ bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen)
 #endif
 
     if (reply_requested) {
-        return checkpoint(stream, current_time());
+        return send_checkpoint(stream, current_time());
     }
-    return true;
+    return 0;
 }
 
 
@@ -329,12 +263,12 @@ bool parse_keepalive_message(replication_stream_t stream, char *buf, int buflen)
  *            since midnight on 2000-01-01.
  *   - Byte(n): The output from the logical replication output plugin.
  */
-bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen) {
+int parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen) {
     int hdrlen = 1 + 8 + 8 + 8;
 
     if (buflen < hdrlen + 1) {
-        fprintf(stderr, "XLogData header too small: %d bytes\n", buflen);
-        return false;
+        repl_error(stream, "XLogData header too small: %d bytes", buflen);
+        return EIO;
     }
 
     XLogRecPtr wal_pos = recvint64(&buf[1]);
@@ -344,12 +278,60 @@ bool parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen) 
 #endif
 
     int err = parse_frame(stream->frame_reader, wal_pos, buf + hdrlen, buflen - hdrlen);
+	if (err) {
+        repl_error(stream, "Error parsing frame data: %s", avro_strerror());
+	}
 
     stream->recvd_lsn = Max(wal_pos, stream->recvd_lsn);
-
-    return !err;
+    return err;
 }
 
+
+/* Send a "Standby status update" message to server, indicating the LSN up to which we
+ * have received logs. This message is packed binary with the following structure:
+ *
+ *   - Byte1('r'): Identifies the message as a receiver status update.
+ *   - Int64: The location of the last WAL byte + 1 received by the client.
+ *   - Int64: The location of the last WAL byte + 1 stored durably by the client.
+ *   - Int64: The location of the last WAL byte + 1 applied to the client DB.
+ *   - Int64: The client's system clock, as microseconds since midnight on 2000-01-01.
+ *   - Byte1: If 1, the client requests the server to reply to this message immediately.
+ */
+int send_checkpoint(replication_stream_t stream, int64 now) {
+    char buf[1 + 8 + 8 + 8 + 8 + 1];
+    int offset = 0;
+
+    buf[offset] = 'r';                          offset += 1;
+    sendint64(stream->recvd_lsn, &buf[offset]); offset += 8;
+    sendint64(stream->fsync_lsn, &buf[offset]); offset += 8;
+    sendint64(InvalidXLogRecPtr, &buf[offset]); offset += 8; // only used by physical replication
+    sendint64(now,               &buf[offset]); offset += 8;
+    buf[offset] = 0;                            offset += 1;
+
+    if (PQputCopyData(stream->conn, buf, offset) <= 0 || PQflush(stream->conn)) {
+        repl_error(stream, "Could not send checkpoint to server: %s",
+                PQerrorMessage(stream->conn));
+        return EIO;
+    }
+
+#ifdef DEBUG
+    fprintf(stderr, "Checkpoint: recvd_lsn %X/%X, fsync_lsn %X/%X\n",
+            (uint32) (stream->recvd_lsn >> 32), (uint32) stream->recvd_lsn,
+            (uint32) (stream->fsync_lsn >> 32), (uint32) stream->fsync_lsn);
+#endif
+
+    stream->last_checkpoint = now;
+    return 0;
+}
+
+
+/* Updates the stream's statically allocated error buffer with a message. */
+void repl_error(replication_stream_t stream, char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(stream->error, REPLICATION_STREAM_ERROR_LEN, fmt, args);
+    va_end(args);
+}
 
 /* Returns the current date and time (according to the local system clock) in the
  * representation used by Postgres: microseconds since midnight on 2000-01-01. */

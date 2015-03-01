@@ -30,17 +30,9 @@ int read_entirely(avro_value_t *value, avro_reader_t reader, const void *buf, si
 
 
 int parse_frame(frame_reader_t reader, uint64_t wal_pos, char *buf, int buflen) {
-    int err = read_entirely(&reader->frame_value, reader->avro_reader, buf, buflen);
-    if (err) {
-        fprintf(stderr, "Unable to parse Avro data: %s\n", avro_strerror());
-        return err;
-    }
-
-    err = process_frame(&reader->frame_value, reader, wal_pos);
-    if (err) {
-        fprintf(stderr, "Error parsing frame data: %s\n", avro_strerror());
-        return err;
-    }
+    int err = 0;
+    check(err, read_entirely(&reader->frame_value, reader->avro_reader, buf, buflen));
+    check(err, process_frame(&reader->frame_value, reader, wal_pos));
     return err;
 }
 

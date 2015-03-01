@@ -1,5 +1,5 @@
-SOURCES=pg_cdc.c replication.c protocol.c protocol_client.c
-EXECUTABLE=pg_cdc
+SOURCES=bottledwater.c replication.c protocol.c protocol_client.c connect.c
+EXECUTABLE=bottledwater
 
 WARNINGS=-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security
 CFLAGS=-c -I`pg_config --includedir` `pkg-config --cflags avro-c` $(WARNINGS)
