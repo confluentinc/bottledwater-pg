@@ -3,6 +3,7 @@
 
 #include "protocol_client.h"
 #include <stdlib.h>
+#include <string.h>
 
 #define check(err, call) { err = call; if (err) return err; }
 
@@ -16,15 +17,12 @@
 
 
 int process_frame(avro_value_t *frame_val, frame_reader_t reader, uint64_t wal_pos);
-int process_frame_begin_txn(avro_value_t *record_val);
-int process_frame_commit_txn(avro_value_t *record_val);
-int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader);
-int process_frame_insert(avro_value_t *record_val, frame_reader_t reader);
-int process_frame_update(avro_value_t *record_val, frame_reader_t reader);
-int process_frame_delete(avro_value_t *record_val, frame_reader_t reader);
-int process_frame_insert_decoded(Oid relid, avro_schema_t schema, avro_value_t *newrow_val);
-int process_frame_update_decoded(Oid relid, avro_schema_t schema, avro_value_t *oldrow_val, avro_value_t *newrow_val);
-int process_frame_delete_decoded(Oid relid, avro_schema_t schema, avro_value_t *oldrow_val);
+int process_frame_begin_txn(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos);
+int process_frame_commit_txn(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos);
+int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos);
+int process_frame_insert(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos);
+int process_frame_update(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos);
+int process_frame_delete(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos);
 schema_list_entry *schema_list_lookup(frame_reader_t reader, int64_t relid);
 schema_list_entry *schema_list_replace(frame_reader_t reader, int64_t relid);
 schema_list_entry *schema_list_entry_new(frame_reader_t reader);
@@ -62,22 +60,22 @@ int process_frame(avro_value_t *frame_val, frame_reader_t reader, uint64_t wal_p
 
         switch (msg_type) {
             case PROTOCOL_MSG_BEGIN_TXN:
-                check(err, process_frame_begin_txn(&record_val));
+                check(err, process_frame_begin_txn(&record_val, reader, wal_pos));
                 break;
             case PROTOCOL_MSG_COMMIT_TXN:
-                check(err, process_frame_commit_txn(&record_val));
+                check(err, process_frame_commit_txn(&record_val, reader, wal_pos));
                 break;
             case PROTOCOL_MSG_TABLE_SCHEMA:
-                check(err, process_frame_table_schema(&record_val, reader));
+                check(err, process_frame_table_schema(&record_val, reader, wal_pos));
                 break;
             case PROTOCOL_MSG_INSERT:
-                check(err, process_frame_insert(&record_val, reader));
+                check(err, process_frame_insert(&record_val, reader, wal_pos));
                 break;
             case PROTOCOL_MSG_UPDATE:
-                check(err, process_frame_update(&record_val, reader));
+                check(err, process_frame_update(&record_val, reader, wal_pos));
                 break;
             case PROTOCOL_MSG_DELETE:
-                check(err, process_frame_delete(&record_val, reader));
+                check(err, process_frame_delete(&record_val, reader, wal_pos));
                 break;
             default:
                 avro_set_error("Unknown message type %d", msg_type);
@@ -87,27 +85,35 @@ int process_frame(avro_value_t *frame_val, frame_reader_t reader, uint64_t wal_p
     return err;
 }
 
-int process_frame_begin_txn(avro_value_t *record_val) {
+int process_frame_begin_txn(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
     int err = 0;
     avro_value_t xid_val;
     int64_t xid;
 
     check(err, avro_value_get_by_index(record_val, 0, &xid_val, NULL));
     check(err, avro_value_get_long(&xid_val, &xid));
+
+    if (reader->on_begin_txn) {
+        check(err, reader->on_begin_txn(reader->cb_context, wal_pos, (uint32_t) xid));
+    }
     return err;
 }
 
-int process_frame_commit_txn(avro_value_t *record_val) {
+int process_frame_commit_txn(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
     int err = 0;
     avro_value_t xid_val;
     int64_t xid;
 
     check(err, avro_value_get_by_index(record_val, 0, &xid_val, NULL));
     check(err, avro_value_get_long(&xid_val, &xid));
+
+    if (reader->on_commit_txn) {
+        check(err, reader->on_commit_txn(reader->cb_context, wal_pos, (uint32_t) xid));
+    }
     return err;
 }
 
-int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader) {
+int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
     int err = 0;
     avro_value_t relid_val, hash_val, schema_val;
     int64_t relid;
@@ -133,10 +139,13 @@ int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader) 
     avro_generic_value_new(entry->row_iface, &entry->old_value);
     entry->avro_reader = avro_reader_memory(NULL, 0);
 
+    if (reader->on_table_schema) {
+        check(err, reader->on_table_schema(reader->cb_context, wal_pos, relid, schema_json, schema_len - 1));
+    }
     return err;
 }
 
-int process_frame_insert(avro_value_t *record_val, frame_reader_t reader) {
+int process_frame_insert(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
     int err = 0;
     avro_value_t relid_val, newrow_val;
     int64_t relid;
@@ -155,16 +164,20 @@ int process_frame_insert(avro_value_t *record_val, frame_reader_t reader) {
     }
 
     check(err, read_entirely(&entry->row_value, entry->avro_reader, new_bin, new_len));
-    check(err, process_frame_insert_decoded(relid, entry->row_schema, &entry->row_value));
+
+    if (reader->on_insert_row) {
+        check(err, reader->on_insert_row(reader->cb_context, wal_pos, relid,
+                    new_bin, new_len, &entry->row_value));
+    }
     return err;
 }
 
-int process_frame_update(avro_value_t *record_val, frame_reader_t reader) {
+int process_frame_update(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
     int err = 0, oldrow_present;
     avro_value_t relid_val, oldrow_val, newrow_val, branch_val;
     int64_t relid;
     const void *old_bin = NULL, *new_bin = NULL;
-    size_t old_len, new_len;
+    size_t old_len = 0, new_len = 0;
 
     check(err, avro_value_get_by_index(record_val, 0, &relid_val,  NULL));
     check(err, avro_value_get_by_index(record_val, 1, &oldrow_val, NULL));
@@ -186,12 +199,16 @@ int process_frame_update(avro_value_t *record_val, frame_reader_t reader) {
     }
 
     check(err, read_entirely(&entry->row_value, entry->avro_reader, new_bin, new_len));
-    check(err, process_frame_update_decoded(relid, entry->row_schema,
-                old_bin ? &entry->old_value : NULL, &entry->row_value));
+
+    if (reader->on_update_row) {
+        check(err, reader->on_update_row(reader->cb_context, wal_pos, relid,
+                    old_bin, old_len, old_bin ? &entry->old_value : NULL,
+                    new_bin, new_len, &entry->row_value));
+    }
     return err;
 }
 
-int process_frame_delete(avro_value_t *record_val, frame_reader_t reader) {
+int process_frame_delete(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
     int err = 0, oldrow_present;
     avro_value_t relid_val, oldrow_val, branch_val;
     int64_t relid;
@@ -215,47 +232,9 @@ int process_frame_delete(avro_value_t *record_val, frame_reader_t reader) {
         check(err, read_entirely(&entry->old_value, entry->avro_reader, old_bin, old_len));
     }
 
-    check(err, process_frame_delete_decoded(relid, entry->row_schema,
-                old_bin ? &entry->old_value : NULL));
-    return err;
-}
-
-int process_frame_insert_decoded(Oid relid, avro_schema_t schema, avro_value_t *newrow_val) {
-    int err = 0;
-    char *newrow_json;
-    check(err, avro_value_to_json(newrow_val, 1, &newrow_json));
-    printf("insert to %s: %s\n", avro_schema_name(schema), newrow_json);
-    free(newrow_json);
-    return err;
-}
-
-int process_frame_update_decoded(Oid relid, avro_schema_t schema, avro_value_t *oldrow_val, avro_value_t *newrow_val) {
-    int err = 0;
-    char *oldrow_json, *newrow_json;
-    check(err, avro_value_to_json(newrow_val, 1, &newrow_json));
-
-    if (oldrow_val) {
-        check(err, avro_value_to_json(oldrow_val, 1, &oldrow_json));
-        printf("update to %s: %s --> %s\n", avro_schema_name(schema), oldrow_json, newrow_json);
-        free(oldrow_json);
-    } else {
-        printf("update to %s: (?) --> %s\n", avro_schema_name(schema), newrow_json);
-    }
-
-    free(newrow_json);
-    return err;
-}
-
-int process_frame_delete_decoded(Oid relid, avro_schema_t schema, avro_value_t *oldrow_val) {
-    int err = 0;
-    char *oldrow_json;
-
-    if (oldrow_val) {
-        check(err, avro_value_to_json(oldrow_val, 1, &oldrow_json));
-        printf("delete to %s: %s\n", avro_schema_name(schema), oldrow_json);
-        free(oldrow_json);
-    } else {
-        printf("delete to %s (?)\n", avro_schema_name(schema));
+    if (reader->on_delete_row) {
+        check(err, reader->on_delete_row(reader->cb_context, wal_pos, relid,
+                    old_bin, old_len, old_bin ? &entry->old_value : NULL));
     }
     return err;
 }
@@ -263,6 +242,7 @@ int process_frame_delete_decoded(Oid relid, avro_schema_t schema, avro_value_t *
 frame_reader_t frame_reader_new() {
     frame_reader_t reader = malloc(sizeof(frame_reader));
     check_alloc(reader);
+    memset(reader, 0, sizeof(frame_reader));
     reader->num_schemas = 0;
     reader->capacity = 16;
     reader->schemas = malloc(reader->capacity * sizeof(void*));

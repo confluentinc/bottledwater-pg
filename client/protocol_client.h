@@ -4,6 +4,25 @@
 #include "protocol.h"
 #include "postgres_ext.h"
 
+/* Parameters: context, wal_pos, xid */
+typedef int (*begin_txn_cb)(void *, uint64_t, uint32_t);
+
+/* Parameters: context, wal_pos, xid */
+typedef int (*commit_txn_cb)(void *, uint64_t, uint32_t);
+
+/* Parameters: context, wal_pos, relid, schema_json, schema_len */
+typedef int (*table_schema_cb)(void *, uint64_t, Oid, const char *, size_t);
+
+/* Parameters: context, wal_pos, relid, new_row_bin, new_row_len, new_row_val */
+typedef int (*insert_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_value_t *);
+
+/* Parameters: context, wal_pos, relid, old_row_bin, old_row_len, old_row_val, new_row_bin, new_row_len, new_row_val */
+typedef int (*update_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_value_t *, const void *, size_t, avro_value_t *);
+
+/* Parameters: context, wal_pos, relid, old_row_bin, old_row_len, old_row_val */
+typedef int (*delete_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_value_t *);
+
+
 typedef struct {
     Oid relid;                       /* Uniquely identifies a table, even when it is renamed */
     uint64_t hash;                   /* Hash of table schema, to detect changes */
@@ -15,6 +34,13 @@ typedef struct {
 } schema_list_entry;
 
 typedef struct {
+    void *cb_context;                /* Pointer that is passed to callbacks */
+    begin_txn_cb on_begin_txn;       /* Called to indicate that the following events belong to one transaction */
+    commit_txn_cb on_commit_txn;     /* Called to indicate the end of events from a particular transaction */
+    table_schema_cb on_table_schema; /* Called when there is a new schema for a particular relation */
+    insert_row_cb on_insert_row;     /* Called when a row is inserted into a relation */
+    update_row_cb on_update_row;     /* Called when a row in a relation is updated */
+    delete_row_cb on_delete_row;     /* Called when a row in a relation is deleted */
     int num_schemas;                 /* Number of schemas in use */
     int capacity;                    /* Allocated size of schemas array */
     schema_list_entry **schemas;     /* Array of pointers to schema_list_entry structs */

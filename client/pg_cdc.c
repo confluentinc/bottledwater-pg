@@ -12,11 +12,24 @@
 #define DB_REPLICATION_SLOT "samza"
 #define OUTPUT_PLUGIN "samza_postgres"
 
+#define check(err, call) { err = call; if (err) return err; }
+
 struct table_context_t {
     PGconn *sql_conn, *rep_conn;
     frame_reader_t frame_reader;
 };
 
+int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid);
+int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid);
+int print_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
+        size_t schema_len);
+int print_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
+        size_t new_row_len, avro_value_t *new_row_val);
+int print_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
+        size_t old_row_len, avro_value_t *old_row_val, const void *new_row_bin,
+        size_t new_row_len, avro_value_t *new_row_val);
+int print_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
+        size_t old_row_len, avro_value_t *old_row_val);
 void exit_nicely(struct table_context_t *context);
 void exec_sql(struct table_context_t *context, char *query);
 void init_table_context(struct table_context_t *context);
@@ -24,6 +37,69 @@ bool replication_slot_exists(struct table_context_t *context, char *slot_name, X
 bool dump_snapshot(struct table_context_t *context, char *snapshot_name);
 void output_tuple(struct table_context_t *context, PGresult *res, int row_number);
 
+
+int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid) {
+    printf("begin xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
+    return 0;
+}
+
+int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
+    printf("commit xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
+    return 0;
+}
+
+int print_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
+        size_t schema_len) {
+    printf("new schema for relid=%u\n", relid);
+    return 0;
+}
+
+int print_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
+        size_t new_row_len, avro_value_t *new_row_val) {
+    int err = 0;
+    char *new_row_json;
+	const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
+    check(err, avro_value_to_json(new_row_val, 1, &new_row_json));
+    printf("insert to %s: %s\n", table_name, new_row_json);
+    free(new_row_json);
+    return err;
+}
+
+int print_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
+        size_t old_row_len, avro_value_t *old_row_val, const void *new_row_bin,
+        size_t new_row_len, avro_value_t *new_row_val) {
+    int err = 0;
+    char *old_row_json, *new_row_json;
+	const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
+    check(err, avro_value_to_json(new_row_val, 1, &new_row_json));
+
+    if (old_row_val) {
+        check(err, avro_value_to_json(old_row_val, 1, &old_row_json));
+        printf("update to %s: %s --> %s\n", table_name, old_row_json, new_row_json);
+        free(old_row_json);
+    } else {
+        printf("update to %s: (?) --> %s\n", table_name, new_row_json);
+    }
+
+    free(new_row_json);
+    return err;
+}
+
+int print_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
+        size_t old_row_len, avro_value_t *old_row_val) {
+    int err = 0;
+    char *old_row_json;
+
+    if (old_row_val) {
+		const char *table_name = avro_schema_name(avro_value_get_schema(old_row_val));
+        check(err, avro_value_to_json(old_row_val, 1, &old_row_json));
+        printf("delete to %s: %s\n", table_name, old_row_json);
+        free(old_row_json);
+    } else {
+        printf("delete to relid %u (?)\n", relid);
+    }
+    return err;
+}
 
 void exit_nicely(struct table_context_t *context) {
     PQfinish(context->sql_conn);
@@ -60,6 +136,13 @@ void init_table_context(struct table_context_t *context) {
     }
 
     context->frame_reader = frame_reader_new();
+    context->frame_reader->cb_context = context;
+    context->frame_reader->on_begin_txn = print_begin_txn;
+    context->frame_reader->on_commit_txn = print_commit_txn;
+    context->frame_reader->on_table_schema = print_table_schema;
+    context->frame_reader->on_insert_row = print_insert_row;
+    context->frame_reader->on_update_row = print_update_row;
+    context->frame_reader->on_delete_row = print_delete_row;
 }
 
 /* Returns true if a replication slot with the given name already exists, and false if not.
@@ -194,7 +277,7 @@ int main(int argc, char **argv) {
     }
 
     PQfinish(context.sql_conn);
-    consume_stream(context.rep_conn, slot_name, start_pos);
+    consume_stream(context.rep_conn, context.frame_reader, slot_name, start_pos);
 
     frame_reader_free(context.frame_reader);
     PQfinish(context.rep_conn);

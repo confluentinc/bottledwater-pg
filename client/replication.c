@@ -23,7 +23,7 @@ int64 current_time(void);
 void sendint64(int64 i64, char *buf);
 int64 recvint64(char *buf);
 
-bool consume_stream(PGconn *conn, char *slot_name, XLogRecPtr start_pos) {
+bool consume_stream(PGconn *conn, frame_reader_t frame_reader, char *slot_name, XLogRecPtr start_pos) {
     if (!check_replication_connection(conn)) return false;
     if (!start_stream(conn, slot_name, start_pos)) return false;
 
@@ -32,7 +32,7 @@ bool consume_stream(PGconn *conn, char *slot_name, XLogRecPtr start_pos) {
     stream.recvd_lsn = InvalidXLogRecPtr;
     stream.fsync_lsn = InvalidXLogRecPtr;
     stream.last_checkpoint = 0;
-    stream.frame_reader = frame_reader_new();
+    stream.frame_reader = frame_reader;
 
     bool success = true;
     while (success) { // TODO while not aborted
@@ -77,8 +77,6 @@ bool consume_stream(PGconn *conn, char *slot_name, XLogRecPtr start_pos) {
                 PQresultErrorMessage(res));
     }
     PQclear(res);
-
-    frame_reader_free(stream.frame_reader);
     return success;
 }
 
