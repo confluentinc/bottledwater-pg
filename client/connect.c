@@ -303,7 +303,7 @@ int snapshot_start(client_context_t context) {
     destroyPQExpBuffer(query);
 
     /* The final parameter 1 requests the results in binary format */
-    if (!PQsendQueryParams(context->sql_conn, "SELECT samza_table_export('%')",
+    if (!PQsendQueryParams(context->sql_conn, "SELECT bottledwater_export('%')",
                 0, NULL, NULL, NULL, NULL, 1)) {
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));

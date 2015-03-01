@@ -24,7 +24,7 @@ typedef struct {
     Relation rel;
 } export_table;
 
-/* State that we need to remember between calls of samza_table_export */
+/* State that we need to remember between calls of bottledwater_export */
 typedef struct {
     export_table *tables;
     int num_tables, current_table;
@@ -43,37 +43,38 @@ bytea *format_snapshot_row(export_state *state);
 avro_schema_t schema_for_relname(char *relname);
 
 
-PG_FUNCTION_INFO_V1(samza_table_schema);
+PG_FUNCTION_INFO_V1(bottledwater_table_schema);
 
 /* Given the name of a table, generates an Avro schema for that table, and returns it
  * as a JSON string. */
-Datum samza_table_schema(PG_FUNCTION_ARGS) {
+Datum bottledwater_table_schema(PG_FUNCTION_ARGS) {
     bytea *json;
     avro_schema_t schema = schema_for_relname(NameStr(*PG_GETARG_NAME(0)));
     int err = try_writing(&json, &write_schema_json, schema);
     avro_schema_decref(schema);
 
     if (err) {
-        elog(ERROR, "samza_table_schema: Could not encode schema as JSON: %s", avro_strerror());
+        elog(ERROR, "bottledwater_table_schema: Could not encode schema as JSON: %s",
+                avro_strerror());
         PG_RETURN_NULL();
     } else {
         PG_RETURN_TEXT_P(json);
     }
 }
 
-PG_FUNCTION_INFO_V1(samza_frame_schema);
+PG_FUNCTION_INFO_V1(bottledwater_frame_schema);
 
 /* Returns a JSON string containing the frame schema of the logical log output plugin.
  * This should be used by clients to decode the data streamed from the log, allowing
  * schema evolution to handle version changes of the plugin. */
-Datum samza_frame_schema(PG_FUNCTION_ARGS) {
+Datum bottledwater_frame_schema(PG_FUNCTION_ARGS) {
     bytea *json;
     avro_schema_t schema = schema_for_frame();
     int err = try_writing(&json, &write_schema_json, schema);
     avro_schema_decref(schema);
 
     if (err) {
-        elog(ERROR, "samza_frame_schema: Could not encode schema as JSON: %s", avro_strerror());
+        elog(ERROR, "bottledwater_frame_schema: Could not encode schema as JSON: %s", avro_strerror());
         PG_RETURN_NULL();
     } else {
         PG_RETURN_TEXT_P(json);
@@ -81,7 +82,7 @@ Datum samza_frame_schema(PG_FUNCTION_ARGS) {
 }
 
 
-PG_FUNCTION_INFO_V1(samza_table_export);
+PG_FUNCTION_INFO_V1(bottledwater_export);
 
 /* Given a search pattern for tables ('%' matches all tables), returns a set of byte array values.
  * Each byte array is a frame of our wire protocol, containing schemas and/or rows of the selected
@@ -89,7 +90,7 @@ PG_FUNCTION_INFO_V1(samza_table_export);
  * output, allowing us to stream through large datasets without loading everything into memory.
  *
  * SRF docs: http://www.postgresql.org/docs/9.4/static/xfunc-c.html#XFUNC-C-RETURN-SET */
-Datum samza_table_export(PG_FUNCTION_ARGS) {
+Datum bottledwater_export(PG_FUNCTION_ARGS) {
     FuncCallContext *funcctx;
     export_state *state;
     int ret;
@@ -101,7 +102,7 @@ Datum samza_table_export(PG_FUNCTION_ARGS) {
          * within this function. Note SPI_connect() switches to its own memory context, but we
          * actually want to use multi_call_memory_ctx, so we call SPI_connect() first. */
         if ((ret = SPI_connect()) < 0) {
-            elog(ERROR, "samza_table_export: SPI_connect returned %d", ret);
+            elog(ERROR, "bottledwater_export: SPI_connect returned %d", ret);
         }
 
         /* Things allocated in this memory context will live until SRF_RETURN_DONE(). */
@@ -208,7 +209,7 @@ void open_next_table(export_state *state) {
 
     SPIPlanPtr plan = SPI_prepare_cursor(query.data, 0, NULL, CURSOR_OPT_NO_SCROLL);
     if (!plan) {
-        elog(ERROR, "samza_table_export: SPI_prepare_cursor failed with error %d", SPI_result);
+        elog(ERROR, "bottledwater_export: SPI_prepare_cursor failed with error %d", SPI_result);
     }
     state->cursor = SPI_cursor_open(NULL, plan, NULL, NULL, true);
 }
@@ -244,10 +245,10 @@ bytea *format_snapshot_row(export_state *state) {
     TupleDesc tupdesc = SPI_tuptable->tupdesc;
     HeapTuple row = SPI_tuptable->vals[0];
     if (update_frame_with_insert(&state->frame_value, state->schema_cache, table->rel, tupdesc, row)) {
-        elog(ERROR, "samza_table_export: Avro conversion failed: %s", avro_strerror());
+        elog(ERROR, "bottledwater_export: Avro conversion failed: %s", avro_strerror());
     }
     if (try_writing(&output, &write_avro_binary, &state->frame_value)) {
-        elog(ERROR, "samza_table_export: writing Avro binary failed: %s", avro_strerror());
+        elog(ERROR, "bottledwater_export: writing Avro binary failed: %s", avro_strerror());
     }
 
     SPI_freetuptable(SPI_tuptable);

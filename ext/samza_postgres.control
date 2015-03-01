@@ -1,3 +1,0 @@
-comment = 'Samza consumer for the contents of a Postgres database and stream of changes'
-default_version = '0.1'
-relocatable = true

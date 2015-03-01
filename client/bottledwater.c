@@ -8,12 +8,12 @@
 
 #define DB_CONNECTION_INFO "postgres://localhost/martin"
 #define DB_REPLICATION_INFO "postgres://localhost/martin?replication=database&fallback_application_name=pg_to_kafka"
-#define DB_REPLICATION_SLOT "samza"
+#define DB_REPLICATION_SLOT "bottledwater"
 #define APP_NAME "bottledwater"
 
 /* The name of the logical decoding output plugin with which the replication
  * slot is created. This must match the name of the Postgres extension. */
-#define OUTPUT_PLUGIN "samza_postgres"
+#define OUTPUT_PLUGIN "bottledwater"
 
 #define check(err, call) { err = call; if (err) return err; }
 
