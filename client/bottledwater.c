@@ -1,14 +1,11 @@
 #include "connect.h"
 
+#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <libpq-fe.h>
-#include <avro.h>
-#include <internal/pqexpbuffer.h>
+#include <string.h>
 
-#define DB_CONNECTION_INFO "postgres://localhost/martin"
-#define DB_REPLICATION_INFO "postgres://localhost/martin?replication=database&fallback_application_name=pg_to_kafka"
-#define DB_REPLICATION_SLOT "bottledwater"
+#define DEFAULT_REPLICATION_SLOT "bottledwater"
 #define APP_NAME "bottledwater"
 
 /* The name of the logical decoding output plugin with which the replication
@@ -19,11 +16,15 @@
 
 #define ensure(context, call) { \
     if (call) { \
-        fprintf(stderr, "%s\n", context->error); \
+        fprintf(stderr, "%s: %s\n", progname, context->error); \
         exit_nicely(context); \
     } \
 }
 
+static char *progname;
+
+void usage(void);
+void parse_options(client_context_t context, int argc, char **argv);
 int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid);
 int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid);
 int print_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
@@ -38,6 +39,47 @@ int print_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old
 void exit_nicely(client_context_t context);
 client_context_t init_client(void);
 
+
+void usage() {
+    fprintf(stderr,
+            "Exports a snapshot of a PostgreSQL database, followed by a stream of changes.\n\n"
+            "Usage:\n  %s [OPTION]...\n\nOptions:\n"
+            "  -d, --postgres=postgres://user:pass@host:port/dbname    (required)\n"
+            "                          Connection string or URI of the PostgreSQL server.\n"
+            "  -s, --slot=slotname     Name of replication slot to use (default: %s)\n"
+            "                          The slot is automatically created on first use.\n",
+            progname, DEFAULT_REPLICATION_SLOT);
+    exit(1);
+}
+
+void parse_options(client_context_t context, int argc, char **argv) {
+    static struct option options[] = {
+        {"postgres", required_argument, NULL, 'd'},
+        {"slot",     required_argument, NULL, 's'},
+        {NULL,       0,                 NULL,  0 }
+    };
+
+    progname = argv[0];
+
+    int option_index;
+    while (true) {
+        int c = getopt_long(argc, argv, "d:s:", options, &option_index);
+        if (c == -1) break;
+
+        switch (c) {
+            case 'd':
+                context->conninfo = strdup(optarg);
+                break;
+            case 's':
+                context->repl.slot_name = strdup(optarg);
+                break;
+            default:
+                usage();
+        }
+    }
+
+    if (!context->conninfo || optind < argc) usage();
+}
 
 int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid) {
     printf("begin xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
@@ -112,9 +154,8 @@ client_context_t init_client() {
     frame_reader->on_delete_row   = print_delete_row;
 
     client_context_t context = db_client_new();
-    context->conninfo = DB_CONNECTION_INFO;
     context->app_name = APP_NAME;
-    context->repl.slot_name = DB_REPLICATION_SLOT;
+    context->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     context->repl.output_plugin = OUTPUT_PLUGIN;
     context->repl.frame_reader = frame_reader;
     return context;
@@ -128,6 +169,7 @@ void exit_nicely(client_context_t context) {
 
 int main(int argc, char **argv) {
     client_context_t context = init_client();
+    parse_options(context, argc, argv);
     ensure(context, db_client_start(context));
 
     bool snapshot = false;
