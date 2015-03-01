@@ -317,6 +317,8 @@ int snapshot_start(client_context_t context) {
     return 0;
 }
 
+/* Reads the next result row from the snapshot query, parses and processes it.
+ * Blocks until a new row is available, if necessary. */
 int snapshot_poll(client_context_t context) {
     int err = 0;
     PGresult *res = PQgetResult(context->sql_conn);
@@ -346,6 +348,7 @@ int snapshot_poll(client_context_t context) {
     return err;
 }
 
+/* Processes one tuple of the snapshot query result set. */
 int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
     if (PQnfields(res) != 1) {
         client_error(context, "Unexpected response with %d fields", PQnfields(res));
