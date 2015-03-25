@@ -1,4 +1,4 @@
 *.o
 *.so
 /client/bottledwater
-/output.avro
+/client/libbottledwater.a
