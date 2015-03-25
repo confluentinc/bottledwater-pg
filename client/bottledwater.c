@@ -101,7 +101,7 @@ int print_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new
         size_t new_row_len, avro_value_t *new_row_val) {
     int err = 0;
     char *new_row_json;
-	const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
+    const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
     check(err, avro_value_to_json(new_row_val, 1, &new_row_json));
     printf("insert to %s: %s\n", table_name, new_row_json);
     free(new_row_json);
@@ -113,7 +113,7 @@ int print_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old
         size_t new_row_len, avro_value_t *new_row_val) {
     int err = 0;
     char *old_row_json, *new_row_json;
-	const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
+    const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
     check(err, avro_value_to_json(new_row_val, 1, &new_row_json));
 
     if (old_row_val) {
@@ -134,7 +134,7 @@ int print_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old
     char *old_row_json;
 
     if (old_row_val) {
-		const char *table_name = avro_schema_name(avro_value_get_schema(old_row_val));
+        const char *table_name = avro_schema_name(avro_value_get_schema(old_row_val));
         check(err, avro_value_to_json(old_row_val, 1, &old_row_json));
         printf("delete to %s: %s\n", table_name, old_row_json);
         free(old_row_json);
@@ -145,7 +145,7 @@ int print_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old
 }
 
 client_context_t init_client() {
-	frame_reader_t frame_reader = frame_reader_new();
+    frame_reader_t frame_reader = frame_reader_new();
     frame_reader->on_begin_txn    = print_begin_txn;
     frame_reader->on_commit_txn   = print_commit_txn;
     frame_reader->on_table_schema = print_table_schema;

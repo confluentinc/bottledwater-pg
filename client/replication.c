@@ -72,13 +72,13 @@ int replication_slot_create(replication_stream_t stream) {
         goto error;
     }
 
-	uint32 h32, l32;
-	if (sscanf(PQgetvalue(res, 0, 1), "%X/%X", &h32, &l32) != 2) {
-		repl_error(stream, "Could not parse LSN: \"%s\"", PQgetvalue(res, 0, 1));
-		goto error;
-	}
+    uint32 h32, l32;
+    if (sscanf(PQgetvalue(res, 0, 1), "%X/%X", &h32, &l32) != 2) {
+        repl_error(stream, "Could not parse LSN: \"%s\"", PQgetvalue(res, 0, 1));
+        goto error;
+    }
 
-	stream->start_lsn = ((uint64) h32) << 32 | l32;
+    stream->start_lsn = ((uint64) h32) << 32 | l32;
     stream->snapshot_name = strdup(PQgetvalue(res, 0, 2));
 
     destroyPQExpBuffer(query);
@@ -127,7 +127,7 @@ int replication_stream_start(replication_stream_t stream) {
     PQExpBuffer query = createPQExpBuffer();
     appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X",
             stream->slot_name,
-			(uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
+            (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
 
     PGresult *res = PQexec(stream->conn, query->data);
 
@@ -135,8 +135,8 @@ int replication_stream_start(replication_stream_t stream) {
         repl_error(stream, "Could not send replication command \"%s\": %s",
                 query->data, PQresultErrorMessage(res));
         PQclear(res);
-		destroyPQExpBuffer(query);
-		return EIO;
+        destroyPQExpBuffer(query);
+        return EIO;
     }
 
     PQclear(res);
@@ -151,10 +151,10 @@ int replication_stream_finish(replication_stream_t stream) {
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         repl_error(stream, "Replication stream was unexpectedly terminated: %s",
                 PQresultErrorMessage(res));
-		return EIO;
+        return EIO;
     }
     PQclear(res);
-	return 0;
+    return 0;
 }
 
 
@@ -164,23 +164,23 @@ int replication_stream_finish(replication_stream_t stream) {
 int replication_stream_poll(replication_stream_t stream) {
     char *buf = NULL;
     int ret = PQgetCopyData(stream->conn, &buf, 1);
-	int err = 0;
+    int err = 0;
 
     if (ret < 0) {
-		if (ret == -1) {
-			err = replication_stream_finish(stream);
-		} else {
+        if (ret == -1) {
+            err = replication_stream_finish(stream);
+        } else {
             repl_error(stream, "Could not read from replication stream: %s",
-					PQerrorMessage(stream->conn));
-			err = EIO;
+                    PQerrorMessage(stream->conn));
+            err = EIO;
         }
         if (buf) PQfreemem(buf);
-		stream->status = ret;
+        stream->status = ret;
         return err;
     }
 
     if (ret > 0) {
-		stream->status = 1;
+        stream->status = 1;
         switch (buf[0]) {
             case 'k':
                 err = parse_keepalive_message(stream, buf, ret);
@@ -193,8 +193,8 @@ int replication_stream_poll(replication_stream_t stream) {
                 err = EIO;
         }
     } else {
-		stream->status = 0;
-	}
+        stream->status = 0;
+    }
 
     /* Periodically let the server know up to which point we've consumed the stream. */
     if (!err && stream->recvd_lsn != InvalidXLogRecPtr) {
@@ -209,7 +209,7 @@ int replication_stream_poll(replication_stream_t stream) {
     }
 
     if (buf) PQfreemem(buf);
-	return err;
+    return err;
 }
 
 
@@ -278,9 +278,9 @@ int parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen) {
 #endif
 
     int err = parse_frame(stream->frame_reader, wal_pos, buf + hdrlen, buflen - hdrlen);
-	if (err) {
+    if (err) {
         repl_error(stream, "Error parsing frame data: %s", avro_strerror());
-	}
+    }
 
     stream->recvd_lsn = Max(wal_pos, stream->recvd_lsn);
     return err;

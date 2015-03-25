@@ -18,7 +18,7 @@ typedef struct {
     int64 last_checkpoint;
     frame_reader_t frame_reader;
     int status; /* 1 = message was processed on last poll; 0 = no data available right now; -1 = stream ended */
-	char error[REPLICATION_STREAM_ERROR_LEN];
+    char error[REPLICATION_STREAM_ERROR_LEN];
 } replication_stream;
 
 typedef replication_stream *replication_stream_t;
