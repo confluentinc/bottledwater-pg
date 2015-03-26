@@ -10,8 +10,8 @@ typedef int (*begin_txn_cb)(void *, uint64_t, uint32_t);
 /* Parameters: context, wal_pos, xid */
 typedef int (*commit_txn_cb)(void *, uint64_t, uint32_t);
 
-/* Parameters: context, wal_pos, relid, schema_json, schema_len */
-typedef int (*table_schema_cb)(void *, uint64_t, Oid, const char *, size_t);
+/* Parameters: context, wal_pos, relid, schema_json, schema_len, schema */
+typedef int (*table_schema_cb)(void *, uint64_t, Oid, const char *, size_t, avro_schema_t);
 
 /* Parameters: context, wal_pos, relid, new_row_bin, new_row_len, new_row_val */
 typedef int (*insert_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_value_t *);

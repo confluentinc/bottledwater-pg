@@ -28,7 +28,7 @@ void parse_options(client_context_t context, int argc, char **argv);
 int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid);
 int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid);
 int print_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
-        size_t schema_len);
+        size_t schema_len, avro_schema_t schema);
 int print_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
         size_t new_row_len, avro_value_t *new_row_val);
 int print_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
@@ -92,7 +92,7 @@ int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
 }
 
 int print_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
-        size_t schema_len) {
+        size_t schema_len, avro_schema_t schema) {
     printf("new schema for relid=%u\n", relid);
     return 0;
 }

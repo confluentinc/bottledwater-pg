@@ -1,6 +1,8 @@
 #include "connect.h"
 
 #include <librdkafka/rdkafka.h>
+#include <curl/curl.h>
+#include <jansson.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +16,7 @@
 #define OUTPUT_PLUGIN "bottledwater"
 
 #define DEFAULT_BROKER_LIST "localhost:9092"
+#define DEFAULT_SCHEMA_REGISTRY "http://localhost:8081"
 
 #define check(err, call) { err = call; if (err) return err; }
 
@@ -43,7 +46,11 @@
 
 typedef struct {
     client_context_t client;            /* The connection to Postgres */
-    char *brokers;
+    CURL *curl;                         /* HTTP client for making requests to schema registry */
+    struct curl_slist *curl_headers;    /* HTTP headers for requests to schema registry */
+    char curl_error[CURL_ERROR_SIZE];   /* Buffer for libcurl error messages */
+    char *registry;                     /* URL of Avro schema registry */
+    char *brokers;                      /* Comma-separated list of host:port for Kafka brokers */
     rd_kafka_conf_t *kafka_conf;
     rd_kafka_topic_conf_t *topic_conf;
     rd_kafka_t *kafka;
@@ -68,16 +75,16 @@ void parse_options(producer_context_t context, int argc, char **argv);
 char *parse_config_option(char *option);
 void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
-static int on_begin_txn(void *context, uint64_t wal_pos, uint32_t xid);
-static int on_commit_txn(void *context, uint64_t wal_pos, uint32_t xid);
-static int on_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
-        size_t schema_len);
-static int on_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
+static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
+static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
+static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid, const char *schema_json,
+        size_t schema_len, avro_schema_t schema);
+static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
         size_t new_row_len, avro_value_t *new_row_val);
-static int on_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
+static int on_update_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
         size_t old_row_len, avro_value_t *old_row_val, const void *new_row_bin,
         size_t new_row_len, avro_value_t *new_row_val);
-static int on_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
+static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
         size_t old_row_len, avro_value_t *old_row_val);
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *envelope);
 void exit_nicely(producer_context_t context, int status);
@@ -97,6 +104,8 @@ void usage() {
             "                          The slot is automatically created on first use.\n"
             "  -b, --broker=host1[:port1],host2[:port2]...   (default: %s)\n"
             "                          Comma-separated list of Kafka broker hosts/ports.\n"
+            "  -r, --schema-registry=http://hostname:port   (default: %s)\n"
+            "                          URL of the service where Avro schemas are registered.\n"
             "  -C, --kafka-config property=value\n"
             "                          Set global configuration property for Kafka producer\n"
             "                          (see --config-help for list of properties).\n"
@@ -104,7 +113,7 @@ void usage() {
             "                          Set topic configuration property for Kafka producer.\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
-            progname, DEFAULT_REPLICATION_SLOT, DEFAULT_BROKER_LIST);
+            progname, DEFAULT_REPLICATION_SLOT, DEFAULT_BROKER_LIST, DEFAULT_SCHEMA_REGISTRY);
     exit(1);
 }
 
@@ -112,13 +121,14 @@ void usage() {
 void parse_options(producer_context_t context, int argc, char **argv) {
 
     static struct option options[] = {
-        {"postgres",     required_argument, NULL, 'd'},
-        {"slot",         required_argument, NULL, 's'},
-        {"broker",       required_argument, NULL, 'b'},
-        {"kafka-config", required_argument, NULL, 'C'},
-        {"topic-config", required_argument, NULL, 'T'},
-        {"config-help",  no_argument,       NULL,  1 },
-        {NULL,           0,                 NULL,  0 }
+        {"postgres",        required_argument, NULL, 'd'},
+        {"slot",            required_argument, NULL, 's'},
+        {"broker",          required_argument, NULL, 'b'},
+        {"schema-registry", required_argument, NULL, 'r'},
+        {"kafka-config",    required_argument, NULL, 'C'},
+        {"topic-config",    required_argument, NULL, 'T'},
+        {"config-help",     no_argument,       NULL,  1 },
+        {NULL,              0,                 NULL,  0 }
     };
 
     progname = argv[0];
@@ -137,6 +147,11 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'b':
                 context->brokers = strdup(optarg);
+                break;
+            case 'r':
+                context->registry = strdup(optarg);
+                size_t len = strlen(context->registry); // Strip trailing slash
+                if (context->registry[len] == '/') context->registry[len] = '\0';
                 break;
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
@@ -188,22 +203,119 @@ void set_topic_config(producer_context_t context, char *property, char *value) {
     }
 }
 
-static int on_begin_txn(void *context, uint64_t wal_pos, uint32_t xid) {
+
+static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     return 0;
 }
 
-static int on_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
+static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     return 0;
 }
 
-static int on_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
-        size_t schema_len) {
-    return 0;
+/* Called by cURL when bytes of response are received from the schema registry.
+ * Appends them to a buffer, so that we can parse the response when finished. */
+static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *writer) {
+    size_t bytes = size * nmemb;
+    int err = avro_write((avro_writer_t) writer, data, bytes);
+    if (err == ENOSPC) {
+        fprintf(stderr, "%s: Response from schema registry is too large\n", progname);
+    }
+    return (err == 0) ? bytes : 0;
 }
 
-static int on_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
+static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid, const char *schema_json,
+        size_t schema_len, avro_schema_t schema) {
+    producer_context_t context = (producer_context_t) _context;
+    const char *table_name = avro_schema_name(schema);
+    int err = 0;
+
+    char url[512];
+    if (snprintf(url, sizeof(url), "%s/subjects/%s-value/versions",
+                context->registry, table_name) >= sizeof(url)) {
+        avro_set_error("Schema registry URL is too long: %s", url);
+        return EINVAL;
+    }
+
+    json_t *req_json = json_pack("{s:s%}", "schema", schema_json, schema_len);
+    char *req_body = json_dumps(req_json, JSON_COMPACT);
+
+    char resp_body[1024];
+    avro_writer_t resp_writer = avro_writer_memory(resp_body, sizeof(resp_body));
+
+    curl_easy_setopt(context->curl, CURLOPT_URL, url);
+    curl_easy_setopt(context->curl, CURLOPT_POSTFIELDS, req_body);
+    curl_easy_setopt(context->curl, CURLOPT_HTTPHEADER, context->curl_headers);
+    curl_easy_setopt(context->curl, CURLOPT_WRITEFUNCTION, registry_response_cb);
+    curl_easy_setopt(context->curl, CURLOPT_WRITEDATA, resp_writer);
+    curl_easy_setopt(context->curl, CURLOPT_ERRORBUFFER, context->curl_error);
+
+    CURLcode res = curl_easy_perform(context->curl);
+    if (res != CURLE_OK) {
+        avro_set_error("Could not send schema to registry: %s", context->curl_error);
+        err = EIO;
+        goto done;
+    }
+
+    long resp_code = 0;
+    curl_easy_getinfo(context->curl, CURLINFO_RESPONSE_CODE, &resp_code);
+
+    json_error_t parse_err;
+    json_t *resp_json = json_loadb(resp_body, avro_writer_tell(resp_writer), 0, &parse_err);
+    if (!resp_json) {
+        if (resp_code == 200) {
+            avro_set_error("Could not parse schema registry response: %s\n\tResponse text: %.*s",
+                    parse_err.text, avro_writer_tell(resp_writer), resp_body);
+        } else {
+            avro_set_error("Schema registry returned HTTP status %ld", resp_code);
+        }
+        err = EIO;
+        goto done;
+    }
+
+    if (resp_code != 200) {
+        json_t *message = NULL;
+        if (json_is_object(resp_json)) {
+            message = json_object_get(resp_json, "message");
+        }
+
+        if (message && json_is_string(message)) {
+            avro_set_error("Schema registry returned HTTP status %ld: %s",
+                    resp_code, json_string_value(message));
+        } else {
+            avro_set_error("Schema registry returned HTTP status %ld", resp_code);
+        }
+
+        err = EIO;
+        json_decref(resp_json);
+        goto done;
+    }
+
+    json_t *schema_id = NULL;
+    if (json_is_object(resp_json)) {
+        schema_id = json_object_get(resp_json, "id");
+    }
+
+    if (schema_id && json_is_integer(schema_id)) {
+        printf("Schema ID for relid %d: %" JSON_INTEGER_FORMAT "\n",
+                relid, json_integer_value(schema_id));
+    } else {
+        avro_set_error("Missing id field in schema registry response: %.*s",
+                avro_writer_tell(resp_writer), resp_body);
+        err = EIO;
+    }
+    json_decref(resp_json);
+
+done:
+    avro_writer_free(resp_writer);
+    free(req_body);
+    json_decref(req_json);
+    return err;
+}
+
+static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
         size_t new_row_len, avro_value_t *new_row_val) {
     int err = 0;
+    producer_context_t context = (producer_context_t) _context;
     const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
     if (strcmp(table_name, "test") != 0) return 0; // TODO remove hard-coded topic
 
@@ -217,8 +329,7 @@ static int on_insert_row(void *context, uint64_t wal_pos, Oid relid, const void 
     memcpy(msg, MESSAGE_PREFIX, MESSAGE_PREFIX_LEN);
     memcpy(msg + MESSAGE_PREFIX_LEN, new_row_bin, new_row_len);
 
-    err = rd_kafka_produce(((producer_context_t) context)->topic,
-            RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
+    err = rd_kafka_produce(context->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
             msg, new_row_len + MESSAGE_PREFIX_LEN, NULL, 0, envelope);
 
     // TODO apply backpressure if data from Postgres is coming in faster than we can send
@@ -234,13 +345,13 @@ static int on_insert_row(void *context, uint64_t wal_pos, Oid relid, const void 
     return 0;
 }
 
-static int on_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
+static int on_update_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
         size_t old_row_len, avro_value_t *old_row_val, const void *new_row_bin,
         size_t new_row_len, avro_value_t *new_row_val) {
     return 0;
 }
 
-static int on_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
+static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
         size_t old_row_len, avro_value_t *old_row_val) {
     return 0;
 }
@@ -291,6 +402,10 @@ producer_context_t init_producer(client_context_t client) {
     client->repl.frame_reader->cb_context = context;
 
     context->client = client;
+    context->curl = curl_easy_init();
+    context->curl_headers = curl_slist_append(NULL, "Content-Type: application/vnd.schemaregistry.v1+json");
+    context->curl_headers = curl_slist_append(context->curl_headers, "Accept: application/vnd.schemaregistry.v1+json");
+    context->registry = DEFAULT_SCHEMA_REGISTRY;
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
@@ -328,12 +443,16 @@ void start_producer(producer_context_t context) {
 void exit_nicely(producer_context_t context, int status) {
     frame_reader_free(context->client->repl.frame_reader);
     db_client_free(context->client);
+    curl_slist_free_all(context->curl_headers);
+    curl_easy_cleanup(context->curl);
+    curl_global_cleanup();
     // TODO shut down Kafka producer gracefully
     exit(status);
 }
 
 
 int main(int argc, char **argv) {
+    curl_global_init(CURL_GLOBAL_ALL);
     producer_context_t context = init_producer(init_client());
 
     parse_options(context, argc, argv);

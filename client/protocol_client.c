@@ -132,7 +132,8 @@ int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader, 
     entry->avro_reader = avro_reader_memory(NULL, 0);
 
     if (reader->on_table_schema) {
-        check(err, reader->on_table_schema(reader->cb_context, wal_pos, relid, schema_json, schema_len - 1));
+        check(err, reader->on_table_schema(reader->cb_context, wal_pos, relid,
+                    schema_json, schema_len - 1, schema));
     }
     return err;
 }
