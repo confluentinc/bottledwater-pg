@@ -1,4 +1,4 @@
-SOURCES=bottledwater.c
+SOURCES=bottledwater.c registry.c
 EXECUTABLE=bottledwater
 STATICLIB=../client/libbottledwater.a
 

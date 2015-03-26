@@ -1,8 +1,7 @@
 #include "connect.h"
+#include "registry.h"
 
 #include <librdkafka/rdkafka.h>
-#include <curl/curl.h>
-#include <jansson.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,34 +26,15 @@
     } \
 }
 
-// TODO replace hard-coded value with call to schema registry:
-//
-// curl -X POST -i -H "Content-Type: application/vnd.schemaregistry.v1+json" \
-//   --data '{"schema": "schema_as_string"}' \
-//   http://localhost:8081/subjects/test-value/versions
-//
-// Returns: {"id":21}
-//
-// Message prefix is 5 bytes: one null "magic" byte, followed by the schema ID
-// (as returned by the schema registry) as a 32-bit big-endian integer.
-//
-// https://github.com/confluentinc/schema-registry/blob/master/avro-serializer/src/main/java/io/confluent/kafka/serializers/AbstractKafkaAvroSerializer.java
-#define MESSAGE_PREFIX "\0\0\0\0\x15"
-#define MESSAGE_PREFIX_LEN 5
-
 #define PRODUCER_CONTEXT_ERROR_LEN 512
 
 typedef struct {
     client_context_t client;            /* The connection to Postgres */
-    CURL *curl;                         /* HTTP client for making requests to schema registry */
-    struct curl_slist *curl_headers;    /* HTTP headers for requests to schema registry */
-    char curl_error[CURL_ERROR_SIZE];   /* Buffer for libcurl error messages */
-    char *registry;                     /* URL of Avro schema registry */
+    schema_registry_t registry;         /* Submits Avro schemas to schema registry */
     char *brokers;                      /* Comma-separated list of host:port for Kafka brokers */
     rd_kafka_conf_t *kafka_conf;
     rd_kafka_topic_conf_t *topic_conf;
     rd_kafka_t *kafka;
-    rd_kafka_topic_t *topic; /* TODO need to support multiple topics */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
 } producer_context;
 
@@ -149,9 +129,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 context->brokers = strdup(optarg);
                 break;
             case 'r':
-                context->registry = strdup(optarg);
-                size_t len = strlen(context->registry); // Strip trailing slash
-                if (context->registry[len] == '/') context->registry[len] = '\0';
+                schema_registry_set_url(context->registry, optarg);
                 break;
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
@@ -212,112 +190,36 @@ static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     return 0;
 }
 
-/* Called by cURL when bytes of response are received from the schema registry.
- * Appends them to a buffer, so that we can parse the response when finished. */
-static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *writer) {
-    size_t bytes = size * nmemb;
-    int err = avro_write((avro_writer_t) writer, data, bytes);
-    if (err == ENOSPC) {
-        fprintf(stderr, "%s: Response from schema registry is too large\n", progname);
-    }
-    return (err == 0) ? bytes : 0;
-}
 
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid, const char *schema_json,
         size_t schema_len, avro_schema_t schema) {
     producer_context_t context = (producer_context_t) _context;
-    const char *table_name = avro_schema_name(schema);
-    int err = 0;
+    const char *topic_name = avro_schema_name(schema);
 
-    char url[512];
-    if (snprintf(url, sizeof(url), "%s/subjects/%s-value/versions",
-                context->registry, table_name) >= sizeof(url)) {
-        avro_set_error("Schema registry URL is too long: %s", url);
-        return EINVAL;
+    topic_list_entry_t entry = schema_registry_update(context->registry, relid,
+            topic_name, schema_json, schema_len);
+
+    if (!entry) {
+        fprintf(stderr, "%s: %s\n", progname, context->registry->error);
+        exit_nicely(context, 1);
     }
 
-    json_t *req_json = json_pack("{s:s%}", "schema", schema_json, schema_len);
-    char *req_body = json_dumps(req_json, JSON_COMPACT);
-
-    char resp_body[1024];
-    avro_writer_t resp_writer = avro_writer_memory(resp_body, sizeof(resp_body));
-
-    curl_easy_setopt(context->curl, CURLOPT_URL, url);
-    curl_easy_setopt(context->curl, CURLOPT_POSTFIELDS, req_body);
-    curl_easy_setopt(context->curl, CURLOPT_HTTPHEADER, context->curl_headers);
-    curl_easy_setopt(context->curl, CURLOPT_WRITEFUNCTION, registry_response_cb);
-    curl_easy_setopt(context->curl, CURLOPT_WRITEDATA, resp_writer);
-    curl_easy_setopt(context->curl, CURLOPT_ERRORBUFFER, context->curl_error);
-
-    CURLcode res = curl_easy_perform(context->curl);
-    if (res != CURLE_OK) {
-        avro_set_error("Could not send schema to registry: %s", context->curl_error);
-        err = EIO;
-        goto done;
-    }
-
-    long resp_code = 0;
-    curl_easy_getinfo(context->curl, CURLINFO_RESPONSE_CODE, &resp_code);
-
-    json_error_t parse_err;
-    json_t *resp_json = json_loadb(resp_body, avro_writer_tell(resp_writer), 0, &parse_err);
-    if (!resp_json) {
-        if (resp_code == 200) {
-            avro_set_error("Could not parse schema registry response: %s\n\tResponse text: %.*s",
-                    parse_err.text, avro_writer_tell(resp_writer), resp_body);
-        } else {
-            avro_set_error("Schema registry returned HTTP status %ld", resp_code);
+    if (!entry->topic) {
+        entry->topic = rd_kafka_topic_new(context->kafka, topic_name,
+                rd_kafka_topic_conf_dup(context->topic_conf));
+        if (!entry->topic) {
+            fprintf(stderr, "%s: Cannot open Kafka topic %s: %s\n", progname, topic_name,
+                    rd_kafka_err2str(rd_kafka_errno2err(errno)));
+            exit_nicely(context, 1);
         }
-        err = EIO;
-        goto done;
     }
-
-    if (resp_code != 200) {
-        json_t *message = NULL;
-        if (json_is_object(resp_json)) {
-            message = json_object_get(resp_json, "message");
-        }
-
-        if (message && json_is_string(message)) {
-            avro_set_error("Schema registry returned HTTP status %ld: %s",
-                    resp_code, json_string_value(message));
-        } else {
-            avro_set_error("Schema registry returned HTTP status %ld", resp_code);
-        }
-
-        err = EIO;
-        json_decref(resp_json);
-        goto done;
-    }
-
-    json_t *schema_id = NULL;
-    if (json_is_object(resp_json)) {
-        schema_id = json_object_get(resp_json, "id");
-    }
-
-    if (schema_id && json_is_integer(schema_id)) {
-        printf("Schema ID for relid %d: %" JSON_INTEGER_FORMAT "\n",
-                relid, json_integer_value(schema_id));
-    } else {
-        avro_set_error("Missing id field in schema registry response: %.*s",
-                avro_writer_tell(resp_writer), resp_body);
-        err = EIO;
-    }
-    json_decref(resp_json);
-
-done:
-    avro_writer_free(resp_writer);
-    free(req_body);
-    json_decref(req_json);
-    return err;
+    return 0;
 }
+
 
 static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
         size_t new_row_len, avro_value_t *new_row_val) {
-    int err = 0;
     producer_context_t context = (producer_context_t) _context;
-    const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
-    if (strcmp(table_name, "test") != 0) return 0; // TODO remove hard-coded topic
 
     msg_envelope_t envelope = malloc(sizeof(msg_envelope));
     memset(envelope, 0, sizeof(msg_envelope));
@@ -325,12 +227,17 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void
     envelope->wal_pos = wal_pos;
     envelope->relid = relid;
 
-    char *msg = malloc(new_row_len + MESSAGE_PREFIX_LEN);
-    memcpy(msg, MESSAGE_PREFIX, MESSAGE_PREFIX_LEN);
-    memcpy(msg + MESSAGE_PREFIX_LEN, new_row_bin, new_row_len);
+    void *msg;
+    topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
+        new_row_bin, new_row_len, &msg);
 
-    err = rd_kafka_produce(context->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
-            msg, new_row_len + MESSAGE_PREFIX_LEN, NULL, 0, envelope);
+    if (!entry) {
+        fprintf(stderr, "%s: %s\n", progname, context->registry->error);
+        exit_nicely(context, 1);
+    }
+
+    int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
+            msg, new_row_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN, NULL, 0, envelope);
 
     // TODO apply backpressure if data from Postgres is coming in faster than we can send
     // it on to Kafka. Producer does not block, but signals a full buffer like this:
@@ -339,7 +246,7 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void
     if (err != 0) {
         fprintf(stderr, "%s: Failed to produce to Kafka: %s\n",
             progname, rd_kafka_err2str(rd_kafka_errno2err(errno)));
-        return EIO;
+        exit_nicely(context, 1);
     }
 
     return 0;
@@ -402,10 +309,7 @@ producer_context_t init_producer(client_context_t client) {
     client->repl.frame_reader->cb_context = context;
 
     context->client = client;
-    context->curl = curl_easy_init();
-    context->curl_headers = curl_slist_append(NULL, "Content-Type: application/vnd.schemaregistry.v1+json");
-    context->curl_headers = curl_slist_append(context->curl_headers, "Accept: application/vnd.schemaregistry.v1+json");
-    context->registry = DEFAULT_SCHEMA_REGISTRY;
+    context->registry = schema_registry_new(DEFAULT_SCHEMA_REGISTRY);
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
@@ -429,22 +333,12 @@ void start_producer(producer_context_t context) {
         fprintf(stderr, "%s: No valid Kafka brokers specified\n", progname);
         exit(1);
     }
-
-    /* TODO fix hard-coded topic name. Use rd_kafka_topic_conf_dup(). */
-    char *topicname = "test3";
-    context->topic = rd_kafka_topic_new(context->kafka, topicname, context->topic_conf);
-    if (!context->topic) {
-        fprintf(stderr, "%s: Cannot open Kafka topic %s: %s\n", progname, topicname,
-                rd_kafka_err2str(rd_kafka_errno2err(errno)));
-        exit(1);
-    }
 }
 
 void exit_nicely(producer_context_t context, int status) {
+    schema_registry_free(context->registry);
     frame_reader_free(context->client->repl.frame_reader);
     db_client_free(context->client);
-    curl_slist_free_all(context->curl_headers);
-    curl_easy_cleanup(context->curl);
     curl_global_cleanup();
     // TODO shut down Kafka producer gracefully
     exit(status);
