@@ -2,3 +2,4 @@
 *.so
 /client/bottledwater
 /client/libbottledwater.a
+/kafka/bottledwater
