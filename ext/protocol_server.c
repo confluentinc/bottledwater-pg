@@ -10,9 +10,9 @@
 #include "utils/lsyscache.h"
 
 int update_frame_with_table_schema(avro_value_t *frame_val, schema_cache_entry *entry);
-int update_frame_with_insert_raw(avro_value_t *frame_val, Oid relid, bytea *value_bin);
-int update_frame_with_update_raw(avro_value_t *frame_val, Oid relid, bytea *old_bin, bytea *new_bin);
-int update_frame_with_delete_raw(avro_value_t *frame_val, Oid relid, bytea *old_bin);
+int update_frame_with_insert_raw(avro_value_t *frame_val, Oid relid, bytea *key_bin, bytea *new_bin);
+int update_frame_with_update_raw(avro_value_t *frame_val, Oid relid, bytea *key_bin, bytea *old_bin, bytea *new_bin);
+int update_frame_with_delete_raw(avro_value_t *frame_val, Oid relid, bytea *key_bin, bytea *old_bin);
 int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry **entry_out);
 schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
 void schema_cache_entry_update(schema_cache_entry *entry, Relation rel);
@@ -66,9 +66,9 @@ int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Rela
     }
 
     check(err, avro_value_reset(&entry->row_value));
-    check(err, update_avro_with_tuple(&entry->row_value, entry->row_schema, tupdesc, newtuple));
+    check(err, tuple_to_avro_row(&entry->row_value, tupdesc, newtuple));
     check(err, try_writing(&new_bin, &write_avro_binary, &entry->row_value));
-    check(err, update_frame_with_insert_raw(frame_val, RelationGetRelid(rel), new_bin));
+    check(err, update_frame_with_insert_raw(frame_val, RelationGetRelid(rel), NULL, new_bin));
 
     pfree(new_bin);
     return err;
@@ -86,14 +86,14 @@ int update_frame_with_update(avro_value_t *frame_val, schema_cache_t cache, Rela
 
     if (oldtuple) {
         check(err, avro_value_reset(&entry->row_value));
-        check(err, update_avro_with_tuple(&entry->row_value, entry->row_schema, RelationGetDescr(rel), oldtuple));
+        check(err, tuple_to_avro_row(&entry->row_value, RelationGetDescr(rel), oldtuple));
         check(err, try_writing(&old_bin, &write_avro_binary, &entry->row_value));
     }
 
     check(err, avro_value_reset(&entry->row_value));
-    check(err, update_avro_with_tuple(&entry->row_value, entry->row_schema, RelationGetDescr(rel), newtuple));
+    check(err, tuple_to_avro_row(&entry->row_value, RelationGetDescr(rel), newtuple));
     check(err, try_writing(&new_bin, &write_avro_binary, &entry->row_value));
-    check(err, update_frame_with_update_raw(frame_val, RelationGetRelid(rel), old_bin, new_bin));
+    check(err, update_frame_with_update_raw(frame_val, RelationGetRelid(rel), NULL, old_bin, new_bin));
 
     if (old_bin) pfree(old_bin);
     pfree(new_bin);
@@ -112,10 +112,10 @@ int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Rela
 
     if (oldtuple) {
         check(err, avro_value_reset(&entry->row_value));
-        check(err, update_avro_with_tuple(&entry->row_value, entry->row_schema, RelationGetDescr(rel), oldtuple));
+        check(err, tuple_to_avro_row(&entry->row_value, RelationGetDescr(rel), oldtuple));
         check(err, try_writing(&old_bin, &write_avro_binary, &entry->row_value));
     }
-    check(err, update_frame_with_delete_raw(frame_val, RelationGetRelid(rel), old_bin));
+    check(err, update_frame_with_delete_raw(frame_val, RelationGetRelid(rel), NULL, old_bin));
 
     if (old_bin) pfree(old_bin);
     return err;
@@ -154,32 +154,49 @@ int update_frame_with_table_schema(avro_value_t *frame_val, schema_cache_entry *
     return err;
 }
 
-int update_frame_with_insert_raw(avro_value_t *frame_val, Oid relid, bytea *value_bin) {
+int update_frame_with_insert_raw(avro_value_t *frame_val, Oid relid, bytea *key_bin, bytea *new_bin) {
     int err = 0;
-    avro_value_t msg_val, union_val, record_val, relid_val, newrow_val;
+    avro_value_t msg_val, union_val, record_val, relid_val, key_val, newrow_val, branch_val;
 
     check(err, avro_value_get_by_index(frame_val, 0, &msg_val, NULL));
     check(err, avro_value_append(&msg_val, &union_val, NULL));
     check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_INSERT, &record_val));
     check(err, avro_value_get_by_index(&record_val, 0, &relid_val,  NULL));
-    check(err, avro_value_get_by_index(&record_val, 1, &newrow_val, NULL));
+    check(err, avro_value_get_by_index(&record_val, 1, &key_val,    NULL));
+    check(err, avro_value_get_by_index(&record_val, 2, &newrow_val, NULL));
     check(err, avro_value_set_long(&relid_val, relid));
-    check(err, avro_value_set_bytes(&newrow_val, VARDATA(value_bin), VARSIZE(value_bin) - VARHDRSZ));
+    check(err, avro_value_set_bytes(&newrow_val, VARDATA(new_bin), VARSIZE(new_bin) - VARHDRSZ));
+
+    if (key_bin) {
+        check(err, avro_value_set_branch(&key_val, 1, &branch_val));
+        check(err, avro_value_set_bytes(&branch_val, VARDATA(key_bin), VARSIZE(key_bin) - VARHDRSZ));
+    } else {
+        check(err, avro_value_set_branch(&key_val, 0, NULL));
+    }
     return err;
 }
 
-int update_frame_with_update_raw(avro_value_t *frame_val, Oid relid, bytea *old_bin, bytea *new_bin) {
+int update_frame_with_update_raw(avro_value_t *frame_val, Oid relid, bytea *key_bin,
+        bytea *old_bin, bytea *new_bin) {
     int err = 0;
-    avro_value_t msg_val, union_val, record_val, relid_val, oldrow_val, newrow_val, branch_val;
+    avro_value_t msg_val, union_val, record_val, relid_val, key_val, oldrow_val, newrow_val, branch_val;
 
     check(err, avro_value_get_by_index(frame_val, 0, &msg_val, NULL));
     check(err, avro_value_append(&msg_val, &union_val, NULL));
     check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_UPDATE, &record_val));
     check(err, avro_value_get_by_index(&record_val, 0, &relid_val,  NULL));
-    check(err, avro_value_get_by_index(&record_val, 1, &oldrow_val, NULL));
-    check(err, avro_value_get_by_index(&record_val, 2, &newrow_val, NULL));
+    check(err, avro_value_get_by_index(&record_val, 1, &key_val,    NULL));
+    check(err, avro_value_get_by_index(&record_val, 2, &oldrow_val, NULL));
+    check(err, avro_value_get_by_index(&record_val, 3, &newrow_val, NULL));
     check(err, avro_value_set_long(&relid_val, relid));
     check(err, avro_value_set_bytes(&newrow_val, VARDATA(new_bin), VARSIZE(new_bin) - VARHDRSZ));
+
+    if (key_bin) {
+        check(err, avro_value_set_branch(&key_val, 1, &branch_val));
+        check(err, avro_value_set_bytes(&branch_val, VARDATA(key_bin), VARSIZE(key_bin) - VARHDRSZ));
+    } else {
+        check(err, avro_value_set_branch(&key_val, 0, NULL));
+    }
 
     if (old_bin) {
         check(err, avro_value_set_branch(&oldrow_val, 1, &branch_val));
@@ -190,16 +207,24 @@ int update_frame_with_update_raw(avro_value_t *frame_val, Oid relid, bytea *old_
     return err;
 }
 
-int update_frame_with_delete_raw(avro_value_t *frame_val, Oid relid, bytea *old_bin) {
+int update_frame_with_delete_raw(avro_value_t *frame_val, Oid relid, bytea *key_bin, bytea *old_bin) {
     int err = 0;
-    avro_value_t msg_val, union_val, record_val, relid_val, oldrow_val, branch_val;
+    avro_value_t msg_val, union_val, record_val, relid_val, key_val, oldrow_val, branch_val;
 
     check(err, avro_value_get_by_index(frame_val, 0, &msg_val, NULL));
     check(err, avro_value_append(&msg_val, &union_val, NULL));
     check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_DELETE, &record_val));
-    check(err, avro_value_get_by_index(&record_val, 0, &relid_val, NULL));
-    check(err, avro_value_get_by_index(&record_val, 1, &oldrow_val,  NULL));
+    check(err, avro_value_get_by_index(&record_val, 0, &relid_val,   NULL));
+    check(err, avro_value_get_by_index(&record_val, 1, &key_val,     NULL));
+    check(err, avro_value_get_by_index(&record_val, 2, &oldrow_val,  NULL));
     check(err, avro_value_set_long(&relid_val, relid));
+
+    if (key_bin) {
+        check(err, avro_value_set_branch(&key_val, 1, &branch_val));
+        check(err, avro_value_set_bytes(&branch_val, VARDATA(key_bin), VARSIZE(key_bin) - VARHDRSZ));
+    } else {
+        check(err, avro_value_set_branch(&key_val, 0, NULL));
+    }
 
     if (old_bin) {
         check(err, avro_value_set_branch(&oldrow_val, 1, &branch_val));

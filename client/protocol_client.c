@@ -154,16 +154,18 @@ int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader, 
 }
 
 int process_frame_insert(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
-    int err = 0;
-    avro_value_t relid_val, newrow_val;
+    int err = 0, key_present;
+    avro_value_t relid_val, key_val, new_val, branch_val;
     int64_t relid;
-    const void *new_bin;
-    size_t new_len;
+    const void *key_bin = NULL, *new_bin = NULL;
+    size_t key_len = 0, new_len = 0;
 
-    check(err, avro_value_get_by_index(record_val, 0, &relid_val,  NULL));
-    check(err, avro_value_get_by_index(record_val, 1, &newrow_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 0, &relid_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 1, &key_val,   NULL));
+    check(err, avro_value_get_by_index(record_val, 2, &new_val,   NULL));
     check(err, avro_value_get_long(&relid_val, &relid));
-    check(err, avro_value_get_bytes(&newrow_val, &new_bin, &new_len));
+    check(err, avro_value_get_discriminant(&key_val, &key_present));
+    check(err, avro_value_get_bytes(&new_val, &new_bin, &new_len));
 
     schema_list_entry *entry = schema_list_lookup(reader, relid);
     if (!entry) {
@@ -171,28 +173,37 @@ int process_frame_insert(avro_value_t *record_val, frame_reader_t reader, uint64
         return EINVAL;
     }
 
+    if (key_present) {
+        check(err, avro_value_get_current_branch(&key_val, &branch_val));
+        check(err, avro_value_get_bytes(&branch_val, &key_bin, &key_len));
+        check(err, read_entirely(&entry->key_value, entry->avro_reader, key_bin, key_len));
+    }
+
     check(err, read_entirely(&entry->row_value, entry->avro_reader, new_bin, new_len));
 
     if (reader->on_insert_row) {
         check(err, reader->on_insert_row(reader->cb_context, wal_pos, relid,
+                    key_bin, key_len, key_bin ? &entry->key_value : NULL,
                     new_bin, new_len, &entry->row_value));
     }
     return err;
 }
 
 int process_frame_update(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
-    int err = 0, oldrow_present;
-    avro_value_t relid_val, oldrow_val, newrow_val, branch_val;
+    int err = 0, key_present, old_present;
+    avro_value_t relid_val, key_val, old_val, new_val, branch_val;
     int64_t relid;
-    const void *old_bin = NULL, *new_bin = NULL;
-    size_t old_len = 0, new_len = 0;
+    const void *key_bin = NULL, *old_bin = NULL, *new_bin = NULL;
+    size_t key_len = 0, old_len = 0, new_len = 0;
 
-    check(err, avro_value_get_by_index(record_val, 0, &relid_val,  NULL));
-    check(err, avro_value_get_by_index(record_val, 1, &oldrow_val, NULL));
-    check(err, avro_value_get_by_index(record_val, 2, &newrow_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 0, &relid_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 1, &key_val,   NULL));
+    check(err, avro_value_get_by_index(record_val, 2, &old_val,   NULL));
+    check(err, avro_value_get_by_index(record_val, 3, &new_val,   NULL));
     check(err, avro_value_get_long(&relid_val, &relid));
-    check(err, avro_value_get_discriminant(&oldrow_val, &oldrow_present));
-    check(err, avro_value_get_bytes(&newrow_val, &new_bin, &new_len));
+    check(err, avro_value_get_discriminant(&key_val, &key_present));
+    check(err, avro_value_get_discriminant(&old_val, &old_present));
+    check(err, avro_value_get_bytes(&new_val, &new_bin, &new_len));
 
     schema_list_entry *entry = schema_list_lookup(reader, relid);
     if (!entry) {
@@ -200,8 +211,14 @@ int process_frame_update(avro_value_t *record_val, frame_reader_t reader, uint64
         return EINVAL;
     }
 
-    if (oldrow_present) {
-        check(err, avro_value_get_current_branch(&oldrow_val, &branch_val));
+    if (key_present) {
+        check(err, avro_value_get_current_branch(&key_val, &branch_val));
+        check(err, avro_value_get_bytes(&branch_val, &key_bin, &key_len));
+        check(err, read_entirely(&entry->key_value, entry->avro_reader, key_bin, key_len));
+    }
+
+    if (old_present) {
+        check(err, avro_value_get_current_branch(&old_val, &branch_val));
         check(err, avro_value_get_bytes(&branch_val, &old_bin, &old_len));
         check(err, read_entirely(&entry->old_value, entry->avro_reader, old_bin, old_len));
     }
@@ -210,6 +227,7 @@ int process_frame_update(avro_value_t *record_val, frame_reader_t reader, uint64
 
     if (reader->on_update_row) {
         check(err, reader->on_update_row(reader->cb_context, wal_pos, relid,
+                    key_bin, key_len, key_bin ? &entry->key_value : NULL,
                     old_bin, old_len, old_bin ? &entry->old_value : NULL,
                     new_bin, new_len, &entry->row_value));
     }
@@ -217,16 +235,18 @@ int process_frame_update(avro_value_t *record_val, frame_reader_t reader, uint64
 }
 
 int process_frame_delete(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
-    int err = 0, oldrow_present;
-    avro_value_t relid_val, oldrow_val, branch_val;
+    int err = 0, key_present, old_present;
+    avro_value_t relid_val, key_val, old_val, branch_val;
     int64_t relid;
-    const void *old_bin = NULL;
-    size_t old_len;
+    const void *key_bin = NULL, *old_bin = NULL;
+    size_t key_len = 0, old_len = 0;
 
-    check(err, avro_value_get_by_index(record_val, 0, &relid_val,  NULL));
-    check(err, avro_value_get_by_index(record_val, 1, &oldrow_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 0, &relid_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 1, &key_val,   NULL));
+    check(err, avro_value_get_by_index(record_val, 2, &old_val,   NULL));
     check(err, avro_value_get_long(&relid_val, &relid));
-    check(err, avro_value_get_discriminant(&oldrow_val, &oldrow_present));
+    check(err, avro_value_get_discriminant(&key_val, &key_present));
+    check(err, avro_value_get_discriminant(&old_val, &old_present));
 
     schema_list_entry *entry = schema_list_lookup(reader, relid);
     if (!entry) {
@@ -234,14 +254,21 @@ int process_frame_delete(avro_value_t *record_val, frame_reader_t reader, uint64
         return EINVAL;
     }
 
-    if (oldrow_present) {
-        check(err, avro_value_get_current_branch(&oldrow_val, &branch_val));
+    if (key_present) {
+        check(err, avro_value_get_current_branch(&key_val, &branch_val));
+        check(err, avro_value_get_bytes(&branch_val, &key_bin, &key_len));
+        check(err, read_entirely(&entry->key_value, entry->avro_reader, key_bin, key_len));
+    }
+
+    if (old_present) {
+        check(err, avro_value_get_current_branch(&old_val, &branch_val));
         check(err, avro_value_get_bytes(&branch_val, &old_bin, &old_len));
         check(err, read_entirely(&entry->old_value, entry->avro_reader, old_bin, old_len));
     }
 
     if (reader->on_delete_row) {
         check(err, reader->on_delete_row(reader->cb_context, wal_pos, relid,
+                    key_bin, key_len, key_bin ? &entry->key_value : NULL,
                     old_bin, old_len, old_bin ? &entry->old_value : NULL));
     }
     return err;

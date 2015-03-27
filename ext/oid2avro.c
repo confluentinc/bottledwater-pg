@@ -118,9 +118,8 @@ avro_schema_t schema_for_table_row(Relation rel) {
 
 
 /* Translates a Postgres heap tuple (one row of a table) into the Avro schema generated
- * by schema_for_table_row. */
-int update_avro_with_tuple(avro_value_t *output_val, avro_schema_t schema,
-        TupleDesc tupdesc, HeapTuple tuple) {
+ * by schema_for_table_row(). */
+int tuple_to_avro_row(avro_value_t *output_val, TupleDesc tupdesc, HeapTuple tuple) {
     int err = 0, field = 0;
     check(err, avro_value_reset(output_val));
 

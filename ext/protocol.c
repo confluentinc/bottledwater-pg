@@ -108,8 +108,12 @@ avro_schema_t schema_for_insert() {
     avro_schema_record_field_append(record_schema, "relid", field_schema);
     avro_schema_decref(field_schema);
 
+    field_schema = nullable_schema(avro_schema_bytes());
+    avro_schema_record_field_append(record_schema, "key", field_schema);
+    avro_schema_decref(field_schema);
+
     field_schema = avro_schema_bytes();
-    avro_schema_record_field_append(record_schema, "newrow", field_schema);
+    avro_schema_record_field_append(record_schema, "newRow", field_schema);
     avro_schema_decref(field_schema);
 
     return record_schema;
@@ -123,11 +127,15 @@ avro_schema_t schema_for_update() {
     avro_schema_decref(field_schema);
 
     field_schema = nullable_schema(avro_schema_bytes());
-    avro_schema_record_field_append(record_schema, "oldrow", field_schema);
+    avro_schema_record_field_append(record_schema, "key", field_schema);
+    avro_schema_decref(field_schema);
+
+    field_schema = nullable_schema(avro_schema_bytes());
+    avro_schema_record_field_append(record_schema, "oldRow", field_schema);
     avro_schema_decref(field_schema);
 
     field_schema = avro_schema_bytes();
-    avro_schema_record_field_append(record_schema, "newrow", field_schema);
+    avro_schema_record_field_append(record_schema, "newRow", field_schema);
     avro_schema_decref(field_schema);
 
     return record_schema;
@@ -141,7 +149,11 @@ avro_schema_t schema_for_delete() {
     avro_schema_decref(field_schema);
 
     field_schema = nullable_schema(avro_schema_bytes());
-    avro_schema_record_field_append(record_schema, "oldrow", field_schema);
+    avro_schema_record_field_append(record_schema, "key", field_schema);
+    avro_schema_decref(field_schema);
+
+    field_schema = nullable_schema(avro_schema_bytes());
+    avro_schema_record_field_append(record_schema, "oldRow", field_schema);
     avro_schema_decref(field_schema);
 
     return record_schema;

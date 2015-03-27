@@ -61,13 +61,16 @@ static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
         const char *key_schema_json, size_t key_schema_len, avro_schema_t key_schema,
         const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema);
-static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
-        size_t new_row_len, avro_value_t *new_row_val);
-static int on_update_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
-        size_t old_row_len, avro_value_t *old_row_val, const void *new_row_bin,
-        size_t new_row_len, avro_value_t *new_row_val);
-static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
-        size_t old_row_len, avro_value_t *old_row_val);
+static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val);
+static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val);
+static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val);
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *envelope);
 void exit_nicely(producer_context_t context, int status);
 client_context_t init_client(void);
@@ -227,8 +230,9 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
 }
 
 
-static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
-        size_t new_row_len, avro_value_t *new_row_val) {
+static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val) {
     producer_context_t context = (producer_context_t) _context;
 
     msg_envelope_t envelope = malloc(sizeof(msg_envelope));
@@ -238,8 +242,7 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void
     envelope->relid = relid;
 
     void *msg;
-    topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
-        new_row_bin, new_row_len, &msg);
+    topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid, new_bin, new_len, &msg);
 
     if (!entry) {
         fprintf(stderr, "%s: %s\n", progname, context->registry->error);
@@ -247,7 +250,7 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void
     }
 
     int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
-            msg, new_row_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN, NULL, 0, envelope);
+            msg, new_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN, NULL, 0, envelope);
 
     // TODO apply backpressure if data from Postgres is coming in faster than we can send
     // it on to Kafka. Producer does not block, but signals a full buffer like this:
@@ -262,14 +265,16 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void
     return 0;
 }
 
-static int on_update_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
-        size_t old_row_len, avro_value_t *old_row_val, const void *new_row_bin,
-        size_t new_row_len, avro_value_t *new_row_val) {
+static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val) {
     return 0;
 }
 
-static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
-        size_t old_row_len, avro_value_t *old_row_val) {
+static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val) {
     return 0;
 }
 

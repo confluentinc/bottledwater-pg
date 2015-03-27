@@ -25,18 +25,21 @@ static char *progname;
 
 void usage(void);
 void parse_options(client_context_t context, int argc, char **argv);
-int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid);
-int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid);
-int print_table_schema(void *context, uint64_t wal_pos, Oid relid,
+static int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid);
+static int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid);
+static int print_table_schema(void *context, uint64_t wal_pos, Oid relid,
         const char *key_schema_json, size_t key_schema_len, avro_schema_t key_schema,
         const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema);
-int print_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
-        size_t new_row_len, avro_value_t *new_row_val);
-int print_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
-        size_t old_row_len, avro_value_t *old_row_val, const void *new_row_bin,
-        size_t new_row_len, avro_value_t *new_row_val);
-int print_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
-        size_t old_row_len, avro_value_t *old_row_val);
+static int print_insert_row(void *context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val);
+static int print_update_row(void *context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val);
+static int print_delete_row(void *context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val);
 void exit_nicely(client_context_t context);
 client_context_t init_client(void);
 
@@ -89,17 +92,17 @@ void parse_options(client_context_t context, int argc, char **argv) {
     if (!context->conninfo || optind < argc) usage();
 }
 
-int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid) {
+static int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid) {
     printf("begin xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
     return 0;
 }
 
-int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
+static int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
     printf("commit xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
     return 0;
 }
 
-int print_table_schema(void *context, uint64_t wal_pos, Oid relid,
+static int print_table_schema(void *context, uint64_t wal_pos, Oid relid,
         const char *key_schema_json, size_t key_schema_len, avro_schema_t key_schema,
         const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema) {
     printf("new schema for relid=%u\n\tkey = %.*s\n\trow = %.*s\n", relid,
@@ -108,47 +111,57 @@ int print_table_schema(void *context, uint64_t wal_pos, Oid relid,
     return 0;
 }
 
-int print_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
-        size_t new_row_len, avro_value_t *new_row_val) {
+static int print_insert_row(void *context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val) {
     int err = 0;
-    char *new_row_json;
-    const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
-    check(err, avro_value_to_json(new_row_val, 1, &new_row_json));
-    printf("insert to %s: %s\n", table_name, new_row_json);
-    free(new_row_json);
-    return err;
-}
+    char *key_json, *new_json;
+    const char *table_name = avro_schema_name(avro_value_get_schema(new_val));
+    check(err, avro_value_to_json(new_val, 1, &new_json));
 
-int print_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
-        size_t old_row_len, avro_value_t *old_row_val, const void *new_row_bin,
-        size_t new_row_len, avro_value_t *new_row_val) {
-    int err = 0;
-    char *old_row_json, *new_row_json;
-    const char *table_name = avro_schema_name(avro_value_get_schema(new_row_val));
-    check(err, avro_value_to_json(new_row_val, 1, &new_row_json));
-
-    if (old_row_val) {
-        check(err, avro_value_to_json(old_row_val, 1, &old_row_json));
-        printf("update to %s: %s --> %s\n", table_name, old_row_json, new_row_json);
-        free(old_row_json);
+    if (key_val) {
+        check(err, avro_value_to_json(key_val, 1, &key_json));
+        printf("insert to %s: %s --> %s\n", table_name, key_json, new_json);
+        free(key_json);
     } else {
-        printf("update to %s: (?) --> %s\n", table_name, new_row_json);
+        printf("insert to %s: %s\n", table_name, new_json);
     }
 
-    free(new_row_json);
+    free(new_json);
     return err;
 }
 
-int print_delete_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
-        size_t old_row_len, avro_value_t *old_row_val) {
+static int print_update_row(void *context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val) {
     int err = 0;
-    char *old_row_json;
+    char *key_json, *new_json;
+    const char *table_name = avro_schema_name(avro_value_get_schema(new_val));
+    check(err, avro_value_to_json(new_val, 1, &new_json));
 
-    if (old_row_val) {
-        const char *table_name = avro_schema_name(avro_value_get_schema(old_row_val));
-        check(err, avro_value_to_json(old_row_val, 1, &old_row_json));
-        printf("delete to %s: %s\n", table_name, old_row_json);
-        free(old_row_json);
+    if (key_val) {
+        check(err, avro_value_to_json(key_val, 1, &key_json));
+        printf("update to %s: %s --> %s\n", table_name, key_json, new_json);
+        free(key_json);
+    } else {
+        printf("update to %s: (?) --> %s\n", table_name, new_json);
+    }
+
+    free(new_json);
+    return err;
+}
+
+static int print_delete_row(void *context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val) {
+    int err = 0;
+    char *key_json;
+
+    if (key_val) {
+        check(err, avro_value_to_json(key_val, 1, &key_json));
+        printf("delete: %s\n", key_json);
+        free(key_json);
     } else {
         printf("delete to relid %u (?)\n", relid);
     }

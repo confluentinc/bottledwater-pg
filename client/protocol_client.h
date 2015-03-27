@@ -17,14 +17,28 @@ typedef int (*table_schema_cb)(void *, uint64_t, Oid,
         const char *, size_t, avro_schema_t,
         const char *, size_t, avro_schema_t);
 
-/* Parameters: context, wal_pos, relid, new_row_bin, new_row_len, new_row_val */
-typedef int (*insert_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_value_t *);
+/* Parameters: context, wal_pos, relid,
+ *             key_bin, key_len, key_val,
+ *             new_bin, new_len, new_val */
+typedef int (*insert_row_cb)(void *, uint64_t, Oid,
+        const void *, size_t, avro_value_t *,
+        const void *, size_t, avro_value_t *);
 
-/* Parameters: context, wal_pos, relid, old_row_bin, old_row_len, old_row_val, new_row_bin, new_row_len, new_row_val */
-typedef int (*update_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_value_t *, const void *, size_t, avro_value_t *);
+/* Parameters: context, wal_pos, relid,
+ *             key_bin, key_len, key_val,
+ *             old_bin, old_len, old_val,
+ *             new_bin, new_len, new_val */
+typedef int (*update_row_cb)(void *, uint64_t, Oid,
+        const void *, size_t, avro_value_t *,
+        const void *, size_t, avro_value_t *,
+        const void *, size_t, avro_value_t *);
 
-/* Parameters: context, wal_pos, relid, old_row_bin, old_row_len, old_row_val */
-typedef int (*delete_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_value_t *);
+/* Parameters: context, wal_pos, relid,
+ *             key_bin, key_len, key_val,
+ *             old_bin, old_len, old_val */
+typedef int (*delete_row_cb)(void *, uint64_t, Oid,
+        const void *, size_t, avro_value_t *,
+        const void *, size_t, avro_value_t *);
 
 
 typedef struct {
