@@ -357,8 +357,7 @@ uint64 schema_hash_for_relation(Relation rel) {
         Form_pg_attribute attr = tupdesc->attrs[i];
         if (attr->attisdropped) continue; /* skip dropped columns */
 
-        hash = fnv_format(hash, "attname=%s typid=%u notnull=%d\n",
-                NameStr(attr->attname), attr->atttypid, attr->attnotnull);
+        hash = fnv_format(hash, "attname=%s typid=%u\n", NameStr(attr->attname), attr->atttypid);
     }
 
     if (RelationGetForm(rel)->relkind == RELKIND_RELATION) {

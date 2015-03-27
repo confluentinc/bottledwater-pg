@@ -20,20 +20,20 @@
 #error Expecting timestamps to be represented as integers, not as floating-point.
 #endif
 
-avro_schema_t schema_for_oid(Oid typid, bool nullable);
+avro_schema_t schema_for_oid(Oid typid);
 avro_schema_t schema_for_numeric(void);
-avro_schema_t schema_for_date(bool nullable);
+avro_schema_t schema_for_date(void);
 avro_schema_t schema_for_time_tz(void);
-avro_schema_t schema_for_timestamp(bool nullable, bool with_tz);
+avro_schema_t schema_for_timestamp(bool with_tz);
 avro_schema_t schema_for_interval(void);
 void schema_for_date_fields(avro_schema_t record_schema);
 void schema_for_time_fields(avro_schema_t record_schema);
-avro_schema_t schema_for_special_times(avro_schema_t record_schema, bool nullable);
+avro_schema_t schema_for_special_times(avro_schema_t record_schema);
 
-int update_avro_with_datum(avro_value_t *output_val, Oid typid, bool nullable, Datum pg_datum);
-int update_avro_with_date(avro_value_t *union_val, bool nullable, DateADT date);
+int update_avro_with_datum(avro_value_t *output_val, Oid typid, Datum pg_datum);
+int update_avro_with_date(avro_value_t *union_val, DateADT date);
 int update_avro_with_time_tz(avro_value_t *record_val, TimeTzADT *time);
-int update_avro_with_timestamp(avro_value_t *union_val, bool nullable, bool with_tz, Timestamp timestamp);
+int update_avro_with_timestamp(avro_value_t *union_val, bool with_tz, Timestamp timestamp);
 int update_avro_with_interval(avro_value_t *record_val, Interval *interval);
 int update_avro_with_bytes(avro_value_t *output_val, bytea *bytes);
 int update_avro_with_char(avro_value_t *output_val, char c);
@@ -108,7 +108,7 @@ avro_schema_t schema_for_table_row(Relation rel) {
         Form_pg_attribute attr = tupdesc->attrs[i];
         if (attr->attisdropped) continue; /* skip dropped columns */
 
-        column_schema = schema_for_oid(attr->atttypid, !(attr->attnotnull));
+        column_schema = schema_for_oid(attr->atttypid);
         avro_schema_record_field_append(record_schema, NameStr(attr->attname), column_schema);
         avro_schema_decref(column_schema);
     }
@@ -129,24 +129,15 @@ int update_avro_with_tuple(avro_value_t *output_val, avro_schema_t schema,
         if (attr->attisdropped) continue; /* skip dropped columns */
 
         avro_value_t field_val;
-        avro_schema_t field_schema = avro_schema_record_field_get_by_index(schema, field);
         check(err, avro_value_get_by_index(output_val, field, &field_val, NULL));
 
-        bool isnull, nullable = false;
-        if (is_avro_union(field_schema)) {
-            nullable = is_avro_null(avro_schema_union_branch(field_schema, 0));
-        }
-
+        bool isnull;
         Datum datum = heap_getattr(tuple, i + 1, tupdesc, &isnull);
-        if (isnull && !nullable) {
-            elog(ERROR, "got a null value on a column with non-null constraint");
-            return 1;
-        }
 
         if (isnull) {
             check(err, avro_value_set_branch(&field_val, 0, NULL));
         } else {
-            check(err, update_avro_with_datum(&field_val, attr->atttypid, nullable, datum));
+            check(err, update_avro_with_datum(&field_val, attr->atttypid, datum));
         }
 
         field++;
@@ -158,7 +149,7 @@ int update_avro_with_tuple(avro_value_t *output_val, avro_schema_t schema,
 
 /* Generates an Avro schema that can be used to encode a Postgres type
  * with the given OID. */
-avro_schema_t schema_for_oid(Oid typid, bool nullable) {
+avro_schema_t schema_for_oid(Oid typid) {
     avro_schema_t value_schema;
 
     switch (typid) {
@@ -191,7 +182,7 @@ avro_schema_t schema_for_oid(Oid typid, bool nullable) {
         /* Date/time types. We don't bother with abstime, reltime and tinterval (which are based
          * on Unix timestamps with 1-second resolution), as they are deprecated. */
         case DATEOID:        /* date: 32-bit signed integer, resolution of 1 day */
-            return schema_for_date(nullable);
+            return schema_for_date();
         case TIMEOID:        /* time without time zone: microseconds since start of day */
             value_schema = avro_schema_long();
             break;
@@ -199,9 +190,9 @@ avro_schema_t schema_for_oid(Oid typid, bool nullable) {
             value_schema = schema_for_time_tz();
             break;
         case TIMESTAMPOID:   /* timestamp without time zone: datetime, microseconds since epoch */
-            return schema_for_timestamp(nullable, false);
+            return schema_for_timestamp(false);
         case TIMESTAMPTZOID: /* timestamp with time zone, timestamptz: datetime with time zone */
-            return schema_for_timestamp(nullable, true);
+            return schema_for_timestamp(true);
         case INTERVALOID:    /* @ <number> <units>, time interval */
             value_schema = schema_for_interval();
             break;
@@ -244,27 +235,27 @@ avro_schema_t schema_for_oid(Oid typid, bool nullable) {
             break;
     }
 
-    if (nullable) {
-        avro_schema_t null_schema = avro_schema_null();
-        avro_schema_t union_schema = avro_schema_union();
-        avro_schema_union_append(union_schema, null_schema);
-        avro_schema_union_append(union_schema, value_schema);
-        avro_schema_decref(null_schema);
-        avro_schema_decref(value_schema);
-        return union_schema;
-    } else {
-        return value_schema;
-    }
+    /* Make a union of value_schema with null. Some types are already a union,
+     * in which case they must include null as the first branch of the union,
+     * and return directly from the function without getting here (otherwise
+     * we'd get a union inside a union, which is not valid Avro). */
+    avro_schema_t null_schema = avro_schema_null();
+    avro_schema_t union_schema = avro_schema_union();
+    avro_schema_union_append(union_schema, null_schema);
+    avro_schema_union_append(union_schema, value_schema);
+    avro_schema_decref(null_schema);
+    avro_schema_decref(value_schema);
+    return union_schema;
 }
 
 
 /* Translates a Postgres datum into an Avro value. */
-int update_avro_with_datum(avro_value_t *output_val, Oid typid, bool nullable, Datum pg_datum) {
+int update_avro_with_datum(avro_value_t *output_val, Oid typid, Datum pg_datum) {
     int err = 0;
     avro_value_t branch_val;
 
     /* Types that handle nullability themselves */
-    if (!nullable || typid == DATEOID || typid == TIMESTAMPOID || typid == TIMESTAMPTZOID) {
+    if (typid == DATEOID || typid == TIMESTAMPOID || typid == TIMESTAMPTZOID) {
         branch_val = *output_val;
     } else {
         check(err, avro_value_set_branch(output_val, 1, &branch_val));
@@ -306,7 +297,7 @@ int update_avro_with_datum(avro_value_t *output_val, Oid typid, bool nullable, D
             DatumGetNumeric(pg_datum); // TODO
             break;
         case DATEOID:
-            check(err, update_avro_with_date(output_val, nullable, DatumGetDateADT(pg_datum)));
+            check(err, update_avro_with_date(output_val, DatumGetDateADT(pg_datum)));
             break;
         case TIMEOID:
             check(err, avro_value_set_long(&branch_val, DatumGetTimeADT(pg_datum)));
@@ -315,10 +306,10 @@ int update_avro_with_datum(avro_value_t *output_val, Oid typid, bool nullable, D
             check(err, update_avro_with_time_tz(&branch_val, DatumGetTimeTzADTP(pg_datum)));
             break;
         case TIMESTAMPOID:
-            check(err, update_avro_with_timestamp(output_val, nullable, false, DatumGetTimestamp(pg_datum)));
+            check(err, update_avro_with_timestamp(output_val, false, DatumGetTimestamp(pg_datum)));
             break;
         case TIMESTAMPTZOID:
-            check(err, update_avro_with_timestamp(output_val, nullable, true, DatumGetTimestampTz(pg_datum)));
+            check(err, update_avro_with_timestamp(output_val, true, DatumGetTimestampTz(pg_datum)));
             break;
         case INTERVALOID:
             check(err, update_avro_with_interval(&branch_val, DatumGetIntervalP(pg_datum)));
@@ -349,20 +340,19 @@ avro_schema_t schema_for_numeric() {
     return avro_schema_double(); /* FIXME use decimal logical type: http://avro.apache.org/docs/1.7.7/spec.html#Decimal */
 }
 
-avro_schema_t schema_for_special_times(avro_schema_t record_schema, bool nullable) {
+avro_schema_t schema_for_special_times(avro_schema_t record_schema) {
+    avro_schema_t union_schema = avro_schema_union();
+    avro_schema_t null_schema = avro_schema_null();
+    avro_schema_union_append(union_schema, null_schema);
+    avro_schema_decref(null_schema);
+
+    avro_schema_union_append(union_schema, record_schema);
+    avro_schema_decref(record_schema);
+
     avro_schema_t enum_schema = avro_schema_enum("SpecialTime"); // TODO needs namespace
     avro_schema_enum_symbol_append(enum_schema, "POS_INFINITY");
     avro_schema_enum_symbol_append(enum_schema, "NEG_INFINITY");
-
-    avro_schema_t union_schema = avro_schema_union();
-    if (nullable) {
-        avro_schema_t null_schema = avro_schema_null();
-        avro_schema_union_append(union_schema, null_schema);
-        avro_schema_decref(null_schema);
-    }
-    avro_schema_union_append(union_schema, record_schema);
     avro_schema_union_append(union_schema, enum_schema);
-    avro_schema_decref(record_schema);
     avro_schema_decref(enum_schema);
     return union_schema;
 }
@@ -399,19 +389,19 @@ void schema_for_time_fields(avro_schema_t record_schema) {
     avro_schema_decref(column_schema);
 }
 
-avro_schema_t schema_for_date(bool nullable) {
+avro_schema_t schema_for_date() {
     avro_schema_t record_schema = avro_schema_record("Date", PREDEFINED_SCHEMA_NAMESPACE);
     schema_for_date_fields(record_schema);
-    return schema_for_special_times(record_schema, nullable);
+    return schema_for_special_times(record_schema);
 }
 
-int update_avro_with_date(avro_value_t *union_val, bool nullable, DateADT date) {
-    int err = 0, branch_offset = nullable ? 1 : 0;
+int update_avro_with_date(avro_value_t *union_val, DateADT date) {
+    int err = 0;
     int year, month, day;
     avro_value_t enum_val, record_val, year_val, month_val, day_val;
 
     if (DATE_NOT_FINITE(date)) {
-        check(err, avro_value_set_branch(union_val, 1 + branch_offset, &enum_val));
+        check(err, avro_value_set_branch(union_val, 2, &enum_val));
         if (DATE_IS_NOBEGIN(date)) {
             avro_value_set_enum(&enum_val, 1);
         } else {
@@ -420,7 +410,7 @@ int update_avro_with_date(avro_value_t *union_val, bool nullable, DateADT date) 
     } else {
         j2date(date + POSTGRES_EPOCH_JDATE, &year, &month, &day);
 
-        check(err, avro_value_set_branch(union_val, 0 + branch_offset, &record_val));
+        check(err, avro_value_set_branch(union_val, 1, &record_val));
         check(err, avro_value_get_by_index(&record_val, 0, &year_val,  NULL));
         check(err, avro_value_get_by_index(&record_val, 1, &month_val, NULL));
         check(err, avro_value_get_by_index(&record_val, 2, &day_val,   NULL));
@@ -489,7 +479,7 @@ int update_avro_with_time_tz(avro_value_t *record_val, TimeTzADT *time) {
  * Clients can force UTC output by setting the environment variable PGTZ=UTC, or by
  * executing "SET SESSION TIME ZONE UTC;".
  */
-avro_schema_t schema_for_timestamp(bool nullable, bool with_tz) {
+avro_schema_t schema_for_timestamp(bool with_tz) {
     avro_schema_t record_schema = avro_schema_record("DateTime", PREDEFINED_SCHEMA_NAMESPACE);
     schema_for_date_fields(record_schema);
     schema_for_time_fields(record_schema);
@@ -499,19 +489,18 @@ avro_schema_t schema_for_timestamp(bool nullable, bool with_tz) {
         avro_schema_record_field_append(record_schema, "zoneOffset", column_schema);
         avro_schema_decref(column_schema);
     }
-    return schema_for_special_times(record_schema, nullable);
+    return schema_for_special_times(record_schema);
 }
 
-int update_avro_with_timestamp(avro_value_t *union_val, bool nullable, bool with_tz,
-                               Timestamp timestamp) {
-    int err = 0, tz_offset, branch_offset = nullable ? 1 : 0;
+int update_avro_with_timestamp(avro_value_t *union_val, bool with_tz, Timestamp timestamp) {
+    int err = 0, tz_offset;
     avro_value_t enum_val, record_val, year_val, month_val, day_val, hour_val,
                  minute_val, second_val, micro_val, zone_val;
     struct pg_tm decoded;
     fsec_t fsec;
 
     if (TIMESTAMP_NOT_FINITE(timestamp)) {
-        check(err, avro_value_set_branch(union_val, 1 + branch_offset, &enum_val));
+        check(err, avro_value_set_branch(union_val, 2, &enum_val));
         if (TIMESTAMP_IS_NOBEGIN(timestamp)) {
             check(err, avro_value_set_enum(&enum_val, 1));
         } else {
@@ -535,7 +524,7 @@ int update_avro_with_timestamp(avro_value_t *union_val, bool nullable, bool with
         return 1;
     }
 
-    check(err, avro_value_set_branch(union_val, 0 + branch_offset, &record_val));
+    check(err, avro_value_set_branch(union_val, 1, &record_val));
     check(err, avro_value_get_by_index(&record_val, 0, &year_val,   NULL));
     check(err, avro_value_get_by_index(&record_val, 1, &month_val,  NULL));
     check(err, avro_value_get_by_index(&record_val, 2, &day_val,    NULL));
