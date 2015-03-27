@@ -248,6 +248,7 @@ topic_list_entry_t topic_list_entry_new(schema_registry_t registry) {
 void schema_registry_free(schema_registry_t registry) {
     for (int i = 0; i < registry->num_topics; i++) {
         topic_list_entry_t entry = registry->topics[i];
+        if (entry->topic) rd_kafka_topic_destroy(entry->topic);
         free(entry->topic_name);
         free(entry);
     }

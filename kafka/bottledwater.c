@@ -49,6 +49,7 @@ typedef struct {
 typedef msg_envelope *msg_envelope_t;
 
 static char *progname;
+static bool received_sigint = false;
 
 void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
@@ -339,16 +340,22 @@ void exit_nicely(producer_context_t context, int status) {
     schema_registry_free(context->registry);
     frame_reader_free(context->client->repl.frame_reader);
     db_client_free(context->client);
+    if (context->kafka) rd_kafka_destroy(context->kafka);
     curl_global_cleanup();
-    // TODO shut down Kafka producer gracefully
+    rd_kafka_wait_destroyed(2000);
     exit(status);
+}
+
+static void handle_sigint(int sig) {
+    received_sigint = true;
 }
 
 
 int main(int argc, char **argv) {
     curl_global_init(CURL_GLOBAL_ALL);
-    producer_context_t context = init_producer(init_client());
+    signal(SIGINT, handle_sigint);
 
+    producer_context_t context = init_producer(init_client());
     parse_options(context, argc, argv);
     start_producer(context);
     ensure(context, db_client_start(context->client));
@@ -366,7 +373,7 @@ int main(int argc, char **argv) {
                 (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
     }
 
-    while (context->client->status >= 0) { /* TODO install signal handler for graceful shutdown */
+    while (context->client->status >= 0 && !received_sigint) {
         ensure(context, db_client_poll(context->client));
 
         if (snapshot && !context->client->sql_conn) {
@@ -380,6 +387,10 @@ int main(int argc, char **argv) {
         }
 
         rd_kafka_poll(context->kafka, 0);
+    }
+
+    if (received_sigint) {
+        fprintf(stderr, "Interrupted, shutting down...\n");
     }
 
     exit_nicely(context, 0);
