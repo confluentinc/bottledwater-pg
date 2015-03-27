@@ -302,9 +302,12 @@ int snapshot_start(client_context_t context) {
     check(err, exec_sql(context, query->data));
     destroyPQExpBuffer(query);
 
-    /* The final parameter 1 requests the results in binary format */
-    if (!PQsendQueryParams(context->sql_conn, "SELECT bottledwater_export('%')",
-                0, NULL, NULL, NULL, NULL, 1)) {
+    Oid argtypes[] = { 25, 16 }; // 25 == TEXTOID, 16 == BOOLOID
+    const char *args[] = { "%", context->allow_unkeyed ? "t" : "f" };
+
+    if (!PQsendQueryParams(context->sql_conn,
+                "SELECT bottledwater_export(table_pattern := $1, allow_unkeyed := $2)",
+                2, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));
         return EIO;

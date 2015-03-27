@@ -87,6 +87,9 @@ void usage() {
             "                          Comma-separated list of Kafka broker hosts/ports.\n"
             "  -r, --schema-registry=http://hostname:port   (default: %s)\n"
             "                          URL of the service where Avro schemas are registered.\n"
+            "  -u, --allow-unkeyed     Allow export of tables that don't have a primary key.\n"
+            "                          This is disallowed by default, because updates and\n"
+            "                          deletes need a primary key to identify their row.\n"
             "  -C, --kafka-config property=value\n"
             "                          Set global configuration property for Kafka producer\n"
             "                          (see --config-help for list of properties).\n"
@@ -106,6 +109,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"slot",            required_argument, NULL, 's'},
         {"broker",          required_argument, NULL, 'b'},
         {"schema-registry", required_argument, NULL, 'r'},
+        {"allow-unkeyed",   no_argument,       NULL, 'u'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
         {"config-help",     no_argument,       NULL,  1 },
@@ -131,6 +135,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'r':
                 schema_registry_set_url(context->registry, optarg);
+                break;
+            case 'u':
+                context->client->allow_unkeyed = true;
                 break;
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
@@ -296,6 +303,7 @@ client_context_t init_client() {
 
     client_context_t client = db_client_new();
     client->app_name = APP_NAME;
+    client->allow_unkeyed = false;
     client->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     client->repl.output_plugin = OUTPUT_PLUGIN;
     client->repl.frame_reader = frame_reader;

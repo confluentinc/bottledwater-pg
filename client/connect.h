@@ -9,6 +9,7 @@ typedef struct {
     char *conninfo, *app_name;
     PGconn *sql_conn;
     replication_stream repl;
+    bool allow_unkeyed;
     int status; /* 1 = message was processed on last poll; 0 = no data available right now; -1 = stream ended */
     char error[CLIENT_CONTEXT_ERROR_LEN];
 } client_context;

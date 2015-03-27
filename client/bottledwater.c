@@ -47,16 +47,20 @@ void usage() {
             "  -d, --postgres=postgres://user:pass@host:port/dbname    (required)\n"
             "                          Connection string or URI of the PostgreSQL server.\n"
             "  -s, --slot=slotname     Name of replication slot to use (default: %s)\n"
-            "                          The slot is automatically created on first use.\n",
+            "                          The slot is automatically created on first use.\n"
+            "  -u, --allow-unkeyed     Allow export of tables that don't have a primary key.\n"
+            "                          This is disallowed by default, because updates and\n"
+            "                          deletes need a primary key to identify their row.\n",
             progname, DEFAULT_REPLICATION_SLOT);
     exit(1);
 }
 
 void parse_options(client_context_t context, int argc, char **argv) {
     static struct option options[] = {
-        {"postgres", required_argument, NULL, 'd'},
-        {"slot",     required_argument, NULL, 's'},
-        {NULL,       0,                 NULL,  0 }
+        {"postgres",      required_argument, NULL, 'd'},
+        {"slot",          required_argument, NULL, 's'},
+        {"allow-unkeyed", no_argument,       NULL, 'u'},
+        {NULL,            0,                 NULL,  0 }
     };
 
     progname = argv[0];
@@ -72,6 +76,9 @@ void parse_options(client_context_t context, int argc, char **argv) {
                 break;
             case 's':
                 context->repl.slot_name = strdup(optarg);
+                break;
+            case 'u':
+                context->allow_unkeyed = true;
                 break;
             default:
                 usage();
@@ -155,6 +162,7 @@ client_context_t init_client() {
 
     client_context_t context = db_client_new();
     context->app_name = APP_NAME;
+    context->allow_unkeyed = false;
     context->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     context->repl.output_plugin = OUTPUT_PLUGIN;
     context->repl.frame_reader = frame_reader;

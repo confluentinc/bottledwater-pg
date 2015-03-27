@@ -8,6 +8,7 @@
 #include "funcapi.h"
 #include "access/htup_details.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "lib/stringinfo.h"
@@ -19,9 +20,12 @@ PG_MODULE_MAGIC;
 
 typedef struct {
     Oid relid;
-    char *namespace;
-    char *relname;
     Relation rel;
+    char *namespace;
+    char *rel_name;
+    char repl_ident;
+    char *index_name;
+    int2vector *index_cols;
 } export_table;
 
 /* State that we need to remember between calls of bottledwater_export */
@@ -36,7 +40,7 @@ typedef struct {
 } export_state;
 
 void print_tupdesc(char *title, TupleDesc tupdesc);
-void get_table_list(export_state *state, text *table_pattern);
+void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed);
 void open_next_table(export_state *state);
 void close_current_table(export_state *state);
 bytea *format_snapshot_row(export_state *state);
@@ -116,7 +120,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         state->schema_cache = schema_cache_new(funcctx->multi_call_memory_ctx);
         funcctx->user_fctx = state;
 
-        get_table_list(state, PG_GETARG_TEXT_P(0));
+        get_table_list(state, PG_GETARG_TEXT_P(0), PG_GETARG_BOOL(1));
         if (state->num_tables > 0) open_next_table(state);
 
         MemoryContextSwitchTo(oldcontext);
@@ -156,45 +160,107 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
  * Also takes a shared lock on all the tables we're going to export, to make sure they
  * aren't dropped or schema-altered before we get around to reading them. (Ordinary
  * writes to the table, i.e. insert/update/delete, are not affected.) */
-void get_table_list(export_state *state, text *table_pattern) {
+void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed) {
     Oid argtypes[] = { TEXTOID };
     Datum args[] = { PointerGetDatum(table_pattern) };
 
     int ret = SPI_execute_with_args(
-            "SELECT c.oid, n.nspname, c.relname "
-            "FROM pg_class c "
-            "JOIN pg_namespace n ON n.oid = c.relnamespace "
-            "WHERE relkind = 'r' AND c.relname LIKE $1 AND "
-            "n.nspname NOT LIKE 'pg_%' AND n.nspname != 'information_schema' AND "
-            "c.relpersistence = 'p' AND c.relispopulated = 't'",
+            // c is the class of the table (which stores, amongst other things, the table name).
+            // n is the namespace (i.e. schema).
+            // i is an index on the table (refined below).
+            // ic is the class of the index (from which we get the name of the index).
+            "SELECT c.oid, n.nspname, c.relname, c.relreplident, ic.relname AS indname, i.indkey "
+            "FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+
+            // Find all indexes on the table
+            "LEFT JOIN pg_catalog.pg_index i ON c.oid = i.indrelid AND i.indisvalid AND i.indisready AND "
+
+            // For REPLICA_IDENTITY_DEFAULT ('d') and REPLICA_IDENTITY_FULL ('f'), find the primary key.
+            // For REPLICA_IDENTITY_INDEX ('i'), find the referenced index.
+            // For REPLICA_IDENTITY_NOTHING ('n'), don't match any index, even if it exists.
+            "((c.relreplident IN ('d', 'f') AND i.indisprimary) OR (c.relreplident = 'i' AND i.indisreplident)) "
+
+            // Join with pg_class again to get the name of the index
+            "LEFT JOIN pg_catalog.pg_class ic ON i.indexrelid = ic.oid "
+
+            // Select only ordinary tables ('r' == RELKIND_RELATION) matching the required name pattern
+            "WHERE c.relkind = 'r' AND c.relname LIKE $1 AND "
+            "n.nspname NOT LIKE 'pg_%' AND n.nspname != 'information_schema' AND " // not a system table
+            "c.relpersistence = 'p'", // 'p' == RELPERSISTENCE_PERMANENT (not unlogged or temporary)
+
             1, argtypes, args, NULL, true, 0);
+
     if (ret != SPI_OK_SELECT) {
         elog(ERROR, "Could not fetch table list: SPI_execute_with_args returned %d", ret);
     }
 
-    state->tables = palloc(SPI_processed * sizeof(export_table));
+    state->tables = palloc0(SPI_processed * sizeof(export_table));
     state->num_tables = SPI_processed;
 
+    StringInfoData errors;
+    initStringInfo(&errors);
+
     for (int i = 0; i < SPI_processed; i++) {
-        bool oid_null, namespace_null, relname_null;
+        bool oid_null, namespace_null, relname_null, replident_null, indname_null, indkey_null;
         HeapTuple tuple = SPI_tuptable->vals[i];
         TupleDesc tupdesc = SPI_tuptable->tupdesc;
 
         Datum oid_d       = heap_getattr(tuple, 1, tupdesc, &oid_null);
         Datum namespace_d = heap_getattr(tuple, 2, tupdesc, &namespace_null);
         Datum relname_d   = heap_getattr(tuple, 3, tupdesc, &relname_null);
-        if (oid_null || namespace_null || relname_null) {
+        Datum replident_d = heap_getattr(tuple, 4, tupdesc, &replident_null);
+        Datum indname_d   = heap_getattr(tuple, 5, tupdesc, &indname_null);
+        Datum indkey_d    = heap_getattr(tuple, 6, tupdesc, &indkey_null);
+
+        if (oid_null || namespace_null || relname_null || replident_null) {
             elog(ERROR, "get_table_list: unexpected null value");
         }
 
         export_table *table = &state->tables[i];
-        table->relid     = DatumGetObjectId(oid_d);
-        table->namespace = NameStr(*DatumGetName(namespace_d));
-        table->relname   = NameStr(*DatumGetName(relname_d));
-        table->rel       = relation_open(table->relid, AccessShareLock);
+        table->relid      = DatumGetObjectId(oid_d);
+        table->rel        = relation_open(table->relid, AccessShareLock);
+        table->namespace  = NameStr(*DatumGetName(namespace_d));
+        table->rel_name   = NameStr(*DatumGetName(relname_d));
+        table->repl_ident = DatumGetChar(replident_d);
+
+        if (!indname_null && !indkey_null) {
+            table->index_name = NameStr(*DatumGetName(indname_d));
+            table->index_cols = (int2vector *) DatumGetPointer(indkey_d);
+
+            elog(INFO, "bottledwater_export: Table %s is keyed by index %s",
+                    quote_qualified_identifier(table->namespace, table->rel_name), table->index_name);
+
+        } else if (table->repl_ident == REPLICA_IDENTITY_NOTHING) {
+            appendStringInfo(&errors, "\t%s is using REPLICA IDENTITY NOTHING.\n",
+                    quote_qualified_identifier(table->namespace, table->rel_name));
+        } else {
+            appendStringInfo(&errors, "\t%s does not have a primary key.\n",
+                    quote_qualified_identifier(table->namespace, table->rel_name));
+        }
+
+        for (int j = 0; j < i; j++) {
+            if (table->relid == state->tables[j].relid) {
+                elog(ERROR, "get_table_list: table %s has ambiguous primary key (%s and %s)",
+                        table->rel_name, table->index_name, state->tables[j].index_name);
+            }
+        }
     }
 
     SPI_freetuptable(SPI_tuptable);
+
+    if (errors.len > 0) {
+        if (allow_unkeyed) {
+            elog(INFO, "bottledwater_export: The following tables will be exported without a key:\n%s",
+                    errors.data);
+        } else {
+            elog(ERROR, "bottledwater_export: The following tables do not have a replica identity key:\n%s"
+                    "\tPlease give them a primary key or set REPLICA IDENTITY USING INDEX.\n"
+                    "\tTo ignore this issue, and export them anyway, use --allow-unkeyed\n"
+                    "\t(note that export of updates and deletes will then be incomplete).",
+                    errors.data);
+        }
+    }
 }
 
 /* Starts a query to dump all the rows from state->tables[state->current_table].
@@ -205,7 +271,7 @@ void open_next_table(export_state *state) {
     StringInfoData query;
     initStringInfo(&query);
     appendStringInfo(&query, "SELECT * FROM %s",
-            quote_qualified_identifier(table->namespace, table->relname));
+            quote_qualified_identifier(table->namespace, table->rel_name));
 
     SPIPlanPtr plan = SPI_prepare_cursor(query.data, 0, NULL, CURSOR_OPT_NO_SCROLL);
     if (!plan) {
