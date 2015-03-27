@@ -10,8 +10,12 @@ typedef int (*begin_txn_cb)(void *, uint64_t, uint32_t);
 /* Parameters: context, wal_pos, xid */
 typedef int (*commit_txn_cb)(void *, uint64_t, uint32_t);
 
-/* Parameters: context, wal_pos, relid, schema_json, schema_len, schema */
-typedef int (*table_schema_cb)(void *, uint64_t, Oid, const char *, size_t, avro_schema_t);
+/* Parameters: context, wal_pos, relid,
+ *             key_schema_json, key_schema_len, key_schema,
+ *             row_schema_json, row_schema_len, row_schema */
+typedef int (*table_schema_cb)(void *, uint64_t, Oid,
+        const char *, size_t, avro_schema_t,
+        const char *, size_t, avro_schema_t);
 
 /* Parameters: context, wal_pos, relid, new_row_bin, new_row_len, new_row_val */
 typedef int (*insert_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_value_t *);
@@ -24,13 +28,16 @@ typedef int (*delete_row_cb)(void *, uint64_t, Oid, const void *, size_t, avro_v
 
 
 typedef struct {
-    Oid relid;                       /* Uniquely identifies a table, even when it is renamed */
-    uint64_t hash;                   /* Hash of table schema, to detect changes */
-    avro_schema_t row_schema;        /* Avro schema for one row of the table */
+    Oid                 relid;       /* Uniquely identifies a table, even when it is renamed */
+    uint64_t            hash;        /* Hash of table schema, to detect changes */
+    avro_schema_t       key_schema;  /* Avro schema for the table's primary key or replica identity */
+    avro_schema_t       row_schema;  /* Avro schema for one row of the table */
+    avro_value_iface_t *key_iface;   /* Avro generic interface for creating key values */
     avro_value_iface_t *row_iface;   /* Avro generic interface for creating row values */
-    avro_value_t row_value;          /* Avro row value, for encoding one row */
-    avro_value_t old_value;          /* Avro row value, for encoding the old value (in updates, deletes) */
-    avro_reader_t avro_reader;       /* In-memory buffer reader */
+    avro_value_t        key_value;   /* Avro key value, for encoding one key */
+    avro_value_t        row_value;   /* Avro row value, for encoding one row */
+    avro_value_t        old_value;   /* Avro row value, for encoding the old value (in updates, deletes) */
+    avro_reader_t       avro_reader; /* In-memory buffer reader */
 } schema_list_entry;
 
 typedef struct {

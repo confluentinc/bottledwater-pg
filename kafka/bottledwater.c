@@ -58,8 +58,9 @@ void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
-static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid, const char *schema_json,
-        size_t schema_len, avro_schema_t schema);
+static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
+        const char *key_schema_json, size_t key_schema_len, avro_schema_t key_schema,
+        const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema);
 static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
         size_t new_row_len, avro_value_t *new_row_val);
 static int on_update_row(void *_context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
@@ -199,13 +200,14 @@ static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
 }
 
 
-static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid, const char *schema_json,
-        size_t schema_len, avro_schema_t schema) {
+static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
+        const char *key_schema_json, size_t key_schema_len, avro_schema_t key_schema,
+        const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema) {
     producer_context_t context = (producer_context_t) _context;
-    const char *topic_name = avro_schema_name(schema);
+    const char *topic_name = avro_schema_name(row_schema);
 
     topic_list_entry_t entry = schema_registry_update(context->registry, relid,
-            topic_name, schema_json, schema_len);
+            topic_name, row_schema_json, row_schema_len);
 
     if (!entry) {
         fprintf(stderr, "%s: %s\n", progname, context->registry->error);

@@ -40,8 +40,57 @@ int update_avro_with_char(avro_value_t *output_val, char c);
 int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum);
 
 
+/* Returns the relation object for the index that we're going to use as key for a
+ * particular table. (Indexes are relations too!) Returns null if the table is unkeyed.
+ * The return value is opened with a shared lock; call relation_close() when finished. */
+Relation table_key_index(Relation rel) {
+    char replident = rel->rd_rel->relreplident;
+    if (replident == REPLICA_IDENTITY_NOTHING) {
+        return NULL;
+    }
+
+    if (replident == REPLICA_IDENTITY_INDEX) {
+        Oid repl_ident_oid = RelationGetReplicaIndex(rel);
+        if (repl_ident_oid != InvalidOid) {
+            return relation_open(repl_ident_oid, AccessShareLock);
+        }
+    }
+
+    // There doesn't seem to be a convenient way of getting the primary key index for
+    // a table, so we have to iterate over all the table's indexes.
+    List *indexes = RelationGetIndexList(rel);
+    ListCell *index_oid;
+
+    foreach(index_oid, indexes) {
+        Relation index_rel = relation_open(lfirst_oid(index_oid), AccessShareLock);
+        Form_pg_index index = index_rel->rd_index;
+
+        if (IndexIsValid(index) && IndexIsReady(index) && index->indisprimary) {
+            list_free(indexes);
+            return index_rel;
+        }
+        relation_close(index_rel, AccessShareLock);
+    }
+
+    list_free(indexes);
+    return NULL;
+}
+
+
+/* Generates an Avro schema for the key (replica identity or primary key)
+ * of a given table. Returns null if the table is unkeyed. */
+avro_schema_t schema_for_table_key(Relation rel) {
+    Relation index_rel = table_key_index(rel);
+    if (!index_rel) return NULL;
+
+    avro_schema_t schema = schema_for_table_row(index_rel);
+    relation_close(index_rel, AccessShareLock);
+    return schema;
+}
+
+
 /* Generates an Avro schema corresponding to a given table (relation). */
-avro_schema_t schema_for_relation(Relation rel, bool with_meta) {
+avro_schema_t schema_for_table_row(Relation rel) {
     StringInfoData namespace;
     initStringInfo(&namespace);
     appendStringInfoString(&namespace, GENERATED_SCHEMA_NAMESPACE);
@@ -53,18 +102,6 @@ avro_schema_t schema_for_relation(Relation rel, bool with_meta) {
     char *relname = RelationGetRelationName(rel);
     avro_schema_t record_schema = avro_schema_record(relname, namespace.data);
     avro_schema_t column_schema;
-
-    if (with_meta) {
-        Form_pg_attribute xmin = SystemAttributeDefinition(MinTransactionIdAttributeNumber, true);
-        column_schema = schema_for_oid(xmin->atttypid, false);
-        avro_schema_record_field_append(record_schema, "xmin", column_schema);
-        avro_schema_decref(column_schema);
-
-        Form_pg_attribute xmax = SystemAttributeDefinition(MaxTransactionIdAttributeNumber, true);
-        column_schema = schema_for_oid(xmax->atttypid, false);
-        avro_schema_record_field_append(record_schema, "xmax", column_schema);
-        avro_schema_decref(column_schema);
-    }
 
     TupleDesc tupdesc = RelationGetDescr(rel);
     for (int i = 0; i < tupdesc->natts; i++) {
@@ -79,8 +116,9 @@ avro_schema_t schema_for_relation(Relation rel, bool with_meta) {
     return record_schema;
 }
 
+
 /* Translates a Postgres heap tuple (one row of a table) into the Avro schema generated
- * by schema_for_relation. */
+ * by schema_for_table_row. */
 int update_avro_with_tuple(avro_value_t *output_val, avro_schema_t schema,
         TupleDesc tupdesc, HeapTuple tuple) {
     int err = 0, field = 0;
@@ -116,6 +154,7 @@ int update_avro_with_tuple(avro_value_t *output_val, avro_schema_t schema,
 
     return err;
 }
+
 
 /* Generates an Avro schema that can be used to encode a Postgres type
  * with the given OID. */

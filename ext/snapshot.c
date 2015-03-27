@@ -44,27 +44,32 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
 void open_next_table(export_state *state);
 void close_current_table(export_state *state);
 bytea *format_snapshot_row(export_state *state);
-avro_schema_t schema_for_relname(char *relname);
+bytea *schema_for_relname(char *relname, bool get_key);
 
 
-PG_FUNCTION_INFO_V1(bottledwater_table_schema);
+PG_FUNCTION_INFO_V1(bottledwater_key_schema);
 
-/* Given the name of a table, generates an Avro schema for that table, and returns it
- * as a JSON string. */
-Datum bottledwater_table_schema(PG_FUNCTION_ARGS) {
-    bytea *json;
-    avro_schema_t schema = schema_for_relname(NameStr(*PG_GETARG_NAME(0)));
-    int err = try_writing(&json, &write_schema_json, schema);
-    avro_schema_decref(schema);
-
-    if (err) {
-        elog(ERROR, "bottledwater_table_schema: Could not encode schema as JSON: %s",
-                avro_strerror());
-        PG_RETURN_NULL();
-    } else {
-        PG_RETURN_TEXT_P(json);
+/* Given the name of a table, generates an Avro schema for the key (replica identity)
+ * of that table, and returns it as a JSON string. */
+Datum bottledwater_key_schema(PG_FUNCTION_ARGS) {
+    char *table_name = NameStr(*PG_GETARG_NAME(0));
+    bytea *json = schema_for_relname(table_name, true);
+    if (!json) {
+        elog(ERROR, "Table \"%s\" does not have a primary key or replica identity", table_name);
     }
+    PG_RETURN_TEXT_P(json);
 }
+
+
+PG_FUNCTION_INFO_V1(bottledwater_row_schema);
+
+/* Given the name of a table, generates an Avro schema for the rows of that table,
+ * and returns it as a JSON string. */
+Datum bottledwater_row_schema(PG_FUNCTION_ARGS) {
+    bytea *json = schema_for_relname(NameStr(*PG_GETARG_NAME(0)), false);
+    PG_RETURN_TEXT_P(json);
+}
+
 
 PG_FUNCTION_INFO_V1(bottledwater_frame_schema);
 
@@ -333,12 +338,30 @@ void print_tupdesc(char *title, TupleDesc tupdesc) {
     fprintf(stderr, "\n");
 }
 
-/* Given the name of a table (relation), generates an Avro schema for it. */
-avro_schema_t schema_for_relname(char *relname) {
+/* Given the name of a table (relation), generates an Avro schema for either the rows
+ * or the key (replica identity) of the table. */
+bytea *schema_for_relname(char *relname, bool get_key) {
     List *relname_list = stringToQualifiedNameList(relname);
     RangeVar *relvar = makeRangeVarFromNameList(relname_list);
     Relation rel = relation_openrv(relvar, AccessShareLock);
-    avro_schema_t schema = schema_for_relation(rel, true);
+
+    avro_schema_t schema;
+    if (get_key) {
+        schema = schema_for_table_key(rel);
+    } else {
+        schema = schema_for_table_row(rel);
+    }
+
     relation_close(rel, AccessShareLock);
-    return schema;
+    if (!schema) return NULL;
+
+    bytea *json;
+    int err = try_writing(&json, &write_schema_json, schema);
+    avro_schema_decref(schema);
+
+    if (err) {
+        elog(ERROR, "bottledwater_table_schema: Could not encode schema as JSON: %s",
+                avro_strerror());
+    }
+    return json;
 }

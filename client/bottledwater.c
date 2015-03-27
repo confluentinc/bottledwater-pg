@@ -27,8 +27,9 @@ void usage(void);
 void parse_options(client_context_t context, int argc, char **argv);
 int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid);
 int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid);
-int print_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
-        size_t schema_len, avro_schema_t schema);
+int print_table_schema(void *context, uint64_t wal_pos, Oid relid,
+        const char *key_schema_json, size_t key_schema_len, avro_schema_t key_schema,
+        const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema);
 int print_insert_row(void *context, uint64_t wal_pos, Oid relid, const void *new_row_bin,
         size_t new_row_len, avro_value_t *new_row_val);
 int print_update_row(void *context, uint64_t wal_pos, Oid relid, const void *old_row_bin,
@@ -98,9 +99,12 @@ int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
     return 0;
 }
 
-int print_table_schema(void *context, uint64_t wal_pos, Oid relid, const char *schema_json,
-        size_t schema_len, avro_schema_t schema) {
-    printf("new schema for relid=%u\n", relid);
+int print_table_schema(void *context, uint64_t wal_pos, Oid relid,
+        const char *key_schema_json, size_t key_schema_len, avro_schema_t key_schema,
+        const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema) {
+    printf("new schema for relid=%u\n\tkey = %.*s\n\trow = %.*s\n", relid,
+            (int) key_schema_len, key_schema_json,
+            (int) row_schema_len, row_schema_json);
     return 0;
 }
 

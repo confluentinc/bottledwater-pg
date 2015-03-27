@@ -26,6 +26,7 @@ int process_frame_delete(avro_value_t *record_val, frame_reader_t reader, uint64
 schema_list_entry *schema_list_lookup(frame_reader_t reader, int64_t relid);
 schema_list_entry *schema_list_replace(frame_reader_t reader, int64_t relid);
 schema_list_entry *schema_list_entry_new(frame_reader_t reader);
+void schema_list_entry_decrefs(schema_list_entry *entry);
 int read_entirely(avro_value_t *value, avro_reader_t reader, const void *buf, size_t len);
 
 
@@ -106,34 +107,48 @@ int process_frame_commit_txn(avro_value_t *record_val, frame_reader_t reader, ui
 }
 
 int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
-    int err = 0;
-    avro_value_t relid_val, hash_val, schema_val;
+    int err = 0, key_schema_present;
+    avro_value_t relid_val, hash_val, key_schema_val, row_schema_val, branch_val;
     int64_t relid;
     const void *hash;
-    const char *schema_json;
-    size_t hash_len, schema_len;
-    avro_schema_t schema;
+    const char *key_schema_json = NULL, *row_schema_json;
+    size_t hash_len, key_schema_len = 1, row_schema_len;
+    avro_schema_t key_schema = NULL, row_schema;
 
-    check(err, avro_value_get_by_index(record_val, 0, &relid_val,  NULL));
-    check(err, avro_value_get_by_index(record_val, 1, &hash_val,   NULL));
-    check(err, avro_value_get_by_index(record_val, 2, &schema_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 0, &relid_val,      NULL));
+    check(err, avro_value_get_by_index(record_val, 1, &hash_val,       NULL));
+    check(err, avro_value_get_by_index(record_val, 2, &key_schema_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 3, &row_schema_val, NULL));
     check(err, avro_value_get_long(&relid_val, &relid));
     check(err, avro_value_get_fixed(&hash_val, &hash, &hash_len));
-    check(err, avro_value_get_string(&schema_val, &schema_json, &schema_len));
-    check(err, avro_schema_from_json_length(schema_json, schema_len - 1, &schema));
+    check(err, avro_value_get_discriminant(&key_schema_val, &key_schema_present));
+    check(err, avro_value_get_string(&row_schema_val, &row_schema_json, &row_schema_len));
+    check(err, avro_schema_from_json_length(row_schema_json, row_schema_len - 1, &row_schema));
 
     schema_list_entry *entry = schema_list_replace(reader, relid);
     entry->relid = relid;
     entry->hash = *((uint64_t *) hash);
-    entry->row_schema = schema;
-    entry->row_iface = avro_generic_class_from_schema(schema);
+    entry->row_schema = row_schema;
+    entry->row_iface = avro_generic_class_from_schema(row_schema);
     avro_generic_value_new(entry->row_iface, &entry->row_value);
     avro_generic_value_new(entry->row_iface, &entry->old_value);
     entry->avro_reader = avro_reader_memory(NULL, 0);
 
+    if (key_schema_present) {
+        check(err, avro_value_get_current_branch(&key_schema_val, &branch_val));
+        check(err, avro_value_get_string(&branch_val, &key_schema_json, &key_schema_len));
+        check(err, avro_schema_from_json_length(key_schema_json, key_schema_len - 1, &key_schema));
+        entry->key_schema = key_schema;
+        entry->key_iface = avro_generic_class_from_schema(key_schema);
+        avro_generic_value_new(entry->key_iface, &entry->key_value);
+    } else {
+        entry->key_schema = NULL;
+    }
+
     if (reader->on_table_schema) {
         check(err, reader->on_table_schema(reader->cb_context, wal_pos, relid,
-                    schema_json, schema_len - 1, schema));
+                    key_schema_json, key_schema_len - 1, key_schema,
+                    row_schema_json, row_schema_len - 1, row_schema));
     }
     return err;
 }
@@ -264,11 +279,7 @@ schema_list_entry *schema_list_lookup(frame_reader_t reader, int64_t relid) {
 schema_list_entry *schema_list_replace(frame_reader_t reader, int64_t relid) {
     schema_list_entry *entry = schema_list_lookup(reader, relid);
     if (entry) {
-        avro_reader_free(entry->avro_reader);
-        avro_value_decref(&entry->old_value);
-        avro_value_decref(&entry->row_value);
-        avro_value_iface_decref(entry->row_iface);
-        avro_schema_decref(entry->row_schema);
+        schema_list_entry_decrefs(entry);
         return entry;
     } else {
         return schema_list_entry_new(reader);
@@ -285,10 +296,26 @@ schema_list_entry *schema_list_entry_new(frame_reader_t reader) {
 
     schema_list_entry *new_entry = malloc(sizeof(schema_list_entry));
     check_alloc(new_entry);
+    memset(new_entry, 0, sizeof(schema_list_entry));
     reader->schemas[reader->num_schemas] = new_entry;
     reader->num_schemas++;
 
     return new_entry;
+}
+
+/* Decrements the reference counts of a schema list entry. */
+void schema_list_entry_decrefs(schema_list_entry *entry) {
+    avro_reader_free(entry->avro_reader);
+    avro_value_decref(&entry->old_value);
+    avro_value_decref(&entry->row_value);
+    avro_value_iface_decref(entry->row_iface);
+    avro_schema_decref(entry->row_schema);
+
+    if (entry->key_schema) {
+        avro_value_decref(&entry->key_value);
+        avro_value_iface_decref(entry->key_iface);
+        avro_schema_decref(entry->key_schema);
+    }
 }
 
 /* Frees all the memory structures associated with a frame reader. */
@@ -300,11 +327,7 @@ void frame_reader_free(frame_reader_t reader) {
 
     for (int i = 0; i < reader->num_schemas; i++) {
         schema_list_entry *entry = reader->schemas[i];
-        avro_reader_free(entry->avro_reader);
-        avro_value_decref(&entry->old_value);
-        avro_value_decref(&entry->row_value);
-        avro_value_iface_decref(entry->row_iface);
-        avro_schema_decref(entry->row_schema);
+        schema_list_entry_decrefs(entry);
         free(entry);
     }
 

@@ -6,6 +6,7 @@
 #include "oid2avro.h"
 
 #include <stdarg.h>
+#include "access/heapam.h"
 #include "utils/lsyscache.h"
 
 int update_frame_with_table_schema(avro_value_t *frame_val, schema_cache_entry *entry);
@@ -15,6 +16,7 @@ int update_frame_with_delete_raw(avro_value_t *frame_val, Oid relid, bytea *old_
 int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry **entry_out);
 schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
 void schema_cache_entry_update(schema_cache_entry *entry, Relation rel);
+void schema_cache_entry_decrefs(schema_cache_entry *entry);
 uint64 fnv_hash(uint64 base, char *str, int len);
 uint64 fnv_format(uint64 base, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
 uint64 schema_hash_for_relation(Relation rel);
@@ -51,6 +53,8 @@ int update_frame_with_commit_txn(avro_value_t *frame_val, ReorderBufferTXN *txn,
     return err;
 }
 
+/* The TupleDesc parameter is not redundant. During stream replication, it is just
+ * RelationGetDescr(rel), but during snapshot it is taken from the result set. */
 int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Relation rel, TupleDesc tupdesc, HeapTuple newtuple) {
     int err = 0;
     schema_cache_entry *entry;
@@ -119,21 +123,34 @@ int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Rela
 
 int update_frame_with_table_schema(avro_value_t *frame_val, schema_cache_entry *entry) {
     int err = 0;
-    avro_value_t msg_val, union_val, record_val, relid_val, hash_val, schema_val;
-    bytea *json = NULL;
+    avro_value_t msg_val, union_val, record_val, relid_val, hash_val, key_schema_val,
+                 row_schema_val, branch_val;
+    bytea *key_schema_json = NULL, *row_schema_json = NULL;
 
-    check(err, try_writing(&json, &write_schema_json, entry->row_schema));
     check(err, avro_value_get_by_index(frame_val, 0, &msg_val, NULL));
     check(err, avro_value_append(&msg_val, &union_val, NULL));
     check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_TABLE_SCHEMA, &record_val));
-    check(err, avro_value_get_by_index(&record_val, 0, &relid_val,  NULL));
-    check(err, avro_value_get_by_index(&record_val, 1, &hash_val,   NULL));
-    check(err, avro_value_get_by_index(&record_val, 2, &schema_val, NULL));
+    check(err, avro_value_get_by_index(&record_val, 0, &relid_val,      NULL));
+    check(err, avro_value_get_by_index(&record_val, 1, &hash_val,       NULL));
+    check(err, avro_value_get_by_index(&record_val, 2, &key_schema_val, NULL));
+    check(err, avro_value_get_by_index(&record_val, 3, &row_schema_val, NULL));
     check(err, avro_value_set_long(&relid_val, entry->relid));
     check(err, avro_value_set_fixed(&hash_val, &entry->hash, 8));
-    check(err, avro_value_set_string_len(&schema_val, VARDATA(json), VARSIZE(json) - VARHDRSZ + 1));
 
-    pfree(json);
+    if (entry->key_schema) {
+        check(err, try_writing(&key_schema_json, &write_schema_json, entry->key_schema));
+        check(err, avro_value_set_branch(&key_schema_val, 1, &branch_val));
+        check(err, avro_value_set_string_len(&branch_val, VARDATA(key_schema_json),
+                    VARSIZE(key_schema_json) - VARHDRSZ + 1));
+        pfree(key_schema_json);
+    } else {
+        check(err, avro_value_set_branch(&key_schema_val, 0, NULL));
+    }
+
+    check(err, try_writing(&row_schema_json, &write_schema_json, entry->row_schema));
+    check(err, avro_value_set_string_len(&row_schema_val, VARDATA(row_schema_json),
+                VARSIZE(row_schema_json) - VARHDRSZ + 1));
+    pfree(row_schema_json);
     return err;
 }
 
@@ -224,9 +241,7 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
 
         } else {
             /* Schema has changed since we last saw it -- update the cache */
-            avro_value_decref(&entry->row_value);
-            avro_value_iface_decref(entry->row_iface);
-            avro_schema_decref(entry->row_schema);
+            schema_cache_entry_decrefs(entry);
             schema_cache_entry_update(entry, rel);
             *entry_out = entry;
             return 1;
@@ -257,12 +272,32 @@ schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
     return new_entry;
 }
 
+/* Populates a schema cache entry with the information from a given table. */
 void schema_cache_entry_update(schema_cache_entry *entry, Relation rel) {
     entry->relid = RelationGetRelid(rel);
     entry->hash = schema_hash_for_relation(rel);
-    entry->row_schema = schema_for_relation(rel, false);
+    entry->key_schema = schema_for_table_key(rel);
+    entry->row_schema = schema_for_table_row(rel);
     entry->row_iface = avro_generic_class_from_schema(entry->row_schema);
     avro_generic_value_new(entry->row_iface, &entry->row_value);
+
+    if (entry->key_schema) {
+        entry->key_iface = avro_generic_class_from_schema(entry->key_schema);
+        avro_generic_value_new(entry->key_iface, &entry->key_value);
+    }
+}
+
+/* Decrements the reference counts for a schema cache entry. */
+void schema_cache_entry_decrefs(schema_cache_entry *entry) {
+    avro_value_decref(&entry->row_value);
+    avro_value_iface_decref(entry->row_iface);
+    avro_schema_decref(entry->row_schema);
+
+    if (entry->key_schema) {
+        avro_value_decref(&entry->key_value);
+        avro_value_iface_decref(entry->key_iface);
+        avro_schema_decref(entry->key_schema);
+    }
 }
 
 /* Frees all the memory structures associated with a schema cache. */
@@ -271,9 +306,7 @@ void schema_cache_free(schema_cache_t cache) {
 
     for (int i = 0; i < cache->num_entries; i++) {
         schema_cache_entry *entry = cache->entries[i];
-        avro_value_decref(&entry->row_value);
-        avro_value_iface_decref(entry->row_iface);
-        avro_schema_decref(entry->row_schema);
+        schema_cache_entry_decrefs(entry);
         pfree(entry);
     }
 
@@ -326,6 +359,14 @@ uint64 schema_hash_for_relation(Relation rel) {
 
         hash = fnv_format(hash, "attname=%s typid=%u notnull=%d\n",
                 NameStr(attr->attname), attr->atttypid, attr->attnotnull);
+    }
+
+    if (RelationGetForm(rel)->relkind == RELKIND_RELATION) {
+        Relation index_rel = table_key_index(rel);
+        if (index_rel) {
+            hash = (hash * FNV_HASH_PRIME) ^ schema_hash_for_relation(index_rel);
+            relation_close(index_rel, AccessShareLock);
+        }
     }
 
     return hash;
