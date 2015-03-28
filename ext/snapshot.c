@@ -346,7 +346,7 @@ bytea *schema_for_relname(char *relname, bool get_key) {
 
     avro_schema_t schema;
     if (get_key) {
-        schema = schema_for_table_key(rel);
+        schema = schema_for_table_key(rel, NULL);
     } else {
         schema = schema_for_table_row(rel);
     }
