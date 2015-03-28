@@ -71,6 +71,9 @@ static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
 static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len, avro_value_t *key_val,
         const void *old_bin, size_t old_len, avro_value_t *old_val);
+int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len,
+        const void *val_bin, size_t val_len);
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *envelope);
 void exit_nicely(producer_context_t context, int status);
 client_context_t init_client(void);
@@ -234,6 +237,30 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len, avro_value_t *key_val,
         const void *new_bin, size_t new_len, avro_value_t *new_val) {
     producer_context_t context = (producer_context_t) _context;
+    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len);
+}
+
+static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val,
+        const void *new_bin, size_t new_len, avro_value_t *new_val) {
+    producer_context_t context = (producer_context_t) _context;
+    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len);
+}
+
+static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len, avro_value_t *key_val,
+        const void *old_bin, size_t old_len, avro_value_t *old_val) {
+    producer_context_t context = (producer_context_t) _context;
+    if (key_bin)
+        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, NULL, 0);
+    else
+        return 0; // delete on unkeyed table --> can't do anything
+}
+
+int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
+        const void *key_bin, size_t key_len,
+        const void *val_bin, size_t val_len) {
 
     msg_envelope_t envelope = malloc(sizeof(msg_envelope));
     memset(envelope, 0, sizeof(msg_envelope));
@@ -243,7 +270,7 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
 
     void *key = NULL, *val = NULL;
     topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
-            key_bin, key_len, &key, new_bin, new_len, &val);
+            key_bin, key_len, &key, val_bin, val_len, &val);
 
     if (!entry) {
         fprintf(stderr, "%s: %s\n", progname, context->registry->error);
@@ -251,7 +278,7 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
     }
 
     int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
-            val, new_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
+            val, val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
             key, key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN, envelope);
 
     // TODO apply backpressure if data from Postgres is coming in faster than we can send
@@ -267,19 +294,6 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
     return 0;
 }
 
-static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
-        const void *key_bin, size_t key_len, avro_value_t *key_val,
-        const void *old_bin, size_t old_len, avro_value_t *old_val,
-        const void *new_bin, size_t new_len, avro_value_t *new_val) {
-    return 0;
-}
-
-static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
-        const void *key_bin, size_t key_len, avro_value_t *key_val,
-        const void *old_bin, size_t old_len, avro_value_t *old_val) {
-    return 0;
-}
-
 /* Called by Kafka producer once per message sent, to report the delivery status
  * (whether success or failure). */
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *opaque) {
@@ -292,9 +306,10 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
         fprintf(stderr, "Message delivery failed: %s\n",
             rd_kafka_message_errstr(msg));
     } else {
-        uint64_t wal_pos = envelope->wal_pos;
-        fprintf(stderr, "Message for WAL position %X/%X written to Kafka.\n",
-                (uint32) (wal_pos >> 32), (uint32) wal_pos);
+        // TODO report successful delivery to Postgres
+        //uint64_t wal_pos = envelope->wal_pos;
+        //fprintf(stderr, "Message for WAL position %X/%X written to Kafka.\n",
+        //        (uint32) (wal_pos >> 32), (uint32) wal_pos);
     }
     free(envelope);
 }
