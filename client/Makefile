@@ -1,6 +1,6 @@
 SOURCES=replication.c protocol.c protocol_client.c connect.c
-EXEC_SRC=bottledwater.c
-EXECUTABLE=bottledwater
+EXEC_SRC=bwtest.c
+EXECUTABLE=bwtest
 STATICLIB=libbottledwater.a
 
 WARNINGS=-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security
