@@ -25,7 +25,6 @@ typedef struct {
     char *rel_name;
     char repl_ident;
     char *index_name;
-    int2vector *index_cols;
 } export_table;
 
 /* State that we need to remember between calls of bottledwater_export */
@@ -174,7 +173,7 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
             // n is the namespace (i.e. schema).
             // i is an index on the table (refined below).
             // ic is the class of the index (from which we get the name of the index).
-            "SELECT c.oid, n.nspname, c.relname, c.relreplident, ic.relname AS indname, i.indkey "
+            "SELECT c.oid, n.nspname, c.relname, c.relreplident, ic.relname AS indname "
             "FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
 
@@ -207,7 +206,7 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
     initStringInfo(&errors);
 
     for (int i = 0; i < SPI_processed; i++) {
-        bool oid_null, namespace_null, relname_null, replident_null, indname_null, indkey_null;
+        bool oid_null, namespace_null, relname_null, replident_null, indname_null;
         HeapTuple tuple = SPI_tuptable->vals[i];
         TupleDesc tupdesc = SPI_tuptable->tupdesc;
 
@@ -216,7 +215,6 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
         Datum relname_d   = heap_getattr(tuple, 3, tupdesc, &relname_null);
         Datum replident_d = heap_getattr(tuple, 4, tupdesc, &replident_null);
         Datum indname_d   = heap_getattr(tuple, 5, tupdesc, &indname_null);
-        Datum indkey_d    = heap_getattr(tuple, 6, tupdesc, &indkey_null);
 
         if (oid_null || namespace_null || relname_null || replident_null) {
             elog(ERROR, "get_table_list: unexpected null value");
@@ -225,13 +223,12 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
         export_table *table = &state->tables[i];
         table->relid      = DatumGetObjectId(oid_d);
         table->rel        = relation_open(table->relid, AccessShareLock);
-        table->namespace  = NameStr(*DatumGetName(namespace_d));
-        table->rel_name   = NameStr(*DatumGetName(relname_d));
+        table->namespace  = pstrdup(NameStr(*DatumGetName(namespace_d)));
+        table->rel_name   = pstrdup(NameStr(*DatumGetName(relname_d)));
         table->repl_ident = DatumGetChar(replident_d);
 
-        if (!indname_null && !indkey_null) {
-            table->index_name = NameStr(*DatumGetName(indname_d));
-            table->index_cols = (int2vector *) DatumGetPointer(indkey_d);
+        if (!indname_null) {
+            table->index_name = pstrdup(NameStr(*DatumGetName(indname_d)));
 
             elog(INFO, "bottledwater_export: Table %s is keyed by index %s",
                     quote_qualified_identifier(table->namespace, table->rel_name), table->index_name);
@@ -330,10 +327,12 @@ void print_tupdesc(char *title, TupleDesc tupdesc) {
     fprintf(stderr, "\n%s:\n", title);
     for (int i = 0; i < tupdesc->natts; i++) {
         Form_pg_attribute attr = tupdesc->attrs[i];
-        fprintf(stderr, "%4d. attrelid = %u, attname = %s, atttypid = %u, attnotnull = %d, "
-                "atthasdef = %d, attisdropped = %d, attndims = %d, atttypmod = %d\n",
-                i, attr->attrelid, NameStr(attr->attname), attr->atttypid, attr->attnotnull,
-                attr->atthasdef, attr->attisdropped, attr->attndims, attr->atttypmod);
+        fprintf(stderr, "%4d. attrelid = %u, attname = %s, atttypid = %u, attlen = %d, "
+                "attnum = %d, attndims = %d, atttypmod = %d, attnotnull = %d, "
+                "atthasdef = %d, attisdropped = %d, attcollation = %u\n",
+                i, attr->attrelid, NameStr(attr->attname), attr->atttypid, attr->attlen,
+                attr->attnum, attr->attndims, attr->atttypmod, attr->attnotnull,
+                attr->atthasdef, attr->attisdropped, attr->attcollation);
     }
     fprintf(stderr, "\n");
 }
