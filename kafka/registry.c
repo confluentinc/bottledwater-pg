@@ -20,9 +20,12 @@
 
 #define CONTENT_TYPE "application/vnd.schemaregistry.v1+json"
 
+void *add_schema_prefix(int schema_id, const void *avro_bin, size_t avro_len);
+int registry_request(schema_registry_t registry, topic_list_entry_t entry, int is_key,
+        const char *schema_json, size_t schema_len);
 static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *writer);
-topic_list_entry_t registry_parse_response(schema_registry_t registry, int64_t relid,
-        const char *topic_name, CURLcode result, char *resp_body, int resp_len);
+int registry_parse_response(schema_registry_t registry, CURLcode result, char *resp_body,
+        int resp_len, int *schema_id_out);
 topic_list_entry_t topic_list_lookup(schema_registry_t registry, int64_t relid);
 topic_list_entry_t topic_list_replace(schema_registry_t registry, int64_t relid);
 topic_list_entry_t topic_list_entry_new(schema_registry_t registry);
@@ -60,13 +63,14 @@ void schema_registry_set_url(schema_registry_t registry, char *url) {
 }
 
 
-/* Prefixes an Avro-encoded record with ID of the schema used for encoding. Sets
- * msg_out to a malloc'ed array that is SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN bytes
- * longer than the avro_len bytes that were passed in. The caller is
- * responsible for freeing msg_out. Returns the topic list entry on success,
+/* Prefixes Avro-encoded key and row records with IDs of the schema used for encoding. Sets
+ * key_out and row_out to malloc'ed arrays that are SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN bytes
+ * longer than the key_len and row_len bytes that were passed in, respectively. The caller is
+ * responsible for freeing key_out and row_out. Returns the topic list entry on success,
  * or NULL on error. */
 topic_list_entry_t schema_registry_encode_msg(schema_registry_t registry, int64_t relid,
-        const void *avro_bin, size_t avro_len, void **msg_out) {
+        const void *key_bin, size_t key_len, void **key_out,
+        const void *row_bin, size_t row_len, void **row_out) {
 
     topic_list_entry_t entry = topic_list_lookup(registry, relid);
     if (!entry) {
@@ -74,15 +78,24 @@ topic_list_entry_t schema_registry_encode_msg(schema_registry_t registry, int64_
         return NULL;
     }
 
-    uint32_t schema_id_big_endian = htonl(entry->schema_id);
+    *key_out = add_schema_prefix(entry->key_schema_id, key_bin, key_len);
+    *row_out = add_schema_prefix(entry->row_schema_id, row_bin, row_len);
+    return entry;
+}
+
+
+/* Adds a 5-byte schema ID prefix to a byte array. */
+void *add_schema_prefix(int schema_id, const void *avro_bin, size_t avro_len) {
+    if (!avro_bin) return NULL;
+
+    uint32_t schema_id_big_endian = htonl(schema_id);
 
     char *msg = malloc(avro_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN);
     msg[0] = '\0';
     memcpy(msg + 1, &schema_id_big_endian, 4);
     memcpy(msg + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN, avro_bin, avro_len);
 
-    *msg_out = msg;
-    return entry;
+    return msg;
 }
 
 
@@ -90,13 +103,34 @@ topic_list_entry_t schema_registry_encode_msg(schema_registry_t registry, int64_
  * registered schema is idempotent -- indeed, this is how we find out the schema
  * ID for an existing schema. Returns the topic list entry on success, or NULL
  * on failure. Consult registry->error for error message on failure. */
-topic_list_entry_t schema_registry_update(schema_registry_t registry, int64_t relid,
-        const char *topic_name, const char *schema_json, size_t schema_len) {
+topic_list_entry_t schema_registry_update(schema_registry_t registry,
+        int64_t relid, const char *topic_name,
+        const char *key_schema_json, size_t key_schema_len,
+        const char *row_schema_json, size_t row_schema_len) {
+
+    topic_list_entry_t entry = topic_list_replace(registry, relid);
+    entry->relid = relid;
+    entry->topic_name = strdup(topic_name);
+
+    if (registry_request(registry, entry, 1, key_schema_json, key_schema_len)) return NULL;
+    if (registry_request(registry, entry, 0, row_schema_json, row_schema_len)) return NULL;
+    return entry;
+}
+
+
+/* Submits a schema to the registry. If is_key == 1, it's a key schema, and if is_key == 0,
+ * it's a row schema. Returns 0 on success. */
+int registry_request(schema_registry_t registry, topic_list_entry_t entry, int is_key,
+        const char *schema_json, size_t schema_len) {
+    if (!schema_json || schema_len == 0) return 0; // Nothing to do
+
     char url[512];
-    if (snprintf(url, sizeof(url), "%s/subjects/%s-value/versions",
-                registry->registry_url, topic_name) >= sizeof(url)) {
+    int url_len = snprintf(url, sizeof(url), "%s/subjects/%s-%s/versions",
+                registry->registry_url, entry->topic_name, is_key ? "key" : "value");
+
+    if (url_len >= sizeof(url)) {
         registry_error(registry, "Schema registry URL is too long: %s", url);
-        return NULL;
+        return EINVAL;
     }
 
     json_t *req_json = json_pack("{s:s%}", "schema", schema_json, schema_len);
@@ -114,13 +148,26 @@ topic_list_entry_t schema_registry_update(schema_registry_t registry, int64_t re
 
     CURLcode result = curl_easy_perform(registry->curl);
 
-    topic_list_entry_t entry = registry_parse_response(registry, relid, topic_name,
-            result, resp_body, avro_writer_tell(resp_writer));
+    int schema_id = 0;
+    int resp_len = avro_writer_tell(resp_writer);
+    int err = registry_parse_response(registry, result, resp_body, resp_len, &schema_id);
+
+    if (!err) {
+        if (is_key) {
+            entry->key_schema_id = schema_id;
+            fprintf(stderr, "Registered key schema for topic \"%s\" with ID %d\n",
+                    entry->topic_name, schema_id);
+        } else {
+            entry->row_schema_id = schema_id;
+            fprintf(stderr, "Registered value schema for topic \"%s\" with ID %d\n",
+                    entry->topic_name, schema_id);
+        }
+    }
 
     avro_writer_free(resp_writer);
     free(req_body);
     json_decref(req_json);
-    return entry;
+    return err;
 }
 
 
@@ -137,12 +184,13 @@ static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *
 
 
 /* Handles the response from a schema-publishing request to the schema registry.
- * On failure, sets an error message. On success, remembers the schema ID. */
-topic_list_entry_t registry_parse_response(schema_registry_t registry, int64_t relid,
-        const char *topic_name, CURLcode result, char *resp_body, int resp_len) {
+ * On failure, sets an error message and returns non-zero. On success, returns zero
+ * and assigns the schema ID to *schema_id_out. */
+int registry_parse_response(schema_registry_t registry, CURLcode result, char *resp_body,
+        int resp_len, int *schema_id_out) {
     if (result != CURLE_OK) {
         registry_error(registry, "Could not send schema to registry: %s", registry->curl_error);
-        return NULL;
+        return EIO;
     }
 
     long resp_code = 0;
@@ -158,7 +206,7 @@ topic_list_entry_t registry_parse_response(schema_registry_t registry, int64_t r
         } else {
             registry_error(registry, "Schema registry returned HTTP status %ld", resp_code);
         }
-        return NULL;
+        return EIO;
     }
 
     if (resp_code != 200) {
@@ -175,7 +223,7 @@ topic_list_entry_t registry_parse_response(schema_registry_t registry, int64_t r
         }
 
         json_decref(resp_json);
-        return NULL;
+        return EIO;
     }
 
     json_t *schema_id = NULL;
@@ -187,19 +235,12 @@ topic_list_entry_t registry_parse_response(schema_registry_t registry, int64_t r
         registry_error(registry, "Missing id field in schema registry response: %.*s",
                 resp_len, resp_body);
         json_decref(resp_json);
-        return NULL;
+        return EIO;
     }
 
-    topic_list_entry_t entry = topic_list_replace(registry, relid);
-    entry->relid = relid;
-    entry->schema_id = (int) json_integer_value(schema_id);
-    entry->topic_name = strdup(topic_name);
-
-    fprintf(stderr, "Registered schema for topic \"%s\" with ID %d\n",
-            topic_name, entry->schema_id);
-
+    *schema_id_out = (int) json_integer_value(schema_id);
     json_decref(resp_json);
-    return entry;
+    return 0;
 }
 
 

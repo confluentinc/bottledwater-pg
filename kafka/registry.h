@@ -11,8 +11,9 @@
 
 typedef struct {
     uint64_t relid;             /* Uniquely identifies a table, even when it is renamed */
-    int schema_id;              /* Identifier that the schema registry assigned to current schema */
     char *topic_name;           /* Derived from schema record name, in turn derived from table name */
+    int key_schema_id;          /* Identifier for the current key schema, assigned by the registry */
+    int row_schema_id;          /* Identifier for the current row schema, assigned by the registry */
     rd_kafka_topic_t *topic;    /* Kafka topic to which messages are produced */
 } topic_list_entry;
 
@@ -34,9 +35,12 @@ typedef schema_registry *schema_registry_t;
 schema_registry_t schema_registry_new(char *url);
 void schema_registry_set_url(schema_registry_t registry, char *url);
 topic_list_entry_t schema_registry_encode_msg(schema_registry_t registry, int64_t relid,
-        const void *avro_bin, size_t avro_len, void **msg_out);
-topic_list_entry_t schema_registry_update(schema_registry_t registry, int64_t relid,
-        const char *topic_name, const char *schema_json, size_t schema_len);
+        const void *key_bin, size_t key_len, void **key_out,
+        const void *row_bin, size_t row_len, void **row_out);
+topic_list_entry_t schema_registry_update(schema_registry_t registry,
+        int64_t relid, const char *topic_name,
+        const char *key_schema_json, size_t key_schema_len,
+        const char *row_schema_json, size_t row_schema_len);
 void schema_registry_free(schema_registry_t reader);
 
 #endif /* REGISTRY_H */

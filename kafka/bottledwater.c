@@ -209,8 +209,8 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
     producer_context_t context = (producer_context_t) _context;
     const char *topic_name = avro_schema_name(row_schema);
 
-    topic_list_entry_t entry = schema_registry_update(context->registry, relid,
-            topic_name, row_schema_json, row_schema_len);
+    topic_list_entry_t entry = schema_registry_update(context->registry, relid, topic_name,
+            key_schema_json, key_schema_len, row_schema_json, row_schema_len);
 
     if (!entry) {
         fprintf(stderr, "%s: %s\n", progname, context->registry->error);
@@ -241,8 +241,9 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
     envelope->wal_pos = wal_pos;
     envelope->relid = relid;
 
-    void *msg;
-    topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid, new_bin, new_len, &msg);
+    void *key = NULL, *val = NULL;
+    topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
+            key_bin, key_len, &key, new_bin, new_len, &val);
 
     if (!entry) {
         fprintf(stderr, "%s: %s\n", progname, context->registry->error);
@@ -250,7 +251,8 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
     }
 
     int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
-            msg, new_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN, NULL, 0, envelope);
+            val, new_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
+            key, key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN, envelope);
 
     // TODO apply backpressure if data from Postgres is coming in faster than we can send
     // it on to Kafka. Producer does not block, but signals a full buffer like this:
