@@ -1,10 +1,6 @@
 Bugs / missing features
 =======================
 
-* Deletes are currently not working. They are getting correctly replicated to the client,
-  but when we pass the Kafka producer a message with a null payload (signifying deletion),
-  it goes into a loop of "Broker transport failure" errors. Perhaps an issue with the
-  Kafka client library, need to look into it.
 * Need to acknowledge message receipt to Postgres only after we've confirmed that it has
   successfully been written to Kafka. (At the moment we're immediately acknowledging to
   Postgres, which risks data loss on crash.) The facility for doing this is there, it's

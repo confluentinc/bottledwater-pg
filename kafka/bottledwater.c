@@ -278,8 +278,9 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     }
 
     int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
-            val, val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
-            key, key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN, envelope);
+            val, val == NULL ? 0 : val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
+            key, key == NULL ? 0 : key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
+            envelope);
 
     // TODO apply backpressure if data from Postgres is coming in faster than we can send
     // it on to Kafka. Producer does not block, but signals a full buffer like this:
