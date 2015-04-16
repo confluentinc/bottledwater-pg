@@ -1,5 +1,5 @@
 *.o
 *.so
-/client/bottledwater
+/client/bwtest
 /client/libbottledwater.a
 /kafka/bottledwater
