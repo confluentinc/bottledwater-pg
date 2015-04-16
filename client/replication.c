@@ -92,6 +92,25 @@ error:
 }
 
 
+/* Drops the replication slot, like the SQL function pg_drop_replication_slot(). */
+int replication_slot_drop(replication_stream_t stream) {
+    PQExpBuffer query = createPQExpBuffer();
+    appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", stream->slot_name);
+
+    PGresult *res = PQexec(stream->conn, query->data);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        repl_error(stream, "Command failed: %s: %s", query->data, PQerrorMessage(stream->conn));
+        destroyPQExpBuffer(query);
+        PQclear(res);
+        return EIO;
+    }
+
+    destroyPQExpBuffer(query);
+    PQclear(res);
+    return 0;
+}
+
+
 /* Checks that the connection to the database server supports logical replication. */
 int replication_stream_check(replication_stream_t stream) {
     PGresult *res = PQexec(stream->conn, "IDENTIFY_SYSTEM");

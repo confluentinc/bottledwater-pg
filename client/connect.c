@@ -65,11 +65,13 @@ int db_client_start(client_context_t context) {
     if (slot_exists) {
         PQfinish(context->sql_conn);
         context->sql_conn = NULL;
+        context->taking_snapshot = false;
 
         checkRepl(err, context, replication_stream_start(&context->repl));
         return err;
 
     } else {
+        context->taking_snapshot = true;
         checkRepl(err, context, replication_slot_create(&context->repl));
         check(err, snapshot_start(context));
         return err;

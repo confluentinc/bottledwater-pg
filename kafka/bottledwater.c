@@ -417,6 +417,11 @@ void maybe_checkpoint(producer_context_t context) {
 
         stream->fsync_lsn = xact->commit_lsn;
 
+        // xid==0 is the initial snapshot transaction. Clear the flag when it's complete.
+        if (xact->xid == 0 && xact->commit_lsn > 0) {
+            context->client->taking_snapshot = false;
+        }
+
         if (context->xact_tail == context->xact_head) break;
 
         context->xact_tail = (context->xact_tail + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
@@ -503,7 +508,17 @@ void start_producer(producer_context_t context) {
     }
 }
 
+/* Shuts everything down and exits the process. */
 void exit_nicely(producer_context_t context, int status) {
+    // If a snapshot was in progress and not yet complete, and an error occurred, try to
+    // drop the replication slot, so that the snapshot is retried when the user tries again.
+    if (context->client->taking_snapshot && status != 0) {
+        fprintf(stderr, "Dropping replication slot since the snapshot did not complete successfully.\n");
+        if (replication_slot_drop(&context->client->repl) != 0) {
+            fprintf(stderr, "%s: %s\n", progname, context->client->repl.error);
+        }
+    }
+
     schema_registry_free(context->registry);
     frame_reader_free(context->client->repl.frame_reader);
     db_client_free(context->client);
@@ -529,7 +544,7 @@ int main(int argc, char **argv) {
 
     replication_stream_t stream = &context->client->repl;
 
-    if (!context->client->sql_conn) {
+    if (!context->client->taking_snapshot) {
         fprintf(stderr, "Replication slot \"%s\" exists, streaming changes from %X/%X.\n",
                 stream->slot_name,
                 (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);

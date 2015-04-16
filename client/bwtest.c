@@ -105,10 +105,12 @@ static int print_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     return 0;
 }
 
-static int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
+static int print_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
+    client_context_t context = (client_context_t) _context;
     if (xid == 0) {
         fprintf(stderr, "Snapshot complete, streaming changes from %X/%X.\n",
                 (uint32) (wal_pos >> 32), (uint32) wal_pos);
+        context->taking_snapshot = false;
     } else {
         printf("commit xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
         checkpoint(context, wal_pos);
@@ -211,6 +213,15 @@ client_context_t init_client() {
 }
 
 void exit_nicely(client_context_t context) {
+    // If a snapshot was in progress and not yet complete, and an error occurred, try to
+    // drop the replication slot, so that the snapshot is retried when the user tries again.
+    if (context->taking_snapshot) {
+        fprintf(stderr, "Dropping replication slot since the snapshot did not complete successfully.\n");
+        if (replication_slot_drop(&context->repl) != 0) {
+            fprintf(stderr, "%s: %s\n", progname, context->repl.error);
+        }
+    }
+
     frame_reader_free(context->repl.frame_reader);
     db_client_free(context);
     exit(1);
@@ -221,7 +232,7 @@ int main(int argc, char **argv) {
     parse_options(context, argc, argv);
     ensure(context, db_client_start(context));
 
-    if (!context->sql_conn) {
+    if (!context->taking_snapshot) {
         fprintf(stderr, "Replication slot \"%s\" exists, streaming changes from %X/%X.\n",
                 context->repl.slot_name,
                 (uint32) (context->repl.start_lsn >> 32), (uint32) context->repl.start_lsn);
