@@ -40,8 +40,9 @@ static int print_update_row(void *context, uint64_t wal_pos, Oid relid,
 static int print_delete_row(void *context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len, avro_value_t *key_val,
         const void *old_bin, size_t old_len, avro_value_t *old_val);
-void exit_nicely(client_context_t context);
+void checkpoint(void *context, uint64_t wal_pos);
 client_context_t init_client(void);
+void exit_nicely(client_context_t context);
 
 
 void usage() {
@@ -94,11 +95,13 @@ void parse_options(client_context_t context, int argc, char **argv) {
 
 static int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid) {
     printf("begin xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
+    checkpoint(context, wal_pos);
     return 0;
 }
 
 static int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
     printf("commit xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
+    checkpoint(context, wal_pos);
     return 0;
 }
 
@@ -128,6 +131,7 @@ static int print_insert_row(void *context, uint64_t wal_pos, Oid relid,
     }
 
     free(new_json);
+    if (err == 0) checkpoint(context, wal_pos);
     return err;
 }
 
@@ -149,6 +153,7 @@ static int print_update_row(void *context, uint64_t wal_pos, Oid relid,
     }
 
     free(new_json);
+    if (err == 0) checkpoint(context, wal_pos);
     return err;
 }
 
@@ -165,7 +170,14 @@ static int print_delete_row(void *context, uint64_t wal_pos, Oid relid,
     } else {
         printf("delete to relid %u (?)\n", relid);
     }
+
+    if (err == 0) checkpoint(context, wal_pos);
     return err;
+}
+
+void checkpoint(void *context, uint64_t wal_pos) {
+    replication_stream_t stream = &((client_context_t) context)->repl;
+    stream->fsync_lsn = Max(wal_pos, stream->fsync_lsn);
 }
 
 client_context_t init_client() {
@@ -183,6 +195,7 @@ client_context_t init_client() {
     context->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     context->repl.output_plugin = OUTPUT_PLUGIN;
     context->repl.frame_reader = frame_reader;
+    frame_reader->cb_context = context;
     return context;
 }
 

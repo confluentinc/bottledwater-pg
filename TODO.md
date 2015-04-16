@@ -1,10 +1,6 @@
 Bugs / missing features
 =======================
 
-* Need to acknowledge message receipt to Postgres only after we've confirmed that it has
-  successfully been written to Kafka. (At the moment we're immediately acknowledging to
-  Postgres, which risks data loss on crash.) The facility for doing this is there, it's
-  just not wired up yet.
 * If taking the snapshot fails, we should automatically delete replication slot, so that
   re-running the program tries taking a snapshot again.
 * Backpressure in case data from Postgres comes in faster than we can publish it to Kafka.

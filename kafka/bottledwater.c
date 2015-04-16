@@ -27,11 +27,22 @@
 }
 
 #define PRODUCER_CONTEXT_ERROR_LEN 512
+#define MAX_IN_FLIGHT_TRANSACTIONS 1000
+
+typedef struct {
+    uint32_t xid;         /* Postgres transaction identifier */
+    int recvd_events;     /* Number of row-level events received so far for this transaction */
+    int pending_events;   /* Number of row-level events waiting to be acknowledged by Kafka */
+    uint64_t commit_lsn;  /* WAL position of the transaction's commit event */
+} transaction_info;
 
 typedef struct {
     client_context_t client;            /* The connection to Postgres */
     schema_registry_t registry;         /* Submits Avro schemas to schema registry */
     char *brokers;                      /* Comma-separated list of host:port for Kafka brokers */
+    transaction_info xact_list[MAX_IN_FLIGHT_TRANSACTIONS]; /* Circular buffer */
+    int xact_head;                      /* Index into xact_list currently being received from PG */
+    int xact_tail;                      /* Oldest index in xact_list not yet acknowledged by Kafka */
     rd_kafka_conf_t *kafka_conf;
     rd_kafka_topic_conf_t *topic_conf;
     rd_kafka_t *kafka;
@@ -40,10 +51,14 @@ typedef struct {
 
 typedef producer_context *producer_context_t;
 
+#define xact_list_full(context) \
+    (((context)->xact_head + 1) % MAX_IN_FLIGHT_TRANSACTIONS == (context)->xact_tail)
+
 typedef struct {
     producer_context_t context;
     uint64_t wal_pos;
     Oid relid;
+    transaction_info *xact;
 } msg_envelope;
 
 typedef msg_envelope *msg_envelope_t;
@@ -75,10 +90,11 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
         const void *val_bin, size_t val_len);
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *envelope);
-void exit_nicely(producer_context_t context, int status);
+void maybe_checkpoint(producer_context_t context);
 client_context_t init_client(void);
 producer_context_t init_producer(client_context_t client);
 void start_producer(producer_context_t context);
+void exit_nicely(producer_context_t context, int status);
 
 
 void usage() {
@@ -198,10 +214,36 @@ void set_topic_config(producer_context_t context, char *property, char *value) {
 
 
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
+    producer_context_t context = (producer_context_t) _context;
+
+    if (xact_list_full(context)) {
+        // TODO apply backpressure rather than failing
+        fprintf(stderr, "%s: Too many transactions in flight\n", progname);
+        exit_nicely(context, 1);
+    }
+
+    context->xact_head = (context->xact_head + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
+    transaction_info *xact = &context->xact_list[context->xact_head];
+    xact->xid = xid;
+    xact->recvd_events = 0;
+    xact->pending_events = 0;
+    xact->commit_lsn = 0;
+
     return 0;
 }
 
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
+    producer_context_t context = (producer_context_t) _context;
+    transaction_info *xact = &context->xact_list[context->xact_head];
+
+    if (xid != xact->xid) {
+        fprintf(stderr, "%s: Mismatched begin/commit events (xid %u in flight, "
+                "xid %u committed)\n", progname, xact->xid, xid);
+        exit_nicely(context, 1);
+    }
+
+    xact->commit_lsn = wal_pos;
+    maybe_checkpoint(context);
     return 0;
 }
 
@@ -258,15 +300,21 @@ static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         return 0; // delete on unkeyed table --> can't do anything
 }
 
+
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
         const void *val_bin, size_t val_len) {
+
+    transaction_info *xact = &context->xact_list[context->xact_head];
+    xact->recvd_events++;
+    xact->pending_events++;
 
     msg_envelope_t envelope = malloc(sizeof(msg_envelope));
     memset(envelope, 0, sizeof(msg_envelope));
     envelope->context = context;
     envelope->wal_pos = wal_pos;
     envelope->relid = relid;
+    envelope->xact = xact;
 
     void *key = NULL, *val = NULL;
     topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
@@ -295,6 +343,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     return 0;
 }
 
+
 /* Called by Kafka producer once per message sent, to report the delivery status
  * (whether success or failure). */
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *opaque) {
@@ -304,16 +353,55 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
     msg_envelope_t envelope = (msg_envelope_t) msg->_private;
 
     if (msg->err) {
-        fprintf(stderr, "Message delivery failed: %s\n",
-            rd_kafka_message_errstr(msg));
+        fprintf(stderr, "Message delivery failed: %s\n", rd_kafka_message_errstr(msg));
     } else {
-        // TODO report successful delivery to Postgres
-        //uint64_t wal_pos = envelope->wal_pos;
-        //fprintf(stderr, "Message for WAL position %X/%X written to Kafka.\n",
-        //        (uint32) (wal_pos >> 32), (uint32) wal_pos);
+        // Message successfully delivered to Kafka
+        envelope->xact->pending_events--;
+        maybe_checkpoint(envelope->context);
     }
     free(envelope);
 }
+
+
+/* When a Postgres transaction has been durably written to Kafka (i.e. we've seen the
+ * commit event from Postgres, so we know the transaction is complete, and the Kafka
+ * broker has acknowledged all messages in the transaction), we checkpoint it. This
+ * allows the WAL for that transaction to be cleaned up in Postgres. */
+void maybe_checkpoint(producer_context_t context) {
+    transaction_info *xact = &context->xact_list[context->xact_tail];
+
+    // xid == 0 indicates the initial snapshot, which doesn't have begin/commit events.
+    if (xact->pending_events == 0 && (xact->commit_lsn > 0 || xact->xid == 0)) {
+
+        // Set the replication stream's "fsync LSN" (i.e. the WAL position up to which
+        // the data has been durably written). This will be sent back to Postgres in the
+        // next keepalive message, and used as the restart position if this client dies.
+        // This should ensure that no data is lost (although messages may be duplicated).
+        replication_stream_t stream = &context->client->repl;
+
+        if (stream->fsync_lsn > xact->commit_lsn) {
+            fprintf(stderr, "%s: WARNING: Commits not in WAL order! "
+                    "Checkpoint LSN is %X/%X, commit LSN is %X/%X.\n", progname,
+                    (uint32) (stream->fsync_lsn >> 32), (uint32) stream->fsync_lsn,
+                    (uint32) (xact->commit_lsn  >> 32), (uint32) xact->commit_lsn);
+        }
+
+#ifdef DEBUG
+        if (stream->fsync_lsn < xact->commit_lsn) {
+            fprintf(stderr, "Checkpointing %d events for xid %u, WAL position %X/%X.\n",
+                    xact->recvd_events, xact->xid,
+                    (uint32) (xact->commit_lsn >> 32), (uint32) xact->commit_lsn);
+        }
+#endif
+
+        stream->fsync_lsn = xact->commit_lsn;
+
+        if (context->xact_tail != context->xact_head) {
+            context->xact_tail = (context->xact_tail + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
+        }
+    }
+}
+
 
 /* Initializes the client context, which holds everything we need to know about
  * our connection to Postgres. */
@@ -347,6 +435,7 @@ producer_context_t init_producer(client_context_t client) {
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
+    // xact_head, xact_tail and xact_list are set to zero by memset() above
 
     set_topic_config(context, "produce.offset.report", "true");
     rd_kafka_conf_set_dr_msg_cb(context->kafka_conf, on_deliver_msg);

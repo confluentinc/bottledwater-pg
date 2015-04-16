@@ -200,10 +200,6 @@ int replication_stream_poll(replication_stream_t stream) {
     if (!err && stream->recvd_lsn != InvalidXLogRecPtr) {
         int64 now = current_time();
         if (now - stream->last_checkpoint > CHECKPOINT_INTERVAL_SEC * USECS_PER_SEC) {
-            /* TODO: when sending messages to an external system, this should only be done
-             * after the message has been written durably. */
-            stream->fsync_lsn = stream->recvd_lsn;
-
             err = send_checkpoint(stream, now);
         }
     }
