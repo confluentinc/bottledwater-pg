@@ -68,11 +68,12 @@ int db_client_start(client_context_t context) {
 
         checkRepl(err, context, replication_stream_start(&context->repl));
         return err;
-    }
 
-    checkRepl(err, context, replication_slot_create(&context->repl));
-    check(err, snapshot_start(context));
-    return err;
+    } else {
+        checkRepl(err, context, replication_slot_create(&context->repl));
+        check(err, snapshot_start(context));
+        return err;
+    }
 }
 
 
@@ -317,6 +318,13 @@ int snapshot_start(client_context_t context) {
         client_error(context, "Could not activate single-row mode");
         return EIO;
     }
+
+    // Invoke the begin-transaction callback with xid==0 to indicate start of snapshot
+    begin_txn_cb begin_txn = context->repl.frame_reader->on_begin_txn;
+    void *cb_context = context->repl.frame_reader->cb_context;
+    if (begin_txn) {
+        check(err, begin_txn(cb_context, context->repl.start_lsn, 0));
+    }
     return 0;
 }
 
@@ -331,6 +339,13 @@ int snapshot_poll(client_context_t context) {
         check(err, exec_sql(context, "COMMIT"));
         PQfinish(context->sql_conn);
         context->sql_conn = NULL;
+
+        // Invoke the commit callback with xid==0 to indicate end of snapshot
+        commit_txn_cb on_commit = context->repl.frame_reader->on_commit_txn;
+        void *cb_context = context->repl.frame_reader->cb_context;
+        if (on_commit) {
+            check(err, on_commit(cb_context, context->repl.start_lsn, 0));
+        }
         return 0;
     }
 

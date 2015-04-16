@@ -216,6 +216,18 @@ void set_topic_config(producer_context_t context, char *property, char *value) {
 
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     producer_context_t context = (producer_context_t) _context;
+    replication_stream_t stream = &context->client->repl;
+
+    if (xid == 0) {
+        if (context->xact_head != 0 || context->xact_tail != 0) {
+            fprintf(stderr, "%s: Expected snapshot to be the first transaction.\n", progname);
+            exit_nicely(context, 1);
+        }
+
+        fprintf(stderr, "Created replication slot \"%s\", capturing consistent snapshot \"%s\".\n",
+                stream->slot_name, stream->snapshot_name);
+        return 0;
+    }
 
     // If the circular buffer is full, we have to block and wait for some transactions
     // to be delivered to Kafka and acknowledged for the broker.
@@ -234,6 +246,11 @@ static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     producer_context_t context = (producer_context_t) _context;
     transaction_info *xact = &context->xact_list[context->xact_head];
+
+    if (xid == 0) {
+        fprintf(stderr, "Snapshot complete, streaming changes from %X/%X.\n",
+                (uint32) (wal_pos >> 32), (uint32) wal_pos);
+    }
 
     if (xid != xact->xid) {
         fprintf(stderr, "%s: Mismatched begin/commit events (xid %u in flight, "
@@ -375,8 +392,7 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
 void maybe_checkpoint(producer_context_t context) {
     transaction_info *xact = &context->xact_list[context->xact_tail];
 
-    // xid == 0 indicates the initial snapshot, which doesn't have begin/commit events.
-    if (xact->pending_events == 0 && (xact->commit_lsn > 0 || xact->xid == 0)) {
+    while (xact->pending_events == 0 && (xact->commit_lsn > 0 || xact->xid == 0)) {
 
         // Set the replication stream's "fsync LSN" (i.e. the WAL position up to which
         // the data has been durably written). This will be sent back to Postgres in the
@@ -401,9 +417,10 @@ void maybe_checkpoint(producer_context_t context) {
 
         stream->fsync_lsn = xact->commit_lsn;
 
-        if (context->xact_tail != context->xact_head) {
-            context->xact_tail = (context->xact_tail + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
-        }
+        if (context->xact_tail == context->xact_head) break;
+
+        context->xact_tail = (context->xact_tail + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
+        xact = &context->xact_list[context->xact_tail];
     }
 }
 
@@ -510,14 +527,9 @@ int main(int argc, char **argv) {
     start_producer(context);
     ensure(context, db_client_start(context->client));
 
-    bool snapshot = false;
     replication_stream_t stream = &context->client->repl;
 
-    if (context->client->sql_conn) {
-        fprintf(stderr, "Created replication slot \"%s\", capturing consistent snapshot \"%s\".\n",
-                stream->slot_name, stream->snapshot_name);
-        snapshot = true;
-    } else {
+    if (!context->client->sql_conn) {
         fprintf(stderr, "Replication slot \"%s\" exists, streaming changes from %X/%X.\n",
                 stream->slot_name,
                 (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
@@ -525,12 +537,6 @@ int main(int argc, char **argv) {
 
     while (context->client->status >= 0 && !received_sigint) {
         ensure(context, db_client_poll(context->client));
-
-        if (snapshot && !context->client->sql_conn) {
-            snapshot = false;
-            fprintf(stderr, "Snapshot complete, streaming changes from %X/%X.\n",
-                    (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
-        }
 
         if (context->client->status == 0) {
             ensure(context, db_client_wait(context->client));

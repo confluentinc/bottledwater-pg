@@ -93,15 +93,26 @@ void parse_options(client_context_t context, int argc, char **argv) {
     if (!context->conninfo || optind < argc) usage();
 }
 
-static int print_begin_txn(void *context, uint64_t wal_pos, uint32_t xid) {
-    printf("begin xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
-    checkpoint(context, wal_pos);
+static int print_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
+    client_context_t context = (client_context_t) _context;
+    if (xid == 0) {
+        fprintf(stderr, "Created replication slot \"%s\", capturing consistent snapshot \"%s\".\n",
+                context->repl.slot_name, context->repl.snapshot_name);
+    } else {
+        printf("begin xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
+        checkpoint(context, wal_pos);
+    }
     return 0;
 }
 
 static int print_commit_txn(void *context, uint64_t wal_pos, uint32_t xid) {
-    printf("commit xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
-    checkpoint(context, wal_pos);
+    if (xid == 0) {
+        fprintf(stderr, "Snapshot complete, streaming changes from %X/%X.\n",
+                (uint32) (wal_pos >> 32), (uint32) wal_pos);
+    } else {
+        printf("commit xid=%u wal_pos=%X/%X\n", xid, (uint32) (wal_pos >> 32), (uint32) wal_pos);
+        checkpoint(context, wal_pos);
+    }
     return 0;
 }
 
@@ -210,12 +221,7 @@ int main(int argc, char **argv) {
     parse_options(context, argc, argv);
     ensure(context, db_client_start(context));
 
-    bool snapshot = false;
-    if (context->sql_conn) {
-        fprintf(stderr, "Created replication slot \"%s\", capturing consistent snapshot \"%s\".\n",
-                context->repl.slot_name, context->repl.snapshot_name);
-        snapshot = true;
-    } else {
+    if (!context->sql_conn) {
         fprintf(stderr, "Replication slot \"%s\" exists, streaming changes from %X/%X.\n",
                 context->repl.slot_name,
                 (uint32) (context->repl.start_lsn >> 32), (uint32) context->repl.start_lsn);
@@ -223,12 +229,6 @@ int main(int argc, char **argv) {
 
     while (context->status >= 0) { /* TODO install signal handler for graceful shutdown */
         ensure(context, db_client_poll(context));
-
-        if (snapshot && !context->sql_conn) {
-            snapshot = false;
-            fprintf(stderr, "Snapshot complete, streaming changes from %X/%X.\n",
-                    (uint32) (context->repl.start_lsn >> 32), (uint32) context->repl.start_lsn);
-        }
 
         if (context->status == 0) {
             ensure(context, db_client_wait(context));
