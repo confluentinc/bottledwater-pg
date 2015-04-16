@@ -91,6 +91,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *val_bin, size_t val_len);
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *envelope);
 void maybe_checkpoint(producer_context_t context);
+void backpressure(producer_context_t context);
 client_context_t init_client(void);
 producer_context_t init_producer(client_context_t client);
 void start_producer(producer_context_t context);
@@ -216,11 +217,9 @@ void set_topic_config(producer_context_t context, char *property, char *value) {
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     producer_context_t context = (producer_context_t) _context;
 
-    if (xact_list_full(context)) {
-        // TODO apply backpressure rather than failing
-        fprintf(stderr, "%s: Too many transactions in flight\n", progname);
-        exit_nicely(context, 1);
-    }
+    // If the circular buffer is full, we have to block and wait for some transactions
+    // to be delivered to Kafka and acknowledged for the broker.
+    while (xact_list_full(context)) backpressure(context);
 
     context->xact_head = (context->xact_head + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
     transaction_info *xact = &context->xact_list[context->xact_head];
@@ -325,19 +324,24 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         exit_nicely(context, 1);
     }
 
-    int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
-            val, val == NULL ? 0 : val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
-            key, key == NULL ? 0 : key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
-            envelope);
+    bool enqueued = false;
+    while (!enqueued) {
+        int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
+                val, val == NULL ? 0 : val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
+                key, key == NULL ? 0 : key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
+                envelope);
+        enqueued = (err == 0);
 
-    // TODO apply backpressure if data from Postgres is coming in faster than we can send
-    // it on to Kafka. Producer does not block, but signals a full buffer like this:
-    // if (rd_kafka_errno2err(errno) == RD_KAFKA_RESP_ERR__QUEUE_FULL) ...
+        // If data from Postgres is coming in faster than we can send it on to Kafka, we
+        // create backpressure by blocking until the producer's queue has drained a bit.
+        if (rd_kafka_errno2err(errno) == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
+            backpressure(context);
 
-    if (err != 0) {
-        fprintf(stderr, "%s: Failed to produce to Kafka: %s\n",
-            progname, rd_kafka_err2str(rd_kafka_errno2err(errno)));
-        exit_nicely(context, 1);
+        } else if (err != 0) {
+            fprintf(stderr, "%s: Failed to produce to Kafka: %s\n",
+                progname, rd_kafka_err2str(rd_kafka_errno2err(errno)));
+            exit_nicely(context, 1);
+        }
     }
 
     return 0;
@@ -353,7 +357,8 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
     msg_envelope_t envelope = (msg_envelope_t) msg->_private;
 
     if (msg->err) {
-        fprintf(stderr, "Message delivery failed: %s\n", rd_kafka_message_errstr(msg));
+        fprintf(stderr, "%s: Message delivery failed: %s\n", progname, rd_kafka_message_errstr(msg));
+        exit_nicely(envelope->context, 1);
     } else {
         // Message successfully delivered to Kafka
         envelope->xact->pending_events--;
@@ -399,6 +404,29 @@ void maybe_checkpoint(producer_context_t context) {
         if (context->xact_tail != context->xact_head) {
             context->xact_tail = (context->xact_tail + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
         }
+    }
+}
+
+
+/* If the producing of messages to Kafka can't keep up with the consuming of messages from
+ * Postgres, this function applies backpressure. It blocks for a little while, until a
+ * timeout or until some network activity occurs in the Kafka client. At the same time, it
+ * keeps the Postgres connection alive (without consuming any more data from it). This
+ * function can be called in a loop until the buffer has drained. */
+void backpressure(producer_context_t context) {
+    rd_kafka_poll(context->kafka, 200);
+
+    if (received_sigint) {
+        fprintf(stderr, "Received interrupt during backpressure. Shutting down...\n");
+        exit_nicely(context, 0);
+    }
+
+    // Keep the replication connection alive, even if we're not consuming data from it.
+    int err = replication_stream_keepalive(&context->client->repl);
+    if (err) {
+        fprintf(stderr, "%s: While sending standby status update for keepalive: %s\n",
+                progname, context->client->repl.error);
+        exit_nicely(context, 1);
     }
 }
 

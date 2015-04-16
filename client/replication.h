@@ -27,5 +27,6 @@ int replication_slot_create(replication_stream_t stream);
 int replication_stream_check(replication_stream_t stream);
 int replication_stream_start(replication_stream_t stream);
 int replication_stream_poll(replication_stream_t stream);
+int replication_stream_keepalive(replication_stream_t stream);
 
 #endif /* REPLICATION_H */

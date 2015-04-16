@@ -197,14 +197,24 @@ int replication_stream_poll(replication_stream_t stream) {
     }
 
     /* Periodically let the server know up to which point we've consumed the stream. */
-    if (!err && stream->recvd_lsn != InvalidXLogRecPtr) {
+    if (!err) err = replication_stream_keepalive(stream);
+
+    if (buf) PQfreemem(buf);
+    return err;
+}
+
+
+/* Periodically sends a checkpoint ("Standby status update") message to the server.
+ * This is required, as the server will otherwise consider the client dead and
+ * close the connection. */
+int replication_stream_keepalive(replication_stream_t stream) {
+    int err = 0;
+    if (stream->recvd_lsn != InvalidXLogRecPtr) {
         int64 now = current_time();
         if (now - stream->last_checkpoint > CHECKPOINT_INTERVAL_SEC * USECS_PER_SEC) {
             err = send_checkpoint(stream, now);
         }
     }
-
-    if (buf) PQfreemem(buf);
     return err;
 }
 
