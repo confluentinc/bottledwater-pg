@@ -4,8 +4,8 @@
 #include "protocol_client.h"
 #include <avro.h>
 #include <libpq-fe.h>
-#include <server/postgres_fe.h>
-#include <server/access/xlogdefs.h>
+#include <postgres_fe.h>
+#include <access/xlogdefs.h>
 
 #define REPLICATION_STREAM_ERROR_LEN 512
 

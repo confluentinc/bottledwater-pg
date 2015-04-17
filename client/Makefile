@@ -3,9 +3,15 @@ EXEC_SRC=bwtest.c
 EXECUTABLE=bwtest
 STATICLIB=libbottledwater.a
 
-WARNINGS=-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security
-CFLAGS=-c -I`pg_config --includedir` `pkg-config --cflags avro-c` $(WARNINGS)
-LDFLAGS=-L`pg_config --libdir` -lpq `pkg-config --libs avro-c`
+PG_CFLAGS = -I$(shell pg_config --includedir) -I$(shell pg_config --includedir-server)
+PG_LDFLAGS = -L$(shell pg_config --libdir) -lpq
+AVRO_CFLAGS = $(shell pkg-config --cflags avro-c)
+AVRO_LDFLAGS = $(shell pkg-config --libs avro-c)
+
+WARNINGS = -Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security
+# _POSIX_C_SOURCE=200809L enables strdup
+CFLAGS = -c -std=c99 -D_POSIX_C_SOURCE=200809L $(PG_CFLAGS) $(AVRO_CFLAGS) $(WARNINGS)
+LDFLAGS = $(PG_LDFLAGS) $(AVRO_LDFLAGS)
 CC=gcc
 AR=ar
 OBJECTS=$(SOURCES:.c=.o)
@@ -16,7 +22,7 @@ EXEC_OBJ=$(EXEC_SRC:.c=.o)
 all: $(SOURCES) $(EXECUTABLE) $(STATICLIB)
 
 $(EXECUTABLE): $(OBJECTS) $(EXEC_OBJ)
-	$(CC) $(LDFLAGS) $^ -o $@
+	$(CC) $^ $(LDFLAGS) -o $@
 
 $(STATICLIB): $(OBJECTS)
 	$(AR) rcs $@ $^

@@ -5,10 +5,11 @@
 #include "replication.h"
 
 #include <stdarg.h>
+#include <string.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
 
-#include <server/datatype/timestamp.h>
+#include <datatype/timestamp.h>
 #include <internal/pqexpbuffer.h>
 
 #define CHECKPOINT_INTERVAL_SEC 10

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #define DEFAULT_REPLICATION_SLOT "bottledwater"
 #define APP_NAME "bottledwater"
