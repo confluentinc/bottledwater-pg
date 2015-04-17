@@ -100,6 +100,7 @@ PG_FUNCTION_INFO_V1(bottledwater_export);
  * SRF docs: http://www.postgresql.org/docs/9.4/static/xfunc-c.html#XFUNC-C-RETURN-SET */
 Datum bottledwater_export(PG_FUNCTION_ARGS) {
     FuncCallContext *funcctx;
+    MemoryContext oldcontext;
     export_state *state;
     int ret;
 
@@ -114,7 +115,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         }
 
         /* Things allocated in this memory context will live until SRF_RETURN_DONE(). */
-        MemoryContext oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+        oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
         state = (export_state *) palloc(sizeof(export_state));
         state->current_table = 0;
@@ -167,6 +168,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
 void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed) {
     Oid argtypes[] = { TEXTOID };
     Datum args[] = { PointerGetDatum(table_pattern) };
+    StringInfoData errors;
 
     int ret = SPI_execute_with_args(
             // c is the class of the table (which stores, amongst other things, the table name).
@@ -201,14 +203,13 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
 
     state->tables = palloc0(SPI_processed * sizeof(export_table));
     state->num_tables = SPI_processed;
-
-    StringInfoData errors;
     initStringInfo(&errors);
 
     for (int i = 0; i < SPI_processed; i++) {
         bool oid_null, namespace_null, relname_null, replident_null, indname_null;
         HeapTuple tuple = SPI_tuptable->vals[i];
         TupleDesc tupdesc = SPI_tuptable->tupdesc;
+	export_table *table;
 
         Datum oid_d       = heap_getattr(tuple, 1, tupdesc, &oid_null);
         Datum namespace_d = heap_getattr(tuple, 2, tupdesc, &namespace_null);
@@ -220,7 +221,7 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
             elog(ERROR, "get_table_list: unexpected null value");
         }
 
-        export_table *table = &state->tables[i];
+        table = &state->tables[i];
         table->relid      = DatumGetObjectId(oid_d);
         table->rel        = relation_open(table->relid, AccessShareLock);
         table->namespace  = pstrdup(NameStr(*DatumGetName(namespace_d)));
@@ -269,13 +270,14 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
  * Updates the state accordingly. */
 void open_next_table(export_state *state) {
     export_table *table = &state->tables[state->current_table];
+    SPIPlanPtr plan;
 
     StringInfoData query;
     initStringInfo(&query);
     appendStringInfo(&query, "SELECT * FROM %s",
             quote_qualified_identifier(table->namespace, table->rel_name));
 
-    SPIPlanPtr plan = SPI_prepare_cursor(query.data, 0, NULL, CURSOR_OPT_NO_SCROLL);
+    plan = SPI_prepare_cursor(query.data, 0, NULL, CURSOR_OPT_NO_SCROLL);
     if (!plan) {
         elog(ERROR, "bottledwater_export: SPI_prepare_cursor failed with error %d", SPI_result);
     }
@@ -310,9 +312,8 @@ bytea *format_snapshot_row(export_state *state) {
     print_tupdesc("Relation tupdesc", RelationGetDescr(table->rel));
 #endif
 
-    TupleDesc tupdesc = SPI_tuptable->tupdesc;
-    HeapTuple row = SPI_tuptable->vals[0];
-    if (update_frame_with_insert(&state->frame_value, state->schema_cache, table->rel, tupdesc, row)) {
+    if (update_frame_with_insert(&state->frame_value, state->schema_cache, table->rel,
+            SPI_tuptable->tupdesc, SPI_tuptable->vals[0])) {
         elog(ERROR, "bottledwater_export: Avro conversion failed: %s", avro_strerror());
     }
     if (try_writing(&output, &write_avro_binary, &state->frame_value)) {
@@ -340,11 +341,13 @@ void print_tupdesc(char *title, TupleDesc tupdesc) {
 /* Given the name of a table (relation), generates an Avro schema for either the rows
  * or the key (replica identity) of the table. */
 bytea *schema_for_relname(char *relname, bool get_key) {
+    int err;
+    bytea *json;
+    avro_schema_t schema;
     List *relname_list = stringToQualifiedNameList(relname);
     RangeVar *relvar = makeRangeVarFromNameList(relname_list);
     Relation rel = relation_openrv(relvar, AccessShareLock);
 
-    avro_schema_t schema;
     if (get_key) {
         schema = schema_for_table_key(rel, NULL);
     } else {
@@ -354,8 +357,7 @@ bytea *schema_for_relname(char *relname, bool get_key) {
     relation_close(rel, AccessShareLock);
     if (!schema) return NULL;
 
-    bytea *json;
-    int err = try_writing(&json, &write_schema_json, schema);
+    err = try_writing(&json, &write_schema_json, schema);
     avro_schema_decref(schema);
 
     if (err) {

@@ -288,12 +288,14 @@ schema_cache_t schema_cache_new(MemoryContext context) {
  * If the schema has changed, 1 is returned. If the schema has not been seen before, 2 is returned. */
 int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry **entry_out) {
     Oid relid = RelationGetRelid(rel);
+    schema_cache_entry *entry;
 
     for (int i = 0; i < cache->num_entries; i++) {
-        schema_cache_entry *entry = cache->entries[i];
+        uint64 hash;
+        entry = cache->entries[i];
         if (entry->relid != relid) continue;
 
-        uint64 hash = schema_hash_for_relation(rel);
+        hash = schema_hash_for_relation(rel);
         if (entry->hash == hash) {
             /* Schema has not changed */
             *entry_out = entry;
@@ -309,7 +311,7 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
     }
 
     /* Schema not previously seen -- create a new cache entry */
-    schema_cache_entry *entry = schema_cache_entry_new(cache);
+    entry = schema_cache_entry_new(cache);
     schema_cache_entry_update(entry, rel);
     *entry_out = entry;
     return 2;
@@ -318,13 +320,15 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
 /* Adds a new entry to the cache, allocated within the cache's memory context.
  * Returns a pointer to the new entry. */
 schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
+    schema_cache_entry *new_entry;
     MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
+
     if (cache->num_entries == cache->capacity) {
         cache->capacity *= 4;
         cache->entries = repalloc(cache->entries, cache->capacity * sizeof(void*));
     }
 
-    schema_cache_entry *new_entry = palloc0(sizeof(schema_cache_entry));
+    new_entry = palloc0(sizeof(schema_cache_entry));
     cache->entries[cache->num_entries] = new_entry;
     cache->num_entries++;
 
@@ -390,9 +394,10 @@ uint64 fnv_hash(uint64 base, char *str, int len) {
 uint64 fnv_format(uint64 base, char *fmt, ...) {
     static char str[FNV_HASH_BUFSIZE];
     va_list args;
+    int len;
 
     va_start(args, fmt);
-    int len = vsnprintf(str, FNV_HASH_BUFSIZE, fmt, args);
+    len = vsnprintf(str, FNV_HASH_BUFSIZE, fmt, args);
     va_end(args);
 
     if (len >= FNV_HASH_BUFSIZE) {

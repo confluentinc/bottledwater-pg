@@ -42,10 +42,9 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
-    opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
-
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
+    opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
 
     state->memctx = AllocSetContextCreate(ctx->context, "Avro decoder context",
             ALLOCSET_DEFAULT_MINSIZE, ALLOCSET_DEFAULT_INITSIZE, ALLOCSET_DEFAULT_MAXSIZE);

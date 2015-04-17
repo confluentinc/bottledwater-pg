@@ -45,12 +45,16 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
  * The return value is opened with a shared lock; call relation_close() when finished. */
 Relation table_key_index(Relation rel) {
     char replident = rel->rd_rel->relreplident;
+    Oid repl_ident_oid;
+    List *indexes;
+    ListCell *index_oid;
+
     if (replident == REPLICA_IDENTITY_NOTHING) {
         return NULL;
     }
 
     if (replident == REPLICA_IDENTITY_INDEX) {
-        Oid repl_ident_oid = RelationGetReplicaIndex(rel);
+        repl_ident_oid = RelationGetReplicaIndex(rel);
         if (repl_ident_oid != InvalidOid) {
             return relation_open(repl_ident_oid, AccessShareLock);
         }
@@ -58,8 +62,7 @@ Relation table_key_index(Relation rel) {
 
     // There doesn't seem to be a convenient way of getting the primary key index for
     // a table, so we have to iterate over all the table's indexes.
-    List *indexes = RelationGetIndexList(rel);
-    ListCell *index_oid;
+    indexes = RelationGetIndexList(rel);
 
     foreach(index_oid, indexes) {
         Relation index_rel = relation_open(lfirst_oid(index_oid), AccessShareLock);
@@ -80,10 +83,13 @@ Relation table_key_index(Relation rel) {
 /* Generates an Avro schema for the key (replica identity or primary key)
  * of a given table. Returns null if the table is unkeyed. */
 avro_schema_t schema_for_table_key(Relation rel, Form_pg_index *index_out) {
-    Relation index_rel = table_key_index(rel);
+    Relation index_rel;
+        avro_schema_t schema;
+
+    index_rel = table_key_index(rel);
     if (!index_rel) return NULL;
 
-    avro_schema_t schema = schema_for_table_row(index_rel);
+    schema = schema_for_table_row(index_rel);
     if (index_out) {
         *index_out = index_rel->rd_index;
     }
@@ -94,19 +100,22 @@ avro_schema_t schema_for_table_key(Relation rel, Form_pg_index *index_out) {
 
 /* Generates an Avro schema corresponding to a given table (relation). */
 avro_schema_t schema_for_table_row(Relation rel) {
+    char *rel_namespace, *relname;
     StringInfoData namespace;
+    avro_schema_t record_schema, column_schema;
+    TupleDesc tupdesc;
+
     initStringInfo(&namespace);
     appendStringInfoString(&namespace, GENERATED_SCHEMA_NAMESPACE);
 
     /* TODO ensure that names abide by Avro's requirements */
-    char *rel_namespace = get_namespace_name(RelationGetNamespace(rel));
+    rel_namespace = get_namespace_name(RelationGetNamespace(rel));
     if (rel_namespace) appendStringInfo(&namespace, ".%s", rel_namespace);
 
-    char *relname = RelationGetRelationName(rel);
-    avro_schema_t record_schema = avro_schema_record(relname, namespace.data);
-    avro_schema_t column_schema;
+    relname = RelationGetRelationName(rel);
+    record_schema = avro_schema_record(relname, namespace.data);
+    tupdesc = RelationGetDescr(rel);
 
-    TupleDesc tupdesc = RelationGetDescr(rel);
     for (int i = 0; i < tupdesc->natts; i++) {
         Form_pg_attribute attr = tupdesc->attrs[i];
         if (attr->attisdropped) continue; /* skip dropped columns */
@@ -127,14 +136,16 @@ int tuple_to_avro_row(avro_value_t *output_val, TupleDesc tupdesc, HeapTuple tup
     check(err, avro_value_reset(output_val));
 
     for (int i = 0; i < tupdesc->natts; i++) {
+        avro_value_t field_val;
+        bool isnull;
+        Datum datum;
+
         Form_pg_attribute attr = tupdesc->attrs[i];
         if (attr->attisdropped) continue; /* skip dropped columns */
 
-        avro_value_t field_val;
         check(err, avro_value_get_by_index(output_val, field, &field_val, NULL));
 
-        bool isnull;
-        Datum datum = heap_getattr(tuple, i + 1, tupdesc, &isnull);
+        datum = heap_getattr(tuple, i + 1, tupdesc, &isnull);
 
         if (isnull) {
             check(err, avro_value_set_branch(&field_val, 0, NULL));
@@ -157,10 +168,15 @@ int tuple_to_avro_row(avro_value_t *output_val, TupleDesc tupdesc, HeapTuple tup
 int tuple_to_avro_key(avro_value_t *output_val, TupleDesc tupdesc, HeapTuple tuple,
         Relation rel, Form_pg_index key_index) {
     int err = 0;
-    check(err, avro_value_reset(output_val));
     TupleDesc rel_tupdesc = RelationGetDescr(rel);
+    check(err, avro_value_reset(output_val));
 
     for (int field = 0; field < key_index->indkey.dim1; field++) {
+        Form_pg_attribute attr;
+        avro_value_t field_val;
+        bool isnull;
+        Datum datum;
+
         int attnum = key_index->indkey.values[field] - 1;
 
         // rel_tupdesc->attrs[attnum] is the indexed attribute. To figure out which
@@ -175,12 +191,10 @@ int tuple_to_avro_key(avro_value_t *output_val, TupleDesc tupdesc, HeapTuple tup
             elog(ERROR, "index refers to non-existent attribute number %d", attnum);
         }
 
-        Form_pg_attribute attr = tupdesc->attrs[tup_i];
-        avro_value_t field_val;
+        attr = tupdesc->attrs[tup_i];
         check(err, avro_value_get_by_index(output_val, field, &field_val, NULL));
 
-        bool isnull;
-        Datum datum = heap_getattr(tuple, tup_i + 1, tupdesc, &isnull);
+        datum = heap_getattr(tuple, tup_i + 1, tupdesc, &isnull);
 
         if (isnull) {
             check(err, avro_value_set_branch(&field_val, 0, NULL));
@@ -196,7 +210,7 @@ int tuple_to_avro_key(avro_value_t *output_val, TupleDesc tupdesc, HeapTuple tup
 /* Generates an Avro schema that can be used to encode a Postgres type
  * with the given OID. */
 avro_schema_t schema_for_oid(Oid typid) {
-    avro_schema_t value_schema;
+    avro_schema_t value_schema, null_schema, union_schema;
 
     switch (typid) {
         /* Numeric-like types */
@@ -285,8 +299,8 @@ avro_schema_t schema_for_oid(Oid typid) {
      * in which case they must include null as the first branch of the union,
      * and return directly from the function without getting here (otherwise
      * we'd get a union inside a union, which is not valid Avro). */
-    avro_schema_t null_schema = avro_schema_null();
-    avro_schema_t union_schema = avro_schema_union();
+    null_schema = avro_schema_null();
+    union_schema = avro_schema_union();
     avro_schema_union_append(union_schema, null_schema);
     avro_schema_union_append(union_schema, value_schema);
     avro_schema_decref(null_schema);
@@ -387,15 +401,17 @@ avro_schema_t schema_for_numeric() {
 }
 
 avro_schema_t schema_for_special_times(avro_schema_t record_schema) {
-    avro_schema_t union_schema = avro_schema_union();
-    avro_schema_t null_schema = avro_schema_null();
+    avro_schema_t union_schema, null_schema, enum_schema;
+
+    union_schema = avro_schema_union();
+    null_schema = avro_schema_null();
     avro_schema_union_append(union_schema, null_schema);
     avro_schema_decref(null_schema);
 
     avro_schema_union_append(union_schema, record_schema);
     avro_schema_decref(record_schema);
 
-    avro_schema_t enum_schema = avro_schema_enum("SpecialTime"); // TODO needs namespace
+    enum_schema = avro_schema_enum("SpecialTime"); // TODO needs namespace
     avro_schema_enum_symbol_append(enum_schema, "POS_INFINITY");
     avro_schema_enum_symbol_append(enum_schema, "NEG_INFINITY");
     avro_schema_union_append(union_schema, enum_schema);
@@ -468,10 +484,11 @@ int update_avro_with_date(avro_value_t *union_val, DateADT date) {
 }
 
 avro_schema_t schema_for_time_tz() {
-    avro_schema_t record_schema = avro_schema_record("TimeTZ", PREDEFINED_SCHEMA_NAMESPACE);
+    avro_schema_t record_schema, column_schema;
+    record_schema = avro_schema_record("TimeTZ", PREDEFINED_SCHEMA_NAMESPACE);
 
     /* microseconds since midnight */
-    avro_schema_t column_schema = avro_schema_long();
+    column_schema = avro_schema_long();
     avro_schema_record_field_append(record_schema, "micro", column_schema);
     avro_schema_decref(column_schema);
 
@@ -644,6 +661,7 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
     int err = 0;
     Oid output_func;
     bool is_varlena;
+    char *str;
 
     getTypeOutputInfo(typid, &output_func, &is_varlena);
     if (is_varlena) {
@@ -652,7 +670,7 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
 
     /* This looks up the output function by OID on every call. Might be a bit faster
      * to do cache the output function info (like how printtup() does it). */
-    char *str = OidOutputFunctionCall(output_func, pg_datum);
+    str = OidOutputFunctionCall(output_func, pg_datum);
     err = avro_value_set_string(output_val, str);
     pfree(str);
 

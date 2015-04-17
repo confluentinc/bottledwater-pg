@@ -12,10 +12,11 @@
  * byte is indeed 0, so it's safe to increment VARSIZE if you need the null byte included. */
 int try_writing(bytea **output, try_writing_cb cb, void *context) {
     int size = INIT_BUFFER_LENGTH, err = ENOSPC;
+    avro_writer_t writer;
 
     while (err == ENOSPC && size <= MAX_BUFFER_LENGTH) {
         *output = (bytea *) palloc(size);
-        avro_writer_t writer = avro_writer_memory(VARDATA(*output), size - VARHDRSZ);
+        writer = avro_writer_memory(VARDATA(*output), size - VARHDRSZ);
         err = (*cb)(writer, context);
 
         if (err == 0) {

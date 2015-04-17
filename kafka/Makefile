@@ -13,7 +13,7 @@ CURL_LDFLAGS = $(shell curl-config --libs)
 JSON_CFLAGS = $(shell pkg-config --cflags jansson)
 JSON_LDFLAGS = $(shell pkg-config --libs jansson)
 
-WARNINGS=-Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security
+WARNINGS=-Wall -Wmissing-prototypes -Wpointer-arith -Wendif-labels -Wmissing-format-attribute -Wformat-security
 # _POSIX_C_SOURCE=200809L enables strdup
 CFLAGS=-c -std=c99 -D_POSIX_C_SOURCE=200809L -I../client $(PG_CFLAGS) $(KAFKA_CFLAGS) $(AVRO_CFLAGS) $(CURL_CFLAGS) $(JSON_CFLAGS) $(WARNINGS)
 LDFLAGS= $(PG_LDFLAGS) $(KAFKA_LDFLAGS) $(AVRO_LDFLAGS) $(CURL_LDFLAGS) $(JSON_LDFLAGS)

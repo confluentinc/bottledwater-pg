@@ -14,10 +14,11 @@ avro_schema_t schema_for_delete(void);
 avro_schema_t nullable_schema(avro_schema_t value_schema);
 
 avro_schema_t schema_for_frame() {
-    avro_schema_t union_schema = avro_schema_union();
+    avro_schema_t union_schema, branch_schema, array_schema, record_schema;
+    union_schema = avro_schema_union();
 
     assert(avro_schema_union_size(union_schema) == PROTOCOL_MSG_BEGIN_TXN);
-    avro_schema_t branch_schema = schema_for_begin_txn();
+    branch_schema = schema_for_begin_txn();
     avro_schema_union_append(union_schema, branch_schema);
     avro_schema_decref(branch_schema);
 
@@ -46,10 +47,10 @@ avro_schema_t schema_for_frame() {
     avro_schema_union_append(union_schema, branch_schema);
     avro_schema_decref(branch_schema);
 
-    avro_schema_t array_schema = avro_schema_array(union_schema);
+    array_schema = avro_schema_array(union_schema);
     avro_schema_decref(union_schema);
 
-    avro_schema_t record_schema = avro_schema_record("Frame", PROTOCOL_SCHEMA_NAMESPACE);
+    record_schema = avro_schema_record("Frame", PROTOCOL_SCHEMA_NAMESPACE);
     avro_schema_record_field_append(record_schema, "msg", array_schema);
     avro_schema_decref(array_schema);
     return record_schema;
