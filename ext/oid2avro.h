@@ -14,6 +14,6 @@ avro_schema_t schema_for_table_key(Relation rel, Form_pg_index *index_out);
 avro_schema_t schema_for_table_row(Relation rel);
 int tuple_to_avro_row(avro_value_t *output_val, TupleDesc tupdesc, HeapTuple tuple);
 int tuple_to_avro_key(avro_value_t *output_val, TupleDesc tupdesc, HeapTuple tuple,
-		Relation rel, Form_pg_index key_index);
+        Relation rel, Form_pg_index key_index);
 
 #endif /* OID2AVRO_H */

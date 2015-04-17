@@ -209,7 +209,7 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
         bool oid_null, namespace_null, relname_null, replident_null, indname_null;
         HeapTuple tuple = SPI_tuptable->vals[i];
         TupleDesc tupdesc = SPI_tuptable->tupdesc;
-	export_table *table;
+        export_table *table;
 
         Datum oid_d       = heap_getattr(tuple, 1, tupdesc, &oid_null);
         Datum namespace_d = heap_getattr(tuple, 2, tupdesc, &namespace_null);
