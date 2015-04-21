@@ -40,6 +40,63 @@ Key features of Bottled Water are:
   interrupted, etc.
 
 
+Quickstart
+----------
+
+To compile Bottled Water for yourself, see below. However, building from source can be a bit
+tricky, so the easiest way to try Bottled Water is to use the
+[Docker](https://www.docker.com/) images we have prepared.
+
+Once you have [installed Docker](https://docs.docker.com/installation/), you can start up
+Postgres, Kafka, Zookeeper (required by Kafka) and the
+[Confluent schema registry](http://confluent.io/docs/current/schema-registry/docs/intro.html)
+as follows:
+
+    $ docker run -d --name zookeeper confluent/zookeeper
+    $ docker run -d --name kafka --link zookeeper:zookeeper \
+        --env KAFKA_LOG_CLEANUP_POLICY=compact confluent/kafka
+    $ docker run -d --name schema-registry --link zookeeper:zookeeper --link kafka:kafka \
+        --env SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL=none confluent/schema-registry
+    $ docker run -d --name postgres confluent/postgres-bw:0.1
+
+The `postgres-bw` image extends the
+[official Postgres docker image](https://registry.hub.docker.com/_/postgres/) and adds
+Bottled Water support. However, before Bottled Water can be used, it first needs to be
+enabled. To do this, start a `psql` shell for the Postgres database:
+
+    $ docker run -it --rm --link postgres:postgres postgres:9.4 sh -c \
+        'exec psql -h "$POSTGRES_PORT_5432_TCP_ADDR" -p "$POSTGRES_PORT_5432_TCP_PORT" -U postgres'
+
+When the prompt appears, enable the `bottledwater` extension, and create a database with
+some test data, for example:
+
+    create extension bottledwater;
+    create table test (id serial primary key, value text);
+    insert into test (value) values('hello world!');
+
+You can keep the psql terminal open, and run the following in a new terminal.
+
+The next step is to start the Bottled Water client, which relays data from Postgres to Kafka.
+You start it like this:
+
+    $ docker run -d --name bottledwater --link postgres:postgres --link kafka:kafka \
+        --link schema-registry:schema-registry confluent/bottledwater:0.1
+
+You can run `docker logs bottledwater` to see what it's doing. Now Bottled Water has taken
+the snapshot, and continues to watch Postgres for any data changes. You can see the data
+that has been extracted from Postgres by consuming from Kafka (the topic name `test` must
+match up with the name of the table you created earlier):
+
+    $ docker run -it --rm --link zookeeper:zookeeper --link kafka:kafka \
+        --link schema-registry:schema-registry confluent/tools \
+        kafka-avro-console-consumer --property print.key=true --topic test --from-beginning
+
+This should print out the contents of the `test` table in JSON format (key/value separated
+by tab). Now go back to the `psql` terminal, and change some data — insert, update or delete
+some rows in the `test` table. You should see the changes swiftly appear in the Kafka
+consumer terminal.
+
+
 Building
 --------
 
@@ -50,15 +107,18 @@ To compile Bottled Water is just a matter of:
 For that to work, you need the following dependencies installed:
 
 * [PostgreSQL 9.4](http://www.postgresql.org/) development libraries (PGXS and libpq).
-  (Homebrew: `brew install postgresql`; Ubuntu: `sudo apt-get install postgresql-server-dev-9.4`)
-* [librdkafka](https://github.com/edenhill/librdkafka), a Kafka client.
-  Build from source.
+  (Homebrew: `brew install postgresql`;
+  Ubuntu: `sudo apt-get install postgresql-server-dev-9.4 libpq-dev`)
 * [libsnappy](https://code.google.com/p/snappy/), a dependency of Avro.
-  (Homebrew: `brew install snappy`)
+  (Homebrew: `brew install snappy`; Ubuntu: `sudo apt-get install libsnappy-dev`)
 * [avro-c](http://avro.apache.org/), the C implementation of Avro.
-  (Homebrew: `brew install avro-c`)
-* [Jansson](http://www.digip.org/jansson/), a JSON parser, version 2.6 or above.
-  (Homebrew: `brew install jansson`)
+  (Homebrew: `brew install avro-c`; others: build from source)
+* [Jansson](http://www.digip.org/jansson/), a JSON parser.
+  (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
+* [libcurl](http://curl.haxx.se/libcurl/), a HTTP client.
+  (Homebrew: `brew install curl`; Ubuntu: `sudo apt-get install libcurl4-openssl-dev`)
+* [librdkafka](https://github.com/edenhill/librdkafka), a Kafka client.
+  (Ubuntu universe: `sudo apt-get install librdkafka-dev`; others: build from source)
 
 If you get errors about *Package libsnappy was not found in the pkg-config search path*,
 and you have Snappy installed, you may need to create `/usr/local/lib/pkgconfig/libsnappy.pc`
