@@ -120,6 +120,10 @@ For that to work, you need the following dependencies installed:
 * [librdkafka](https://github.com/edenhill/librdkafka), a Kafka client.
   (Ubuntu universe: `sudo apt-get install librdkafka-dev`; others: build from source)
 
+You can see the Dockerfile for
+[building the quickstart images](https://github.com/ept/bottledwater-pg/blob/master/build/Dockerfile.build)
+as an example of building Bottled Water and its dependencies on Debian.
+
 If you get errors about *Package libsnappy was not found in the pkg-config search path*,
 and you have Snappy installed, you may need to create `/usr/local/lib/pkgconfig/libsnappy.pc`
 with contents something like the following:
