@@ -45,7 +45,9 @@ Quickstart
 
 To compile Bottled Water for yourself, see below. However, building from source can be a bit
 tricky, so the easiest way to try Bottled Water is to use the
-[Docker](https://www.docker.com/) images we have prepared.
+[Docker](https://www.docker.com/) images we have prepared. You need at least 2GB of memory
+to run this demo, so if you're running inside a virtual machine (such as
+[Boot2docker](http://boot2docker.io/) on a Mac), please check that it is big enough.
 
 Once you have [installed Docker](https://docs.docker.com/installation/), you can start up
 Postgres, Kafka, Zookeeper (required by Kafka) and the
