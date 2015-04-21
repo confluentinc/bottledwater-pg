@@ -133,8 +133,12 @@ int registry_request(schema_registry_t registry, topic_list_entry_t entry, int i
         return EINVAL;
     }
 
-    json_t *req_json = json_pack("{s:s%}", "schema", schema_json, schema_len);
+    json_t *req_json = json_pack("{s:s}", "schema", schema_json);
     char *req_body = json_dumps(req_json, JSON_COMPACT);
+    if (!req_body) {
+        registry_error(registry, "Could not encode JSON request for schema registry");
+        return EINVAL;
+    }
 
     char resp_body[1024];
     avro_writer_t resp_writer = avro_writer_memory(resp_body, sizeof(resp_body));
