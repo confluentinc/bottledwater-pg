@@ -54,12 +54,13 @@ Postgres, Kafka, Zookeeper (required by Kafka) and the
 [Confluent schema registry](http://confluent.io/docs/current/schema-registry/docs/intro.html)
 as follows:
 
-    $ docker run -d --name zookeeper confluent/zookeeper
-    $ docker run -d --name kafka --link zookeeper:zookeeper \
+    $ docker run -d --name zookeeper --hostname zookeeper confluent/zookeeper
+    $ docker run -d --name kafka --hostname kafka --link zookeeper:zookeeper \
         --env KAFKA_LOG_CLEANUP_POLICY=compact confluent/kafka
-    $ docker run -d --name schema-registry --link zookeeper:zookeeper --link kafka:kafka \
+    $ docker run -d --name schema-registry --hostname schema-registry \
+        --link zookeeper:zookeeper --link kafka:kafka \
         --env SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL=none confluent/schema-registry
-    $ docker run -d --name postgres confluent/postgres-bw:0.1
+    $ docker run -d --name postgres --hostname postgres confluent/postgres-bw:0.1
 
 The `postgres-bw` image extends the
 [official Postgres docker image](https://registry.hub.docker.com/_/postgres/) and adds
@@ -81,8 +82,8 @@ You can keep the psql terminal open, and run the following in a new terminal.
 The next step is to start the Bottled Water client, which relays data from Postgres to Kafka.
 You start it like this:
 
-    $ docker run -d --name bottledwater --link postgres:postgres --link kafka:kafka \
-        --link schema-registry:schema-registry confluent/bottledwater:0.1
+    $ docker run -d --name bottledwater --hostname bottledwater --link postgres:postgres \
+        --link kafka:kafka --link schema-registry:schema-registry confluent/bottledwater:0.1
 
 You can run `docker logs bottledwater` to see what it's doing. Now Bottled Water has taken
 the snapshot, and continues to watch Postgres for any data changes. You can see the data
