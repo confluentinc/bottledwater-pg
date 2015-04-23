@@ -13,6 +13,7 @@ inserts/updates/deletes into the same language-independent format as they happen
 that data and ship it to your other systems: build search indexes, update caches, load it into
 a data warehouse, calculate analytics, monitor it for fraud, and so on.
 
+* [Blog post explaining the background](http://blog.confluent.io/2015/04/23/bottled-water-real-time-integration-of-postgresql-and-kafka/)
 * [Watch a short demo!](http://showterm.io/fde6260d684ee3a6ee692)
 
 
