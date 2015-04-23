@@ -219,8 +219,9 @@ consumer:
 Status
 ------
 
-This is early alpha-quality software. It will probably break. See `TODO.md` for a
-list of known issues.
+This is early alpha-quality software. It will probably break. See
+[Github issues](https://github.com/confluentinc/bottledwater-pg/issues)
+for a list of known issues.
 
 Bug reports and pull requests welcome.
 
