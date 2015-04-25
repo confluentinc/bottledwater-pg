@@ -25,7 +25,7 @@ OBJECTS=$(SOURCES:.c=.o)
 all: $(SOURCES) $(EXECUTABLE)
 
 $(EXECUTABLE): $(OBJECTS)
-	$(CC) $(LDFLAGS) $^ $(STATICLIB) -o $@
+	$(CC) $^ $(STATICLIB) -o $@ $(LDFLAGS)
 
 .c.o:
 	$(CC) $< $(CFLAGS) -o $@
