@@ -32,7 +32,9 @@ static void output_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt
     plugin_state *state;
 
     elog(DEBUG1, "bottledwater: output_startup: is_init=%s", is_init ? "true" : "false");
-
+    if (is_init) {
+        return;
+    }
     state = palloc0(sizeof(plugin_state));
     ctx->output_plugin_private = state;
 
