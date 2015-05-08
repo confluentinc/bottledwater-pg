@@ -72,7 +72,7 @@ void parse_options(client_context_t context, int argc, char **argv) {
 
     int option_index;
     while (true) {
-        int c = getopt_long(argc, argv, "d:s:", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:u", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
