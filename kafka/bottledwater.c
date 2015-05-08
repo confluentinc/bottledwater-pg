@@ -145,7 +145,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
     int option_index;
     while (true) {
-        int c = getopt_long(argc, argv, "d:s:b:C:T:", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:uC:T:", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
