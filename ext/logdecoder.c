@@ -1,5 +1,6 @@
 #include "logdecoder.h"
 #include "format-avro.h"
+#include "format-json.h"
 #include "nodes/parsenodes.h"
 #include "utils/elog.h"
 
@@ -30,6 +31,7 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 static void output_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
     plugin_state *state;
+    void (*format_init_func)(OutputPluginCallbacks *) = NULL;
 
     elog(DEBUG1, "bottledwater: output_startup: is_init=%s", is_init ? "true" : "false");
     if (is_init) {
@@ -58,13 +60,17 @@ static void output_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt
                           (errcode(ERRCODE_UNDEFINED_PARAMETER),
                            errmsg("FORMAT option requires an argument")));
               }
-              if (state->format_cb) {
+
+              if (format_init_func) {
                   ereport(ERROR,
                           (errcode(ERRCODE_AMBIGUOUS_PARAMETER), // TODO: a better one?
                            errmsg("multiple FORMAT options specified for output plugin")));
               }
+
               if (strcasecmp(str, "AVRO") == 0) {
-                  ; // default format, see below
+                  format_init_func = output_format_avro_init;
+              } else if (strcasecmp(str, "JSON") == 0) {
+                  format_init_func = output_format_json_init;
               } else {
                   ereport(ERROR,
                           (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -75,10 +81,11 @@ static void output_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt
     }
 
     // use default format, if not created earlier
-    if (!state->format_cb) {
-      state->format_cb = palloc0(sizeof(OutputPluginCallbacks));
-      output_format_avro_init(state->format_cb);
+    if (!format_init_func) {
+        format_init_func = output_format_avro_init;
     }
+    state->format_cb = palloc0(sizeof(OutputPluginCallbacks));
+    format_init_func(state->format_cb);
 
     state->format_cb->startup_cb(ctx, opt, is_init);
 }
