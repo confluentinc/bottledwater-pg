@@ -112,13 +112,4 @@ static void output_json_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
     }
     appendStringInfoString(ctx->out, " }");
     OutputPluginWrite(ctx, true);
-
-    if (oldtuple) {
-        pfree(DatumGetPointer(oldjson));
-        pfree(DatumGetPointer(olddatum));
-    }
-    if (newtuple) {
-        pfree(DatumGetPointer(newjson));
-        pfree(DatumGetPointer(newdatum));
-    }
 }
