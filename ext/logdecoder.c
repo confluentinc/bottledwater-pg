@@ -92,10 +92,17 @@ static void output_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt
 
 static void output_shutdown(LogicalDecodingContext *ctx) {
     plugin_state *state = ctx->output_plugin_private;
+    MemoryContext oldctx;
 
-    state->format_cb->shutdown_cb(ctx);
+    /* state can be NULL if we are in CreateReplicationSlot */
+    if (state) {
+        oldctx = MemoryContextSwitchTo(state->memctx);
 
-    MemoryContextDelete(state->memctx);
+        state->format_cb->shutdown_cb(ctx);
+
+        MemoryContextSwitchTo(oldctx);
+        MemoryContextDelete(state->memctx);
+    }
 }
 
 static void output_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn) {
