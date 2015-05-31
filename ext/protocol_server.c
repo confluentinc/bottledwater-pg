@@ -94,6 +94,7 @@ int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Rela
     check(err, try_writing(&new_bin, &write_avro_binary, &entry->row_value));
     check(err, update_frame_with_insert_raw(frame_val, RelationGetRelid(rel), key_bin, new_bin));
 
+    if (key_bin) pfree(key_bin);
     pfree(new_bin);
     return err;
 }
@@ -160,6 +161,8 @@ int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Rela
     }
 
     check(err, update_frame_with_delete_raw(frame_val, RelationGetRelid(rel), key_bin, old_bin));
+
+    if (key_bin) pfree(key_bin);
     if (old_bin) pfree(old_bin);
     return err;
 }
