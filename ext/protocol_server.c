@@ -6,6 +6,7 @@
 #include "oid2avro.h"
 
 #include <stdarg.h>
+#include <string.h>
 #include "access/heapam.h"
 #include "utils/lsyscache.h"
 
@@ -93,6 +94,7 @@ int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Rela
     check(err, try_writing(&new_bin, &write_avro_binary, &entry->row_value));
     check(err, update_frame_with_insert_raw(frame_val, RelationGetRelid(rel), key_bin, new_bin));
 
+    if (key_bin) pfree(key_bin);
     pfree(new_bin);
     return err;
 }
@@ -102,25 +104,38 @@ int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Rela
 int update_frame_with_update(avro_value_t *frame_val, schema_cache_t cache, Relation rel, HeapTuple oldtuple, HeapTuple newtuple) {
     int err = 0;
     schema_cache_entry *entry;
-    bytea *key_bin = NULL, *old_bin = NULL, *new_bin = NULL;
+    bytea *old_bin = NULL, *new_bin = NULL, *old_key_bin = NULL, *new_key_bin = NULL;
 
     int changed = schema_cache_lookup(cache, rel, &entry);
     if (changed) {
         check(err, update_frame_with_table_schema(frame_val, entry));
     }
 
+    /* oldtuple is non-NULL when replident = FULL, or when replident = DEFAULT and there is no
+     * primary key, or replident = DEFAULT and the primary key was not modified by the update. */
     if (oldtuple) {
+        check(err, extract_tuple_key(entry, rel, RelationGetDescr(rel), oldtuple, &old_key_bin));
         check(err, avro_value_reset(&entry->row_value));
         check(err, tuple_to_avro_row(&entry->row_value, RelationGetDescr(rel), oldtuple));
         check(err, try_writing(&old_bin, &write_avro_binary, &entry->row_value));
     }
 
-    check(err, extract_tuple_key(entry, rel, RelationGetDescr(rel), newtuple, &key_bin));
+    check(err, extract_tuple_key(entry, rel, RelationGetDescr(rel), newtuple, &new_key_bin));
     check(err, avro_value_reset(&entry->row_value));
     check(err, tuple_to_avro_row(&entry->row_value, RelationGetDescr(rel), newtuple));
     check(err, try_writing(&new_bin, &write_avro_binary, &entry->row_value));
-    check(err, update_frame_with_update_raw(frame_val, RelationGetRelid(rel), key_bin, old_bin, new_bin));
 
+    if (old_key_bin != NULL && (VARSIZE(old_key_bin) != VARSIZE(new_key_bin) ||
+            memcmp(VARDATA(old_key_bin), VARDATA(new_key_bin), VARSIZE(new_key_bin) - VARHDRSZ) != 0)) {
+        /* If the primary key changed, turn the update into a delete and an insert. */
+        check(err, update_frame_with_delete_raw(frame_val, RelationGetRelid(rel), old_key_bin, old_bin));
+        check(err, update_frame_with_insert_raw(frame_val, RelationGetRelid(rel), new_key_bin, new_bin));
+    } else {
+        check(err, update_frame_with_update_raw(frame_val, RelationGetRelid(rel), new_key_bin, old_bin, new_bin));
+    }
+
+    if (old_key_bin) pfree(old_key_bin);
+    if (new_key_bin) pfree(new_key_bin);
     if (old_bin) pfree(old_bin);
     pfree(new_bin);
     return err;
@@ -146,6 +161,8 @@ int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Rela
     }
 
     check(err, update_frame_with_delete_raw(frame_val, RelationGetRelid(rel), key_bin, old_bin));
+
+    if (key_bin) pfree(key_bin);
     if (old_bin) pfree(old_bin);
     return err;
 }

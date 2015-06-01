@@ -153,18 +153,25 @@ static int print_update_row(void *context, uint64_t wal_pos, Oid relid,
         const void *old_bin, size_t old_len, avro_value_t *old_val,
         const void *new_bin, size_t new_len, avro_value_t *new_val) {
     int err = 0;
-    char *key_json, *new_json;
+    char *key_json = NULL, *old_json = NULL, *new_json = NULL;
     const char *table_name = avro_schema_name(avro_value_get_schema(new_val));
     check(err, avro_value_to_json(new_val, 1, &new_json));
 
-    if (key_val) {
-        check(err, avro_value_to_json(key_val, 1, &key_json));
-        printf("update to %s: %s --> %s\n", table_name, key_json, new_json);
-        free(key_json);
+    if (old_val) check(err, avro_value_to_json(old_val, 1, &old_json));
+    if (key_val) check(err, avro_value_to_json(key_val, 1, &key_json));
+
+    if (key_json && old_json) {
+        printf("update to %s: key %s: %s --> %s\n", table_name, key_json, old_json, new_json);
+    } else if (old_json) {
+        printf("update to %s: %s --> %s\n", table_name, old_json, new_json);
+    } else if (key_json) {
+        printf("update to %s: key %s: %s\n", table_name, key_json, new_json);
     } else {
         printf("update to %s: (?) --> %s\n", table_name, new_json);
     }
 
+    if (key_json) free(key_json);
+    if (old_json) free(old_json);
     free(new_json);
     if (err == 0) checkpoint(context, wal_pos);
     return err;
@@ -174,16 +181,27 @@ static int print_delete_row(void *context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len, avro_value_t *key_val,
         const void *old_bin, size_t old_len, avro_value_t *old_val) {
     int err = 0;
-    char *key_json;
+    char *key_json = NULL, *old_json = NULL;
+    const char *table_name = NULL;
 
-    if (key_val) {
-        check(err, avro_value_to_json(key_val, 1, &key_json));
-        printf("delete: %s\n", key_json);
-        free(key_json);
+    if (key_val) check(err, avro_value_to_json(key_val, 1, &key_json));
+    if (old_val) {
+        check(err, avro_value_to_json(old_val, 1, &old_json));
+        table_name = avro_schema_name(avro_value_get_schema(old_val));
+    }
+
+    if (key_json && old_json) {
+        printf("delete from %s: %s (was: %s)\n", table_name, key_json, old_json);
+    } else if (old_json) {
+        printf("delete from %s: %s\n", table_name, old_json);
+    } else if (key_json) {
+        printf("delete from relid %u: %s\n", relid, key_json);
     } else {
         printf("delete to relid %u (?)\n", relid);
     }
 
+    if (key_json) free(key_json);
+    if (old_json) free(old_json);
     if (err == 0) checkpoint(context, wal_pos);
     return err;
 }
