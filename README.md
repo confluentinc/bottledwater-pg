@@ -226,6 +226,10 @@ for a list of known issues.
 
 Bug reports and pull requests welcome.
 
+Note that Bottled Water has nothing to do with
+[Sparkling Water](https://github.com/h2oai/sparkling-water), a machine learning
+engine for Spark.
+
 
 License
 -------
