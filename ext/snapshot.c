@@ -14,8 +14,6 @@
 #include "lib/stringinfo.h"
 #include "utils/builtins.h"
 
-// #define DEBUG
-
 PG_MODULE_MAGIC;
 
 typedef struct {
@@ -307,13 +305,10 @@ bytea *format_snapshot_row(export_state *state) {
         elog(ERROR, "Avro value reset failed: %s", avro_strerror());
     }
 
-#ifdef DEBUG
-    print_tupdesc("Tuptable tupdesc", SPI_tuptable->tupdesc);
-    print_tupdesc("Relation tupdesc", RelationGetDescr(table->rel));
-#endif
-
     if (update_frame_with_insert(&state->frame_value, state->schema_cache, table->rel,
             SPI_tuptable->tupdesc, SPI_tuptable->vals[0])) {
+        elog(INFO, "Failed tuptable: %s", schema_debug_info(table->rel, SPI_tuptable->tupdesc));
+        elog(INFO, "Failed relation: %s", schema_debug_info(table->rel, RelationGetDescr(table->rel)));
         elog(ERROR, "bottledwater_export: Avro conversion failed: %s", avro_strerror());
     }
     if (try_writing(&output, &write_avro_binary, &state->frame_value)) {
@@ -322,20 +317,6 @@ bytea *format_snapshot_row(export_state *state) {
 
     SPI_freetuptable(SPI_tuptable);
     return output;
-}
-
-void print_tupdesc(char *title, TupleDesc tupdesc) {
-    fprintf(stderr, "\n%s:\n", title);
-    for (int i = 0; i < tupdesc->natts; i++) {
-        Form_pg_attribute attr = tupdesc->attrs[i];
-        fprintf(stderr, "%4d. attrelid = %u, attname = %s, atttypid = %u, attlen = %d, "
-                "attnum = %d, attndims = %d, atttypmod = %d, attnotnull = %d, "
-                "atthasdef = %d, attisdropped = %d, attcollation = %u\n",
-                i, attr->attrelid, NameStr(attr->attname), attr->atttypid, attr->attlen,
-                attr->attnum, attr->attndims, attr->atttypmod, attr->attnotnull,
-                attr->atthasdef, attr->attisdropped, attr->attcollation);
-    }
-    fprintf(stderr, "\n");
 }
 
 /* Given the name of a table (relation), generates an Avro schema for either the rows

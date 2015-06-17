@@ -34,5 +34,6 @@ int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Rela
 
 schema_cache_t schema_cache_new(MemoryContext context);
 void schema_cache_free(schema_cache_t cache);
+char *schema_debug_info(Relation rel, TupleDesc tupdesc);
 
 #endif /* PROTOCOL_SERVER_H */

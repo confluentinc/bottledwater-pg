@@ -139,6 +139,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
     }
 
     if (err) {
+        elog(INFO, "Row conversion failed: %s", schema_debug_info(rel, NULL));
         elog(ERROR, "output_avro_change: row conversion failed: %s", avro_strerror());
     }
     if (write_frame(ctx, state)) {
