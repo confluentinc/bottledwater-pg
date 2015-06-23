@@ -13,6 +13,7 @@
 #include "executor/spi.h"
 #include "lib/stringinfo.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
 
 // #define DEBUG
 
@@ -29,6 +30,7 @@ typedef struct {
 
 /* State that we need to remember between calls of bottledwater_export */
 typedef struct {
+    MemoryContext memcontext;
     export_table *tables;
     int num_tables, current_table;
     avro_schema_t frame_schema;
@@ -103,6 +105,9 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
     MemoryContext oldcontext;
     export_state *state;
     int ret;
+    bytea *result;
+
+    oldcontext = CurrentMemoryContext;
 
     if (SRF_IS_FIRSTCALL()) {
         funcctx = SRF_FIRSTCALL_INIT();
@@ -115,9 +120,16 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         }
 
         /* Things allocated in this memory context will live until SRF_RETURN_DONE(). */
-        oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+        MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
         state = (export_state *) palloc(sizeof(export_state));
+
+        state->memcontext = AllocSetContextCreate(CurrentMemoryContext,
+                                                  "bottledwater_export per-tuple context",
+                                                  ALLOCSET_DEFAULT_MINSIZE,
+                                                  ALLOCSET_DEFAULT_INITSIZE,
+                                                  ALLOCSET_DEFAULT_MAXSIZE);
+
         state->current_table = 0;
         state->frame_schema = schema_for_frame();
         state->frame_iface = avro_generic_class_from_schema(state->frame_schema);
@@ -127,8 +139,6 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
 
         get_table_list(state, PG_GETARG_TEXT_P(0), PG_GETARG_BOOL(1));
         if (state->num_tables > 0) open_next_table(state);
-
-        MemoryContextSwitchTo(oldcontext);
     }
 
     /* On every call of the function, try to fetch one row from the current cursor,
@@ -145,7 +155,20 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
             state->current_table++;
             if (state->current_table < state->num_tables) open_next_table(state);
         } else {
-            SRF_RETURN_NEXT(funcctx, PointerGetDatum(format_snapshot_row(state)));
+            /* SPI_cursor_fetch() leaves us in the SPI mem. context */
+            MemoryContextSwitchTo(state->memcontext);
+
+            /* clear any prior tuple result memory */
+            MemoryContextReset(state->memcontext);
+
+            result = format_snapshot_row(state);
+
+            MemoryContextSwitchTo(oldcontext);
+
+            /* don't forget to clear the SPI temp context */
+            SPI_freetuptable(SPI_tuptable);
+
+            SRF_RETURN_NEXT(funcctx, PointerGetDatum(result));
         }
     }
 
@@ -319,8 +342,6 @@ bytea *format_snapshot_row(export_state *state) {
     if (try_writing(&output, &write_avro_binary, &state->frame_value)) {
         elog(ERROR, "bottledwater_export: writing Avro binary failed: %s", avro_strerror());
     }
-
-    SPI_freetuptable(SPI_tuptable);
     return output;
 }
 
