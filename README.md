@@ -61,26 +61,25 @@ prepared. You need at least 2GB of memory to run this demo, so if you're running
 machine (such as [Boot2docker](http://boot2docker.io/) on a Mac), please check that it is big
 enough.
 
-Once you have [installed Docker](https://docs.docker.com/installation/), you can start up
-Postgres, Kafka, Zookeeper (required by Kafka) and the
-[Confluent schema registry](http://confluent.io/docs/current/schema-registry/docs/intro.html)
+First, install:
+
+* [Docker](https://docs.docker.com/installation/), which is used to run the
+  individual services/containers, and
+* [docker-compose](https://docs.docker.com/compose/install/), which is used to
+  orchestrate the interaction between services.
+
+After the prequisite applications are installed, you can start up Postgres, Kafka, Zookeeper (required by Kafka)
+and the [Confluent schema registry](http://confluent.io/docs/current/schema-registry/docs/intro.html)
 as follows:
 
-    $ docker run -d --name zookeeper --hostname zookeeper confluent/zookeeper
-    $ docker run -d --name kafka --hostname kafka --link zookeeper:zookeeper \
-        --env KAFKA_LOG_CLEANUP_POLICY=compact confluent/kafka
-    $ docker run -d --name schema-registry --hostname schema-registry \
-        --link zookeeper:zookeeper --link kafka:kafka \
-        --env SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL=none confluent/schema-registry
-    $ docker run -d --name postgres --hostname postgres confluent/postgres-bw:0.1
+    $ docker-compose up -d zookeeper kafka schema-registry postgres
 
 The `postgres-bw` image extends the
 [official Postgres docker image](https://registry.hub.docker.com/_/postgres/) and adds
 Bottled Water support. However, before Bottled Water can be used, it first needs to be
 enabled. To do this, start a `psql` shell for the Postgres database:
 
-    $ docker run -it --rm --link postgres:postgres postgres:9.4 sh -c \
-        'exec psql -h "$POSTGRES_PORT_5432_TCP_ADDR" -p "$POSTGRES_PORT_5432_TCP_PORT" -U postgres'
+    $ docker-compose run --rm postgres psql
 
 When the prompt appears, enable the `bottledwater` extension, and create a database with
 some test data, for example:
@@ -94,23 +93,24 @@ You can keep the psql terminal open, and run the following in a new terminal.
 The next step is to start the Bottled Water client, which relays data from Postgres to Kafka.
 You start it like this:
 
-    $ docker run -d --name bottledwater --hostname bottledwater --link postgres:postgres \
-        --link kafka:kafka --link schema-registry:schema-registry confluent/bottledwater:0.1
+    $ docker-compose up -d bottledwater
 
-You can run `docker logs bottledwater` to see what it's doing. Now Bottled Water has taken
+You can run `docker-compose logs bottledwater` to see what it's doing. Now Bottled Water has taken
 the snapshot, and continues to watch Postgres for any data changes. You can see the data
 that has been extracted from Postgres by consuming from Kafka (the topic name `test` must
 match up with the name of the table you created earlier):
 
-    $ docker run -it --rm --link zookeeper:zookeeper --link kafka:kafka \
-        --link schema-registry:schema-registry confluent/tools \
-        kafka-avro-console-consumer --property print.key=true --topic test --from-beginning
+    $ docker-compose run --rm kafka-avro-console-consumer --from-beginning --topic test
 
 This should print out the contents of the `test` table in JSON format (key/value separated
 by tab). Now go back to the `psql` terminal, and change some data — insert, update or delete
 some rows in the `test` table. You should see the changes swiftly appear in the Kafka
 consumer terminal.
 
+When you're done testing, you can destroy the cluster and it's associated data volumes with:
+
+    $ docker-compose stop
+    $ docker-compose rm -vf
 
 Building from source
 --------------------
