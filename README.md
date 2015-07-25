@@ -79,7 +79,7 @@ The `postgres-bw` image extends the
 Bottled Water support. However, before Bottled Water can be used, it first needs to be
 enabled. To do this, start a `psql` shell for the Postgres database:
 
-    $ docker-compose run postgres psql
+    $ docker-compose run --rm postgres psql
 
 When the prompt appears, enable the `bottledwater` extension, and create a database with
 some test data, for example:
@@ -100,7 +100,7 @@ the snapshot, and continues to watch Postgres for any data changes. You can see 
 that has been extracted from Postgres by consuming from Kafka (the topic name `test` must
 match up with the name of the table you created earlier):
 
-    $ docker-compose run consumer --from-beginning --topic test
+    $ docker-compose run --rm consumer --from-beginning --topic test
 
 This should print out the contents of the `test` table in JSON format (key/value separated
 by tab). Now go back to the `psql` terminal, and change some data — insert, update or delete
