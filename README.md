@@ -100,7 +100,7 @@ the snapshot, and continues to watch Postgres for any data changes. You can see 
 that has been extracted from Postgres by consuming from Kafka (the topic name `test` must
 match up with the name of the table you created earlier):
 
-    $ docker-compose run consumer
+    $ docker-compose run consumer --from-beginning --topic test
 
 This should print out the contents of the `test` table in JSON format (key/value separated
 by tab). Now go back to the `psql` terminal, and change some data — insert, update or delete

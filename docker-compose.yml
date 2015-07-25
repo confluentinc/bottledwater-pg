@@ -37,7 +37,7 @@ bottledwater:
 
 consumer:
     image: confluent/tools
-    command: ['kafka-avro-console-consumer', '--property', 'print.key=true', '--topic', 'test', '--from-beginning']
+    entrypoint: ['/confluent-tools.sh', 'kafka-avro-console-consumer']
     links:
         - zookeeper
         - kafka
