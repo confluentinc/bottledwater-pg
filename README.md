@@ -63,8 +63,10 @@ enough.
 
 First, install:
 
-* [Docker](https://docs.docker.com/installation/), and
-* [docker-compose](https://docs.docker.com/compose/install/).
+* [Docker](https://docs.docker.com/installation/), which is used to run the
+  individual services/containers, and
+* [docker-compose](https://docs.docker.com/compose/install/), which is used to
+  orchestrate the interaction between services.
 
 After the prequisite applications are installed, you can start up Postgres, Kafka, Zookeeper (required by Kafka)
 and the [Confluent schema registry](http://confluent.io/docs/current/schema-registry/docs/intro.html)
