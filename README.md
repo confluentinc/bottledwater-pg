@@ -107,6 +107,10 @@ by tab). Now go back to the `psql` terminal, and change some data — insert, up
 some rows in the `test` table. You should see the changes swiftly appear in the Kafka
 consumer terminal.
 
+When you're done testing, you can destroy the cluster and it's associated data volumes with:
+
+    $ docker-compose stop
+    $ docker-compose rm -vf
 
 Building from source
 --------------------
