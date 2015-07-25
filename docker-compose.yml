@@ -1,0 +1,44 @@
+zookeeper:
+    image: confluent/zookeeper
+    ports:
+        - 2181
+
+kafka:
+    image: confluent/kafka
+    ports:
+        - 9092
+    links:
+        - zookeeper
+
+schema-registry:
+    image: confluent/schema-registry
+    ports:
+        - 8081
+    links:
+        - zookeeper
+        - kafka
+    environment:
+        SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: none
+
+postgres:
+    image: confluent/postgres-bw:0.1
+    ports:
+        - 5432
+    environment:
+        PGHOST: postgres
+        PGUSER: postgres
+
+bottledwater:
+    image: confluent/bottledwater:0.1
+    links:
+        - kafka
+        - postgres
+        - schema-registry
+
+consumer:
+    image: confluent/tools
+    command: ['kafka-avro-console-consumer', '--property', 'print.key=true', '--topic', 'test', '--from-beginning']
+    links:
+        - zookeeper
+        - kafka
+        - schema-registry
