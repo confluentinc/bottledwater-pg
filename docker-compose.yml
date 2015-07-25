@@ -9,6 +9,8 @@ kafka:
         - 9092
     links:
         - zookeeper
+    environment:
+        KAFKA_LOG_CLEANUP_POLICY: compact
 
 schema-registry:
     image: confluent/schema-registry
