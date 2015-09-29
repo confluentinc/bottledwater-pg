@@ -132,7 +132,7 @@ For that to work, you need the following dependencies installed:
   (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
 * [libcurl](http://curl.haxx.se/libcurl/), a HTTP client.
   (Homebrew: `brew install curl`; Ubuntu: `sudo apt-get install libcurl4-openssl-dev`)
-* [librdkafka](https://github.com/edenhill/librdkafka), a Kafka client.
+* [librdkafka](https://github.com/edenhill/librdkafka) (0.8.4 or later), a Kafka client.
   (Ubuntu universe: `sudo apt-get install librdkafka-dev`; others: build from source)
 
 You can see the Dockerfile for
