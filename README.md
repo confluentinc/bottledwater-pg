@@ -146,7 +146,7 @@ with contents something like the following:
     Name: libsnappy
     Description: Snappy is a compression library
     Version: 1.1.2
-    URL: https://code.google.com/p/snappy/
+    URL: https://google.github.io/snappy/
     Libs: -L/usr/local/lib -lsnappy
     Cflags: -I/usr/local/include
 
