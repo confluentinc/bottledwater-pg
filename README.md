@@ -141,7 +141,8 @@ as an example of building Bottled Water and its dependencies on Debian.
 
 If you get errors about *Package libsnappy was not found in the pkg-config search path*,
 and you have Snappy installed, you may need to create `/usr/local/lib/pkgconfig/libsnappy.pc`
-with contents something like the following:
+with contents something like the following (be sure to check which version of _libsnappy_
+is installed in your system):
 
     Name: libsnappy
     Description: Snappy is a compression library
