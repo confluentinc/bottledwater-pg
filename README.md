@@ -132,7 +132,7 @@ For that to work, you need the following dependencies installed:
   (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
 * [libcurl](http://curl.haxx.se/libcurl/), a HTTP client.
   (Homebrew: `brew install curl`; Ubuntu: `sudo apt-get install libcurl4-openssl-dev`)
-* [librdkafka](https://github.com/edenhill/librdkafka), a Kafka client.
+* [librdkafka](https://github.com/edenhill/librdkafka) (0.8.4 or later), a Kafka client.
   (Ubuntu universe: `sudo apt-get install librdkafka-dev`; others: build from source)
 
 You can see the Dockerfile for
@@ -141,12 +141,13 @@ as an example of building Bottled Water and its dependencies on Debian.
 
 If you get errors about *Package libsnappy was not found in the pkg-config search path*,
 and you have Snappy installed, you may need to create `/usr/local/lib/pkgconfig/libsnappy.pc`
-with contents something like the following:
+with contents something like the following (be sure to check which version of _libsnappy_
+is installed in your system):
 
     Name: libsnappy
     Description: Snappy is a compression library
     Version: 1.1.2
-    URL: https://code.google.com/p/snappy/
+    URL: https://google.github.io/snappy/
     Libs: -L/usr/local/lib -lsnappy
     Cflags: -I/usr/local/include
 
