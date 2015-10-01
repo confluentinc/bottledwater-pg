@@ -93,7 +93,7 @@ You can keep the psql terminal open, and run the following in a new terminal.
 The next step is to start the Bottled Water client, which relays data from Postgres to Kafka.
 You start it like this:
 
-    $ docker-compose run -d bottledwater
+    $ docker-compose up -d bottledwater
 
 You can run `docker-compose logs bottledwater` to see what it's doing. Now Bottled Water has taken
 the snapshot, and continues to watch Postgres for any data changes. You can see the data
