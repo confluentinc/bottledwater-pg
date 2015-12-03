@@ -50,7 +50,7 @@ There are several possible ways of installing and trying Bottled Water:
   only recommended for development environments.
 * [Building from source](#building-from-source) is the most flexible, but also a bit fiddly.
 * There are also [Ubuntu packages](https://launchpad.net/~stub/+archive/ubuntu/bottledwater),
-  built by Stuart Bishop (Canonical).
+  built by Stuart Bishop (Canonical), but see [notes about compaction](#note-about-ubuntu-packages-and-compaction).
 
 
 Running in Docker
@@ -132,8 +132,8 @@ For that to work, you need the following dependencies installed:
   (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
 * [libcurl](http://curl.haxx.se/libcurl/), a HTTP client.
   (Homebrew: `brew install curl`; Ubuntu: `sudo apt-get install libcurl4-openssl-dev`)
-* [librdkafka](https://github.com/edenhill/librdkafka) (0.8.4 or later), a Kafka client.
-  (Ubuntu universe: `sudo apt-get install librdkafka-dev`; others: build from source)
+* [librdkafka](https://github.com/edenhill/librdkafka) (0.8.6 or later), a Kafka client.
+  (Ubuntu universe: `sudo apt-get install librdkafka-dev`, but see [notes about compaction](#note-about-ubuntu-packages-and-compaction); others: build from source)
 
 You can see the Dockerfile for
 [building the quickstart images](https://github.com/ept/bottledwater-pg/blob/master/build/Dockerfile.build)
@@ -227,6 +227,28 @@ consumer:
 
     ./bin/kafka-avro-console-consumer --topic test --zookeeper localhost:2181 \
         --property print.key=true
+
+
+Note about Ubuntu packages and compaction
+-----------------------------------------
+
+As noted [above](#consuming-data), Bottled Water sends a null message to represent a
+row deletion.  librdkafka only added [support for null
+messages](https://github.com/edenhill/librdkafka/pull/200) in [release 0.8.6](https://github.com/edenhill/librdkafka/releases/tag/0.8.6).  If Bottled Water
+is compiled against a version of librdkafka prior to 0.8.6, deletes will instead be
+represented by *empty* messages, i.e. a message whose payload is an empty byte
+sequence.  This means that Kafka will not garbage-collect deleted values on log
+compaction, and also may confuse consumers that expect all non-null message payloads
+to begin with a header.
+
+At time of writing, the librdkafka-dev packages in Ubuntu (for all releases up to
+15.10) contain a release prior to 0.8.6.  This means if you are building on Ubuntu,
+building librdkafka from source is recommended, until an updated librdkafka package
+is available.
+
+Building Bottled Water from source is currently recommended over the [Ubuntu
+bottledwater package](https://launchpad.net/~stub/+archive/ubuntu/bottledwater)
+since that package is built against librdkafka 0.8.5.
 
 
 Status
