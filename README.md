@@ -50,7 +50,7 @@ There are several possible ways of installing and trying Bottled Water:
   only recommended for development environments.
 * [Building from source](#building-from-source) is the most flexible, but also a bit fiddly.
 * There are also [Ubuntu packages](https://launchpad.net/~stub/+archive/ubuntu/bottledwater),
-  built by Stuart Bishop (Canonical), but see [notes about compaction](#note-about-ubuntu-packages-and-compaction).
+  built by Stuart Bishop (Canonical).
 
 
 Running in Docker
@@ -245,10 +245,6 @@ At time of writing, the librdkafka-dev packages in Ubuntu (for all releases up t
 15.10) contain a release prior to 0.8.6.  This means if you are building on Ubuntu,
 building librdkafka from source is recommended, until an updated librdkafka package
 is available.
-
-Building Bottled Water from source is currently recommended over the [Ubuntu
-bottledwater package](https://launchpad.net/~stub/+archive/ubuntu/bottledwater)
-since that package is built against librdkafka 0.8.5.
 
 
 Status
