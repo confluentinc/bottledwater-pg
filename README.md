@@ -241,10 +241,10 @@ sequence.  This means that Kafka will not garbage-collect deleted values on log
 compaction, and also may confuse consumers that expect all non-null message payloads
 to begin with a header.
 
-At time of writing, the librdkafka-dev packages in Ubuntu (for all releases up to
-15.10) contain a release prior to 0.8.6.  This means if you are building on Ubuntu,
-building librdkafka from source is recommended, until an updated librdkafka package
-is available.
+At time of writing, the librdkafka-dev packages in the official Ubuntu repositories
+(for all releases up to 15.10) contain a release prior to 0.8.6.  This means if you
+are building on Ubuntu, building librdkafka from source is recommended, until an
+updated librdkafka package is available.
 
 
 Status
