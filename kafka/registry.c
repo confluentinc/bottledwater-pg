@@ -15,6 +15,8 @@
 #include <avro.h>
 #include <jansson.h>
 #include <arpa/inet.h>
+#include <postgres_fe.h>
+#include <internal/pqexpbuffer.h>
 #include <stdarg.h>
 #include <string.h>
 
@@ -23,7 +25,7 @@
 void *add_schema_prefix(int schema_id, const void *avro_bin, size_t avro_len);
 int registry_request(schema_registry_t registry, topic_list_entry_t entry, int is_key,
         const char *schema_json, size_t schema_len);
-static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *writer);
+static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *dest);
 int registry_parse_response(schema_registry_t registry, CURLcode result, char *resp_body,
         int resp_len, int *schema_id_out);
 topic_list_entry_t topic_list_lookup(schema_registry_t registry, int64_t relid);
@@ -140,21 +142,18 @@ int registry_request(schema_registry_t registry, topic_list_entry_t entry, int i
         return EINVAL;
     }
 
-    char resp_body[1024];
-    avro_writer_t resp_writer = avro_writer_memory(resp_body, sizeof(resp_body));
-
+    PQExpBuffer response = createPQExpBuffer();
     curl_easy_setopt(registry->curl, CURLOPT_URL, url);
     curl_easy_setopt(registry->curl, CURLOPT_POSTFIELDS, req_body);
     curl_easy_setopt(registry->curl, CURLOPT_HTTPHEADER, registry->curl_headers);
     curl_easy_setopt(registry->curl, CURLOPT_WRITEFUNCTION, registry_response_cb);
-    curl_easy_setopt(registry->curl, CURLOPT_WRITEDATA, resp_writer);
+    curl_easy_setopt(registry->curl, CURLOPT_WRITEDATA, response);
     curl_easy_setopt(registry->curl, CURLOPT_ERRORBUFFER, registry->curl_error);
 
     CURLcode result = curl_easy_perform(registry->curl);
 
     int schema_id = 0;
-    int resp_len = avro_writer_tell(resp_writer);
-    int err = registry_parse_response(registry, result, resp_body, resp_len, &schema_id);
+    int err = registry_parse_response(registry, result, response->data, response->len, &schema_id);
 
     if (!err) {
         if (is_key) {
@@ -168,7 +167,7 @@ int registry_request(schema_registry_t registry, topic_list_entry_t entry, int i
         }
     }
 
-    avro_writer_free(resp_writer);
+    destroyPQExpBuffer(response);
     free(req_body);
     json_decref(req_json);
     return err;
@@ -177,13 +176,15 @@ int registry_request(schema_registry_t registry, topic_list_entry_t entry, int i
 
 /* Called by cURL when bytes of response are received from the schema registry.
  * Appends them to a buffer, so that we can parse the response when finished. */
-static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *writer) {
+static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *dest) {
     size_t bytes = size * nmemb;
-    int err = avro_write((avro_writer_t) writer, data, bytes);
-    if (err == ENOSPC) {
-        fprintf(stderr, "Response from schema registry is too large\n");
+    PQExpBuffer buffer = (PQExpBuffer) dest;
+    appendBinaryPQExpBuffer(buffer, data, bytes);
+    if (PQExpBufferBroken(buffer)) {
+        fprintf(stderr, "Out of memory: response from schema registry is too large\n");
+        return 0;
     }
-    return (err == 0) ? bytes : 0;
+    return bytes;
 }
 
 
