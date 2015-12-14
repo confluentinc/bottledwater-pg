@@ -66,7 +66,15 @@ int extract_tuple_key(schema_cache_entry *entry, Relation rel, TupleDesc tupdesc
     int err = 0;
     if (entry->key_schema) {
         check(err, avro_value_reset(&entry->key_value));
-        check(err, tuple_to_avro_key(&entry->key_value, tupdesc, tuple, rel, entry->key_index));
+
+        Relation index_rel = table_key_index(rel);
+        err = tuple_to_avro_key(&entry->key_value, tupdesc, tuple, rel, index_rel->rd_index);
+        relation_close(index_rel, AccessShareLock);
+
+        if(err){
+          return err;
+        }
+
         check(err, try_writing(key_out, &write_avro_binary, &entry->key_value));
     }
     return err;
@@ -359,7 +367,7 @@ schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
 void schema_cache_entry_update(schema_cache_entry *entry, Relation rel) {
     entry->relid = RelationGetRelid(rel);
     entry->hash = schema_hash_for_relation(rel);
-    entry->key_schema = schema_for_table_key(rel, &entry->key_index);
+    entry->key_schema = schema_for_table_key(rel);
     entry->row_schema = schema_for_table_row(rel);
     entry->row_iface = avro_generic_class_from_schema(entry->row_schema);
     avro_generic_value_new(entry->row_iface, &entry->row_value);

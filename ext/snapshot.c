@@ -351,7 +351,7 @@ bytea *schema_for_relname(char *relname, bool get_key) {
     Relation rel = relation_openrv(relvar, AccessShareLock);
 
     if (get_key) {
-        schema = schema_for_table_key(rel, NULL);
+        schema = schema_for_table_key(rel);
     } else {
         schema = schema_for_table_row(rel);
     }

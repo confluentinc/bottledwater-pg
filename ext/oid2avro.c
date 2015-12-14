@@ -82,17 +82,15 @@ Relation table_key_index(Relation rel) {
 
 /* Generates an Avro schema for the key (replica identity or primary key)
  * of a given table. Returns null if the table is unkeyed. */
-avro_schema_t schema_for_table_key(Relation rel, Form_pg_index *index_out) {
+avro_schema_t schema_for_table_key(Relation rel) {
     Relation index_rel;
-        avro_schema_t schema;
+    avro_schema_t schema;
 
     index_rel = table_key_index(rel);
     if (!index_rel) return NULL;
 
     schema = schema_for_table_row(index_rel);
-    if (index_out) {
-        *index_out = index_rel->rd_index;
-    }
+
     relation_close(index_rel, AccessShareLock);
     return schema;
 }
