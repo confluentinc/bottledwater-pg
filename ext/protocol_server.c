@@ -71,8 +71,8 @@ int extract_tuple_key(schema_cache_entry *entry, Relation rel, TupleDesc tupdesc
         err = tuple_to_avro_key(&entry->key_value, tupdesc, tuple, rel, index_rel->rd_index);
         relation_close(index_rel, AccessShareLock);
 
-        if(err){
-          return err;
+        if (err) {
+            return err;
         }
 
         check(err, try_writing(key_out, &write_avro_binary, &entry->key_value));
