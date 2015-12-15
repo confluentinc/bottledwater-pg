@@ -6,7 +6,6 @@
 #include "access/tupdesc.h"
 #include "utils/lsyscache.h"
 
-schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
 void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, Relation rel);
 bool schema_cache_entry_changed(schema_cache_entry *entry, Relation rel);
 void schema_cache_entry_decrefs(schema_cache_entry *entry);
@@ -18,9 +17,24 @@ schema_cache_t schema_cache_new(MemoryContext context) {
     MemoryContext oldctx = MemoryContextSwitchTo(context);
     schema_cache_t cache = palloc0(sizeof(schema_cache));
     cache->context = context;
-    cache->num_entries = 0;
-    cache->capacity = 16;
-    cache->entries = palloc0(cache->capacity * sizeof(void*));
+
+    HASHCTL hash_ctl;
+    memset(&hash_ctl, 0, sizeof(hash_ctl));
+    hash_ctl.keysize = sizeof(Oid);
+    hash_ctl.entrysize = sizeof(schema_cache_entry);
+    hash_ctl.hcxt = context;
+
+#ifdef HASH_BLOBS
+    /* Postgres 9.5 */
+    cache->entries = hash_create("Bottled Water schema cache", 32, &hash_ctl,
+            HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+#else
+    /* Postgres 9.4 */
+    hash_ctl.hash = oid_hash;
+    cache->entries = hash_create("Bottled Water schema cache", 32, &hash_ctl,
+            HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
+#endif
+
     MemoryContextSwitchTo(oldctx);
     return cache;
 }
@@ -30,12 +44,11 @@ schema_cache_t schema_cache_new(MemoryContext context) {
  * If the schema has changed, 1 is returned. If the schema has not been seen before, 2 is returned. */
 int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry **entry_out) {
     Oid relid = RelationGetRelid(rel);
-    schema_cache_entry *entry;
+    bool found_entry;
+    schema_cache_entry *entry = (schema_cache_entry *)
+        hash_search(cache->entries, &relid, HASH_ENTER, &found_entry);
 
-    for (int i = 0; i < cache->num_entries; i++) {
-        entry = cache->entries[i];
-        if (entry->relid != relid) continue;
-
+    if (found_entry) {
         if (!schema_cache_entry_changed(entry, rel)) {
             /* Schema has not changed */
             *entry_out = entry;
@@ -48,32 +61,12 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
             *entry_out = entry;
             return 1;
         }
+    } else {
+        /* Schema not previously seen -- populate a new cache entry */
+        schema_cache_entry_update(cache, entry, rel);
+        *entry_out = entry;
+        return 2;
     }
-
-    /* Schema not previously seen -- create a new cache entry */
-    entry = schema_cache_entry_new(cache);
-    schema_cache_entry_update(cache, entry, rel);
-    *entry_out = entry;
-    return 2;
-}
-
-/* Adds a new entry to the cache, allocated within the cache's memory context.
- * Returns a pointer to the new entry. */
-schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
-    schema_cache_entry *new_entry;
-    MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
-
-    if (cache->num_entries == cache->capacity) {
-        cache->capacity *= 4;
-        cache->entries = repalloc(cache->entries, cache->capacity * sizeof(void*));
-    }
-
-    new_entry = palloc0(sizeof(schema_cache_entry));
-    cache->entries[cache->num_entries] = new_entry;
-    cache->num_entries++;
-
-    MemoryContextSwitchTo(oldctx);
-    return new_entry;
 }
 
 /* Populates a schema cache entry with the information from a given table. */
@@ -164,17 +157,16 @@ void schema_cache_entry_decrefs(schema_cache_entry *entry) {
 
 /* Frees all the memory structures associated with a schema cache. */
 void schema_cache_free(schema_cache_t cache) {
-    MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
+    HASH_SEQ_STATUS iterator;
+    schema_cache_entry *entry;
+    hash_seq_init(&iterator, cache->entries);
 
-    for (int i = 0; i < cache->num_entries; i++) {
-        schema_cache_entry *entry = cache->entries[i];
+    while ((entry = (schema_cache_entry *) hash_seq_search(&iterator)) != NULL) {
         schema_cache_entry_decrefs(entry);
-        pfree(entry);
     }
 
-    pfree(cache->entries);
+    hash_destroy(cache->entries);
     pfree(cache);
-    MemoryContextSwitchTo(oldctx);
 }
 
 /* Append debug information about table columns to a string buffer. */

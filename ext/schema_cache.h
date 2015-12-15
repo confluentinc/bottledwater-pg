@@ -2,9 +2,10 @@
 #define SCHEMA_CACHE_H
 
 #include "oid2avro.h"
+#include "utils/hsearch.h"
 
 typedef struct {
-    Oid                 relid;       /* Uniquely identifies a table, even when it is renamed */
+    Oid                 relid;       /* Oid of the table. Used as key in hash table, so it must be first in struct */
     NameData            relname;     /* Name of the table */
     Oid                 ns_id;       /* Oid of the namespace containing this table */
     NameData            ns_name;     /* Name of the namespace containing this table */
@@ -24,9 +25,7 @@ typedef struct {
 
 typedef struct {
     MemoryContext context;         /* Context in which cache entries are allocated */
-    int num_entries;               /* Number of entries in use */
-    int capacity;                  /* Allocated size of entries array */
-    schema_cache_entry **entries;  /* Array of pointers to cache entries */
+    HTAB *entries;                 /* Hash table mapping Oid to schema_cache_entry */
 } schema_cache;
 
 typedef schema_cache *schema_cache_t;
