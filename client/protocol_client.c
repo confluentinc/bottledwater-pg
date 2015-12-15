@@ -108,26 +108,22 @@ int process_frame_commit_txn(avro_value_t *record_val, frame_reader_t reader, ui
 
 int process_frame_table_schema(avro_value_t *record_val, frame_reader_t reader, uint64_t wal_pos) {
     int err = 0, key_schema_present;
-    avro_value_t relid_val, hash_val, key_schema_val, row_schema_val, branch_val;
+    avro_value_t relid_val, key_schema_val, row_schema_val, branch_val;
     int64_t relid;
-    const void *hash;
     const char *key_schema_json = NULL, *row_schema_json;
-    size_t hash_len, key_schema_len = 1, row_schema_len;
+    size_t key_schema_len = 1, row_schema_len;
     avro_schema_t key_schema = NULL, row_schema;
 
     check(err, avro_value_get_by_index(record_val, 0, &relid_val,      NULL));
-    check(err, avro_value_get_by_index(record_val, 1, &hash_val,       NULL));
-    check(err, avro_value_get_by_index(record_val, 2, &key_schema_val, NULL));
-    check(err, avro_value_get_by_index(record_val, 3, &row_schema_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 1, &key_schema_val, NULL));
+    check(err, avro_value_get_by_index(record_val, 2, &row_schema_val, NULL));
     check(err, avro_value_get_long(&relid_val, &relid));
-    check(err, avro_value_get_fixed(&hash_val, &hash, &hash_len));
     check(err, avro_value_get_discriminant(&key_schema_val, &key_schema_present));
     check(err, avro_value_get_string(&row_schema_val, &row_schema_json, &row_schema_len));
     check(err, avro_schema_from_json_length(row_schema_json, row_schema_len - 1, &row_schema));
 
     schema_list_entry *entry = schema_list_replace(reader, relid);
     entry->relid = relid;
-    entry->hash = *((uint64_t *) hash);
     entry->row_schema = row_schema;
     entry->row_iface = avro_generic_class_from_schema(row_schema);
     avro_generic_value_new(entry->row_iface, &entry->row_value);

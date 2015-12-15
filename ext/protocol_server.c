@@ -167,7 +167,7 @@ int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Rela
  * inserts/updates/deletes are assumed to be encoded with this schema. */
 int update_frame_with_table_schema(avro_value_t *frame_val, schema_cache_entry *entry) {
     int err = 0;
-    avro_value_t msg_val, union_val, record_val, relid_val, hash_val, key_schema_val,
+    avro_value_t msg_val, union_val, record_val, relid_val, key_schema_val,
                  row_schema_val, branch_val;
     bytea *key_schema_json = NULL, *row_schema_json = NULL;
 
@@ -175,11 +175,9 @@ int update_frame_with_table_schema(avro_value_t *frame_val, schema_cache_entry *
     check(err, avro_value_append(&msg_val, &union_val, NULL));
     check(err, avro_value_set_branch(&union_val, PROTOCOL_MSG_TABLE_SCHEMA, &record_val));
     check(err, avro_value_get_by_index(&record_val, 0, &relid_val,      NULL));
-    check(err, avro_value_get_by_index(&record_val, 1, &hash_val,       NULL));
-    check(err, avro_value_get_by_index(&record_val, 2, &key_schema_val, NULL));
-    check(err, avro_value_get_by_index(&record_val, 3, &row_schema_val, NULL));
+    check(err, avro_value_get_by_index(&record_val, 1, &key_schema_val, NULL));
+    check(err, avro_value_get_by_index(&record_val, 2, &row_schema_val, NULL));
     check(err, avro_value_set_long(&relid_val, entry->relid));
-    check(err, avro_value_set_fixed(&hash_val, &entry->hash, 8));
 
     if (entry->key_schema) {
         check(err, try_writing(&key_schema_json, &write_schema_json, entry->key_schema));

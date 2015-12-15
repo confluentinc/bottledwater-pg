@@ -43,7 +43,6 @@ typedef int (*delete_row_cb)(void *, uint64_t, Oid,
 
 typedef struct {
     Oid                 relid;       /* Uniquely identifies a table, even when it is renamed */
-    uint64_t            hash;        /* Hash of table schema, to detect changes */
     avro_schema_t       key_schema;  /* Avro schema for the table's primary key or replica identity */
     avro_schema_t       row_schema;  /* Avro schema for one row of the table */
     avro_value_iface_t *key_iface;   /* Avro generic interface for creating key values */

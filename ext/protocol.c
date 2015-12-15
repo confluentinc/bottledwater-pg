@@ -87,10 +87,6 @@ avro_schema_t schema_for_table_schema() {
     avro_schema_record_field_append(record_schema, "relid", field_schema);
     avro_schema_decref(field_schema);
 
-    field_schema = avro_schema_fixed("SchemaHash", 8);
-    avro_schema_record_field_append(record_schema, "hash", field_schema);
-    avro_schema_decref(field_schema);
-
     field_schema = nullable_schema(avro_schema_string());
     avro_schema_record_field_append(record_schema, "keySchema", field_schema);
     avro_schema_decref(field_schema);
