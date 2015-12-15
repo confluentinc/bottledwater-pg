@@ -3,20 +3,14 @@
 #include "schema_cache.h"
 #include "lib/stringinfo.h"
 #include "access/heapam.h"
+#include "access/tupdesc.h"
 #include "utils/lsyscache.h"
 
 schema_cache_entry *schema_cache_entry_new(schema_cache_t cache);
-void schema_cache_entry_update(schema_cache_entry *entry, Relation rel);
+void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, Relation rel);
+bool schema_cache_entry_changed(schema_cache_entry *entry, Relation rel);
 void schema_cache_entry_decrefs(schema_cache_entry *entry);
-uint64 fnv_hash(uint64 base, char *str, int len);
-uint64 fnv_format(uint64 base, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
-uint64 schema_hash_for_relation(Relation rel);
 void tupdesc_debug_info(StringInfo msg, TupleDesc tupdesc);
-
-/* http://www.isthe.com/chongo/tech/comp/fnv/index.html#FNV-param */
-#define FNV_HASH_BASE UINT64CONST(0xcbf29ce484222325)
-#define FNV_HASH_PRIME UINT64CONST(0x100000001b3)
-#define FNV_HASH_BUFSIZE 256
 
 /* Creates a new schema cache. All palloc allocations for this cache will be
  * performed in the given memory context. */
@@ -39,12 +33,10 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
     schema_cache_entry *entry;
 
     for (int i = 0; i < cache->num_entries; i++) {
-        uint64 hash;
         entry = cache->entries[i];
         if (entry->relid != relid) continue;
 
-        hash = schema_hash_for_relation(rel);
-        if (entry->hash == hash) {
+        if (!schema_cache_entry_changed(entry, rel)) {
             /* Schema has not changed */
             *entry_out = entry;
             return 0;
@@ -52,7 +44,7 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
         } else {
             /* Schema has changed since we last saw it -- update the cache */
             schema_cache_entry_decrefs(entry);
-            schema_cache_entry_update(entry, rel);
+            schema_cache_entry_update(cache, entry, rel);
             *entry_out = entry;
             return 1;
         }
@@ -60,7 +52,7 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
 
     /* Schema not previously seen -- create a new cache entry */
     entry = schema_cache_entry_new(cache);
-    schema_cache_entry_update(entry, rel);
+    schema_cache_entry_update(cache, entry, rel);
     *entry_out = entry;
     return 2;
 }
@@ -85,9 +77,34 @@ schema_cache_entry *schema_cache_entry_new(schema_cache_t cache) {
 }
 
 /* Populates a schema cache entry with the information from a given table. */
-void schema_cache_entry_update(schema_cache_entry *entry, Relation rel) {
+void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, Relation rel) {
     entry->relid = RelationGetRelid(rel);
-    entry->hash = schema_hash_for_relation(rel);
+    entry->ns_id = RelationGetNamespace(rel);
+    strcpy(NameStr(entry->relname), RelationGetRelationName(rel));
+    strcpy(NameStr(entry->ns_name), get_namespace_name(entry->ns_id));
+
+    Relation index_rel = table_key_index(rel);
+    if (index_rel) {
+        entry->key_id = RelationGetRelid(index_rel);
+        entry->keyns_id = RelationGetNamespace(index_rel);
+        strcpy(NameStr(entry->key_name), RelationGetRelationName(index_rel));
+        strcpy(NameStr(entry->keyns_name), get_namespace_name(entry->keyns_id));
+    } else {
+        entry->key_id = InvalidOid;
+        entry->keyns_id = InvalidOid;
+    }
+
+    /* Make a copy of the tuple descriptors in the cache's memory context */
+    MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
+    if (index_rel) {
+        entry->key_tupdesc = CreateTupleDescCopyConstr(RelationGetDescr(index_rel));
+    } else {
+        entry->key_tupdesc = NULL;
+    }
+    entry->row_tupdesc = CreateTupleDescCopyConstr(RelationGetDescr(rel));
+    MemoryContextSwitchTo(oldctx);
+    relation_close(index_rel, AccessShareLock);
+
     entry->key_schema = schema_for_table_key(rel);
     entry->row_schema = schema_for_table_row(rel);
     entry->row_iface = avro_generic_class_from_schema(entry->row_schema);
@@ -99,8 +116,39 @@ void schema_cache_entry_update(schema_cache_entry *entry, Relation rel) {
     }
 }
 
+/* Returns false if the schema of the given relation matches the cache entry,
+ * and returns true if it has changed. This is detected by keeping a copy of
+ * the schema information in the cache entry. An alternative way of implementing
+ * this might be to use event triggers:
+ * http://www.postgresql.org/docs/9.4/static/event-triggers.html */
+bool schema_cache_entry_changed(schema_cache_entry *entry, Relation rel) {
+    if (entry->relid != RelationGetRelid(rel)) return true;
+    if (entry->ns_id != RelationGetNamespace(rel)) return true;
+    if (strcmp(NameStr(entry->relname), RelationGetRelationName(rel)) != 0) return true;
+    if (strcmp(NameStr(entry->ns_name), get_namespace_name(entry->ns_id)) != 0) return true;
+
+    Relation index_rel = table_key_index(rel);
+    bool changed = false;
+    if (index_rel && OidIsValid(entry->key_id)) {
+        if (entry->key_id != RelationGetRelid(index_rel)) changed = true;
+        if (entry->keyns_id != RelationGetNamespace(index_rel)) changed = true;
+        if (strcmp(NameStr(entry->key_name), RelationGetRelationName(index_rel)) != 0) changed = true;
+        if (strcmp(NameStr(entry->keyns_name), get_namespace_name(entry->keyns_id)) != 0) changed = true;
+        if (!equalTupleDescs(entry->key_tupdesc, RelationGetDescr(index_rel))) changed = true;
+    } else if (index_rel || OidIsValid(entry->key_id)) {
+        changed = true;
+    }
+    relation_close(index_rel, AccessShareLock);
+    if (changed) return true;
+
+    return !equalTupleDescs(entry->row_tupdesc, RelationGetDescr(rel));
+}
+
 /* Decrements the reference counts for a schema cache entry. */
 void schema_cache_entry_decrefs(schema_cache_entry *entry) {
+    if (entry->key_tupdesc) pfree(entry->key_tupdesc);
+    if (entry->row_tupdesc) pfree(entry->row_tupdesc);
+
     avro_value_decref(&entry->row_value);
     avro_value_iface_decref(entry->row_iface);
     avro_schema_decref(entry->row_schema);
@@ -110,6 +158,8 @@ void schema_cache_entry_decrefs(schema_cache_entry *entry) {
         avro_value_iface_decref(entry->key_iface);
         avro_schema_decref(entry->key_schema);
     }
+
+    memset(entry, 0, sizeof(schema_cache_entry));
 }
 
 /* Frees all the memory structures associated with a schema cache. */
@@ -125,63 +175,6 @@ void schema_cache_free(schema_cache_t cache) {
     pfree(cache->entries);
     pfree(cache);
     MemoryContextSwitchTo(oldctx);
-}
-
-/* FNV-1a hash algorithm. Can be called incrementally for chunks of data, by using
- * the return value of one call as 'base' argument to the next call. For the first
- * call, use FNV_HASH_BASE as base. */
-uint64 fnv_hash(uint64 base, char *str, int len) {
-    uint64 hash = base;
-    for (int i = 0; i < len; i++) {
-        hash = (hash ^ str[i]) * FNV_HASH_PRIME;
-    }
-    return hash;
-}
-
-/* Evaluates a format string with arguments, and then hashes it. */
-uint64 fnv_format(uint64 base, char *fmt, ...) {
-    static char str[FNV_HASH_BUFSIZE];
-    va_list args;
-    int len;
-
-    va_start(args, fmt);
-    len = vsnprintf(str, FNV_HASH_BUFSIZE, fmt, args);
-    va_end(args);
-
-    if (len >= FNV_HASH_BUFSIZE) {
-        elog(WARNING, "fnv_format: FNV_HASH_BUFSIZE is too small (must be at least %d)", len + 1);
-        len = FNV_HASH_BUFSIZE - 1;
-    }
-
-    return fnv_hash(base, str, len);
-}
-
-/* Computes a hash over the definition of a relation. This is used to efficiently detect
- * schema changes: if the hash is unchanged, the schema is (very likely) unchanged, but any
- * change in the table definition will cause a different value to be returned. */
-uint64 schema_hash_for_relation(Relation rel) {
-    uint64 hash = fnv_format(FNV_HASH_BASE, "oid=%u name=%s ns=%s\n",
-            RelationGetRelid(rel),
-            RelationGetRelationName(rel),
-            get_namespace_name(RelationGetNamespace(rel)));
-
-    TupleDesc tupdesc = RelationGetDescr(rel);
-    for (int i = 0; i < tupdesc->natts; i++) {
-        Form_pg_attribute attr = tupdesc->attrs[i];
-        if (attr->attisdropped) continue; /* skip dropped columns */
-
-        hash = fnv_format(hash, "attname=%s typid=%u\n", NameStr(attr->attname), attr->atttypid);
-    }
-
-    if (RelationGetForm(rel)->relkind == RELKIND_RELATION) {
-        Relation index_rel = table_key_index(rel);
-        if (index_rel) {
-            hash = (hash * FNV_HASH_PRIME) ^ schema_hash_for_relation(index_rel);
-            relation_close(index_rel, AccessShareLock);
-        }
-    }
-
-    return hash;
 }
 
 /* Append debug information about table columns to a string buffer. */
