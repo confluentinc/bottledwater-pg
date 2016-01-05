@@ -132,8 +132,8 @@ For that to work, you need the following dependencies installed:
   (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
 * [libcurl](http://curl.haxx.se/libcurl/), a HTTP client.
   (Homebrew: `brew install curl`; Ubuntu: `sudo apt-get install libcurl4-openssl-dev`)
-* [librdkafka](https://github.com/edenhill/librdkafka) (0.8.6 or later), a Kafka client.
-  (Ubuntu universe: `sudo apt-get install librdkafka-dev`, but see [notes about compaction](#note-about-ubuntu-packages-and-compaction); others: build from source)
+* [librdkafka](https://github.com/edenhill/librdkafka) (0.9.0 or later), a Kafka client.
+  (Ubuntu universe: `sudo apt-get install librdkafka-dev`, but see [known gotchas](#known-gotchas-with-older-librdkafka-versions); others: build from source)
 
 You can see the Dockerfile for
 [building the quickstart images](https://github.com/ept/bottledwater-pg/blob/master/build/Dockerfile.build)
@@ -229,8 +229,19 @@ consumer:
         --property print.key=true
 
 
-Note about Ubuntu packages and compaction
------------------------------------------
+Known gotchas with older librdkafka versions
+--------------------------------------------
+
+It is recommended to compile Bottled Water against librdkafka version 0.9.0 or
+later.  However, Bottled Water will work with older librdkafka versions, with
+degraded functionality.
+
+At time of writing, the librdkafka-dev packages in the official Ubuntu repositories
+(for all releases up to 15.10) contain a release prior to 0.8.6.  This means if you
+are building on Ubuntu, building librdkafka from source is recommended, until an
+updated librdkafka package is available.
+
+### librdkafka &lt; 0.8.6: empty messages sent for deletes
 
 As noted [above](#consuming-data), Bottled Water sends a null message to represent a
 row deletion.  librdkafka only added [support for null
@@ -241,10 +252,21 @@ sequence.  This means that Kafka will not garbage-collect deleted values on log
 compaction, and also may confuse consumers that expect all non-null message payloads
 to begin with a header.
 
-At time of writing, the librdkafka-dev packages in the official Ubuntu repositories
-(for all releases up to 15.10) contain a release prior to 0.8.6.  This means if you
-are building on Ubuntu, building librdkafka from source is recommended, until an
-updated librdkafka package is available.
+### librdkafka &lt; 0.9.0: messages partitioned randomly
+
+librdkafka 0.9.0+ provides a "consistent partitioner", which assigns messages to
+partitions based on the hash of the key.  Bottled Water takes advantage of this
+to ensure that all inserts, updates and deletes for a given key get sent to the
+same partition.
+
+If Bottled Water is compiled against a version of librdkafka prior to 0.9.0,
+messages will instead be assigned randomly to partitions.  If the topic
+corresponding to a given table has more than one partition, this will lead to
+incorrect log compaction behaviour (e.g. if the initial insert for row 42 goes
+to partition 0, then a subsequent delete for row 42 goes to partition 1, then
+log compaction will be unable to garbage-collect the insert).  It will also
+break any consumer relying on seeing all updates relating to a given key (e.g.
+for a stream-table join).
 
 
 Status
