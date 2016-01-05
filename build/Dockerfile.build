@@ -9,7 +9,7 @@
 #   docker run -it --name bwbuild --rm bwbuild:v1 bash
 #   (Meanwhile, in another terminal:)
 #   docker cp bwbuild:/avro-1.7.7.tar.gz .
-#   docker cp bwbuild:/librdkafka-0.8.6.tar.gz .
+#   docker cp bwbuild:/librdkafka-0.9.0.tar.gz .
 #   docker cp bwbuild:/bottledwater-ext.tar.gz .
 #   docker cp bwbuild:/bottledwater-bin.tar.gz .
 #   (Now type `exit` in the bash shell above.)
@@ -39,10 +39,10 @@ RUN curl -o /root/avro-c-1.7.7.tar.gz -SL http://archive.apache.org/dist/avro/av
     tar czf avro-1.7.7.tar.gz usr/local/include/avro usr/local/lib/libavro* usr/local/lib/pkgconfig/avro-c.pc
 
 # librdkafka
-RUN curl -o /root/librdkafka-0.8.6.tar.gz -SL https://github.com/edenhill/librdkafka/archive/0.8.6.tar.gz && \
-    tar -xzf /root/librdkafka-0.8.6.tar.gz -C /root && \
-    cd /root/librdkafka-0.8.6 && ./configure && make && make install && cd / && \
-    tar czf librdkafka-0.8.6.tar.gz usr/local/include/librdkafka usr/local/lib/librdkafka*
+RUN curl -o /root/librdkafka-0.9.0.tar.gz -SL https://github.com/edenhill/librdkafka/archive/v0.9.0.tar.gz && \
+    tar -xzf /root/librdkafka-0.9.0.tar.gz -C /root && \
+    cd /root/librdkafka-0.9.0 && ./configure && make && make install && cd / && \
+    tar czf librdkafka-0.9.0.tar.gz usr/local/include/librdkafka usr/local/lib/librdkafka*
 
 # Bottled Water
 COPY . /root/bottledwater
