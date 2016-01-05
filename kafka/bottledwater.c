@@ -488,6 +488,13 @@ producer_context_t init_producer(client_context_t client) {
     context->topic_conf = rd_kafka_topic_conf_new();
     // xact_head, xact_tail and xact_list are set to zero by memset() above
 
+#if RD_KAFKA_VERSION >= 0x00090000
+    // librdkafka 0.9.0 includes an implementation of a "consistent hashing
+    // partitioner", which we can use to ensure that all updates for a given
+    // key go to the same partition.
+    rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &rd_kafka_msg_partitioner_consistent);
+#endif
+
     set_topic_config(context, "produce.offset.report", "true");
     rd_kafka_conf_set_dr_msg_cb(context->kafka_conf, on_deliver_msg);
     return context;
