@@ -43,4 +43,10 @@ topic_list_entry_t schema_registry_update(schema_registry_t registry,
         const char *row_schema_json, size_t row_schema_len);
 void schema_registry_free(schema_registry_t reader);
 
+
+// TODO refactor since this is the wrong place to expose this
+topic_list_entry_t topic_list_lookup(schema_registry_t registry, int64_t relid);
+void registry_error(schema_registry_t registry, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
+
+
 #endif /* REGISTRY_H */

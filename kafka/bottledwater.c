@@ -1,4 +1,5 @@
 #include "connect.h"
+#include "json.h"
 #include "registry.h"
 
 #include <librdkafka/rdkafka.h>
@@ -335,6 +336,15 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
     void *key = NULL, *val = NULL;
     size_t key_encoded_len, val_encoded_len;
+#ifdef JSON_MODE
+    topic_list_entry_t entry = json_encode_msg(context->registry, relid,
+            key_bin, key_len, (char **) &key, &key_encoded_len, val_bin, val_len, (char **) &val, &val_encoded_len);
+
+    if (!entry) {
+        fprintf(stderr, "%s: %s\n", progname, context->registry->error);
+        exit_nicely(context, 1);
+    }
+#else
     topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
             key_bin, key_len, &key, val_bin, val_len, &val);
     key_encoded_len = key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN;
@@ -344,6 +354,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         fprintf(stderr, "%s: %s\n", progname, context->registry->error);
         exit_nicely(context, 1);
     }
+#endif
 
     bool enqueued = false;
     while (!enqueued) {
