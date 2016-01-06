@@ -3,6 +3,7 @@
 
 #include <librdkafka/rdkafka.h>
 #include <curl/curl.h>
+#include <avro.h>
 
 /* 5 bytes prefix is added by schema_registry_encode_msg(). */
 #define SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN 5
@@ -13,7 +14,9 @@ typedef struct {
     uint64_t relid;             /* Uniquely identifies a table, even when it is renamed */
     char *topic_name;           /* Derived from schema record name, in turn derived from table name */
     int key_schema_id;          /* Identifier for the current key schema, assigned by the registry */
+    avro_schema_t key_schema;   /* TODO */
     int row_schema_id;          /* Identifier for the current row schema, assigned by the registry */
+    avro_schema_t row_schema;   /* TODO */
     rd_kafka_topic_t *topic;    /* Kafka topic to which messages are produced */
 } topic_list_entry;
 

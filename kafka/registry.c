@@ -116,6 +116,27 @@ topic_list_entry_t schema_registry_update(schema_registry_t registry,
 
     if (registry_request(registry, entry, 1, key_schema_json, key_schema_len)) return NULL;
     if (registry_request(registry, entry, 0, row_schema_json, row_schema_len)) return NULL;
+
+    int err;
+    if (key_schema_json) {
+        err = avro_schema_from_json_length(key_schema_json, key_schema_len, &entry->key_schema);
+        if (err) {
+            registry_error(registry, "Could not parse key schema (%d): %s", err, key_schema_json);
+            return NULL;
+        }
+    } else {
+        entry->key_schema = NULL;
+    }
+    if (row_schema_json) {
+        err = avro_schema_from_json_length(row_schema_json, row_schema_len, &entry->row_schema);
+        if (err) {
+            registry_error(registry, "Could not parse row schema (%d): %s", err, row_schema_json);
+            return NULL;
+        }
+    } else {
+        entry->row_schema = NULL;
+    }
+
     return entry;
 }
 
@@ -267,6 +288,8 @@ topic_list_entry_t topic_list_replace(schema_registry_t registry, int64_t relid)
     topic_list_entry_t entry = topic_list_lookup(registry, relid);
     if (entry) {
         free(entry->topic_name);
+        avro_schema_decref(entry->key_schema);
+        avro_schema_decref(entry->row_schema);
         return entry;
     } else {
         return topic_list_entry_new(registry);

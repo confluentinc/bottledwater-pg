@@ -22,16 +22,12 @@ topic_list_entry_t json_encode_msg(schema_registry_t registry, int64_t relid,
     }
 
     int err;
-    avro_schema_t schema = avro_schema_long();
-    err = avro_bin_to_json(schema, key_bin, key_len, key_out, key_len_out);
-    avro_schema_decref(schema);
+    err = avro_bin_to_json(entry->key_schema, key_bin, key_len, key_out, key_len_out);
     if (err) {
       registry_error(registry, "error %d encoding key", err);
       return NULL;
     }
-    schema = avro_schema_string();
-    err = avro_bin_to_json(schema, row_bin, row_len, row_out, row_len_out);
-    avro_schema_decref(schema);
+    err = avro_bin_to_json(entry->row_schema, row_bin, row_len, row_out, row_len_out);
     if (err) {
       registry_error(registry, "error %d encoding row", err);
       return NULL;
@@ -47,6 +43,10 @@ int avro_bin_to_json(avro_schema_t schema,
     if (!val_bin) {
         *val_out = NULL;
         return 0;
+    } else if (!schema) {
+        /* got a value where we didn't expect one, and no schema to decode it */
+        *val_out = NULL;
+        return EINVAL;
     }
 
     avro_reader_t reader = avro_reader_memory(val_bin, val_len);
