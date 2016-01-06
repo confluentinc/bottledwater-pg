@@ -334,8 +334,11 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     envelope->xact = xact;
 
     void *key = NULL, *val = NULL;
+    size_t key_encoded_len, val_encoded_len;
     topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
             key_bin, key_len, &key, val_bin, val_len, &val);
+    key_encoded_len = key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN;
+    val_encoded_len = val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN;
 
     if (!entry) {
         fprintf(stderr, "%s: %s\n", progname, context->registry->error);
@@ -345,8 +348,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     bool enqueued = false;
     while (!enqueued) {
         int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
-                val, val == NULL ? 0 : val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
-                key, key == NULL ? 0 : key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
+                val, val == NULL ? 0 : val_encoded_len,
+                key, key == NULL ? 0 : key_encoded_len,
                 envelope);
         enqueued = (err == 0);
 
