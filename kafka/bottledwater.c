@@ -65,7 +65,7 @@ typedef struct {
 typedef msg_envelope *msg_envelope_t;
 
 static char *progname;
-static bool received_sigint = false;
+static int received_shutdown_signal = 0;
 
 void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
@@ -439,8 +439,8 @@ void maybe_checkpoint(producer_context_t context) {
 void backpressure(producer_context_t context) {
     rd_kafka_poll(context->kafka, 200);
 
-    if (received_sigint) {
-        fprintf(stderr, "Received interrupt during backpressure. Shutting down...\n");
+    if (received_shutdown_signal) {
+        fprintf(stderr, "%s during backpressure. Shutting down...\n", strsignal(received_shutdown_signal));
         exit_nicely(context, 0);
     }
 
@@ -536,14 +536,15 @@ void exit_nicely(producer_context_t context, int status) {
     exit(status);
 }
 
-static void handle_sigint(int sig) {
-    received_sigint = true;
+static void handle_shutdown_signal(int sig) {
+    received_shutdown_signal = sig;
 }
 
 
 int main(int argc, char **argv) {
     curl_global_init(CURL_GLOBAL_ALL);
-    signal(SIGINT, handle_sigint);
+    signal(SIGINT, handle_shutdown_signal);
+    signal(SIGTERM, handle_shutdown_signal);
 
     producer_context_t context = init_producer(init_client());
     parse_options(context, argc, argv);
@@ -558,7 +559,7 @@ int main(int argc, char **argv) {
                 (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
     }
 
-    while (context->client->status >= 0 && !received_sigint) {
+    while (context->client->status >= 0 && !received_shutdown_signal) {
         ensure(context, db_client_poll(context->client));
 
         if (context->client->status == 0) {
@@ -568,8 +569,8 @@ int main(int argc, char **argv) {
         rd_kafka_poll(context->kafka, 0);
     }
 
-    if (received_sigint) {
-        fprintf(stderr, "Interrupted, shutting down...\n");
+    if (received_shutdown_signal) {
+        fprintf(stderr, "%s, shutting down...\n", strsignal(received_shutdown_signal));
     }
 
     exit_nicely(context, 0);
