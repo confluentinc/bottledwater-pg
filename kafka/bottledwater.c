@@ -41,6 +41,7 @@ typedef struct {
 typedef struct {
     client_context_t client;            /* The connection to Postgres */
     schema_registry_t registry;         /* Submits Avro schemas to schema registry */
+    table_mapper_t mapper;              /* TODO */
     char *brokers;                      /* Comma-separated list of host:port for Kafka brokers */
     transaction_info xact_list[MAX_IN_FLIGHT_TRANSACTIONS]; /* Circular buffer */
     int xact_head;                      /* Index into xact_list currently being received from PG */
@@ -289,6 +290,16 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
             exit_nicely(context, 1);
         }
     }
+
+    table_metadata_t table = table_mapper_replace(context->mapper, relid);
+    /* TODO extract this to a more appropriate place */
+    table->topic_name = strdup(topic_name);
+    table->key_schema_id = entry->key_schema_id;
+    table->key_schema = avro_schema_incref(entry->key_schema);
+    table->row_schema_id = entry->row_schema_id;
+    table->row_schema = avro_schema_incref(entry->row_schema);
+    table->topic = entry->topic;
+
     return 0;
 }
 
@@ -336,17 +347,26 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
     void *key = NULL, *val = NULL;
     size_t key_encoded_len, val_encoded_len;
+    rd_kafka_topic_t* topic;
 #ifdef JSON_MODE
-    topic_list_entry_t entry = json_encode_msg(context->registry, relid,
+    table_metadata_t table = table_mapper_lookup(context->mapper, relid);
+    if (!table) {
+        fprintf(stderr, "relid %" PRIu32 " has no registered schema", relid);
+        exit_nicely(context, 1);
+    }
+    topic = table->topic;
+
+    int err = json_encode_msg(table,
             key_bin, key_len, (char **) &key, &key_encoded_len, val_bin, val_len, (char **) &val, &val_encoded_len);
 
-    if (!entry) {
-        fprintf(stderr, "%s: %s\n", progname, context->registry->error);
+    if (err) {
+        fprintf(stderr, "%s: error %s encoding JSON for topic %s\n", progname, strerror(err), table->topic_name);
         exit_nicely(context, 1);
     }
 #else
     topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
             key_bin, key_len, &key, val_bin, val_len, &val);
+    topic = entry->topic;
     key_encoded_len = key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN;
     val_encoded_len = val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN;
 
@@ -358,7 +378,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
     bool enqueued = false;
     while (!enqueued) {
-        int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
+        int err = rd_kafka_produce(topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
                 val, val == NULL ? 0 : val_encoded_len,
                 key, key == NULL ? 0 : key_encoded_len,
                 envelope);
@@ -497,6 +517,7 @@ producer_context_t init_producer(client_context_t client) {
 
     context->client = client;
     context->registry = schema_registry_new(DEFAULT_SCHEMA_REGISTRY);
+    context->mapper = table_mapper_new();
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
@@ -541,6 +562,7 @@ void exit_nicely(producer_context_t context, int status) {
         }
     }
 
+    table_mapper_free(context->mapper);
     schema_registry_free(context->registry);
     frame_reader_free(context->client->repl.frame_reader);
     db_client_free(context->client);

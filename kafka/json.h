@@ -2,13 +2,10 @@
 #define JSON_H
 
 
-// TODO refactor so json doesn't depend on registry
-#include "registry.h"
-
-#include <librdkafka/rdkafka.h>
+#include "table_mapper.h"
 
 
-topic_list_entry_t json_encode_msg(schema_registry_t registry, int64_t relid,
+int json_encode_msg(table_metadata_t table,
         const void *key_bin, size_t key_len,
         char **key_out, size_t *key_len_out,
         const void *row_bin, size_t row_len,
