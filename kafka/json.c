@@ -18,12 +18,12 @@ int json_encode_msg(table_metadata_t table,
     int err;
     err = avro_bin_to_json(table->key_schema, key_bin, key_len, key_out, key_len_out);
     if (err) {
-      fprintf(stderr, "json: error %d encoding key", err);
+      fprintf(stderr, "json: error %s encoding key\n", avro_strerror());
       return err;
     }
     err = avro_bin_to_json(table->row_schema, row_bin, row_len, row_out, row_len_out);
     if (err) {
-      fprintf(stderr, "json: error %d encoding row", err);
+      fprintf(stderr, "json: error %s encoding row\n", avro_strerror());
       return err;
     }
 
