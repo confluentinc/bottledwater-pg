@@ -23,14 +23,9 @@
 #define CONTENT_TYPE "application/vnd.schemaregistry.v1+json"
 
 void *add_schema_prefix(int schema_id, const void *avro_bin, size_t avro_len);
-int registry_request(schema_registry_t registry, topic_list_entry_t entry, int is_key,
-        const char *schema_json, size_t schema_len);
 static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *dest);
 int registry_parse_response(schema_registry_t registry, CURLcode result, char *resp_body,
         int resp_len, int *schema_id_out);
-topic_list_entry_t topic_list_lookup(schema_registry_t registry, int64_t relid);
-topic_list_entry_t topic_list_replace(schema_registry_t registry, int64_t relid);
-topic_list_entry_t topic_list_entry_new(schema_registry_t registry);
 void registry_error(schema_registry_t registry, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
 
 /* Allocates and initializes the schema registry struct. */
@@ -41,9 +36,6 @@ schema_registry_t schema_registry_new(char *url) {
     registry->curl = curl_easy_init();
     registry->curl_headers = curl_slist_append(NULL, "Content-Type: " CONTENT_TYPE);
     registry->curl_headers = curl_slist_append(registry->curl_headers, "Accept: " CONTENT_TYPE);
-    registry->num_topics = 0;
-    registry->capacity = 16;
-    registry->topics = malloc(registry->capacity * sizeof(void*));
 
     schema_registry_set_url(registry, url);
     return registry;
@@ -68,21 +60,16 @@ void schema_registry_set_url(schema_registry_t registry, char *url) {
 /* Prefixes Avro-encoded key and row records with IDs of the schema used for encoding. Sets
  * key_out and row_out to malloc'ed arrays that are SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN bytes
  * longer than the key_len and row_len bytes that were passed in, respectively. The caller is
- * responsible for freeing key_out and row_out. Returns the topic list entry on success,
- * or NULL on error. */
-topic_list_entry_t schema_registry_encode_msg(schema_registry_t registry, int64_t relid,
-        const void *key_bin, size_t key_len, void **key_out,
-        const void *row_bin, size_t row_len, void **row_out) {
+ * responsible for freeing key_out and row_out. Returns 0 on success, nonzero on error. */
+int schema_registry_encode_msg(int key_schema_id, int row_schema_id,
+        const void *key_bin, size_t key_len, void **key_out, size_t *key_len_out,
+        const void *row_bin, size_t row_len, void **row_out, size_t *row_len_out) {
 
-    topic_list_entry_t entry = topic_list_lookup(registry, relid);
-    if (!entry) {
-        registry_error(registry, "relid %" PRIu64 " has no registered schema", relid);
-        return NULL;
-    }
-
-    *key_out = add_schema_prefix(entry->key_schema_id, key_bin, key_len);
-    *row_out = add_schema_prefix(entry->row_schema_id, row_bin, row_len);
-    return entry;
+    *key_out = add_schema_prefix(key_schema_id, key_bin, key_len);
+    *key_len_out = key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN;
+    *row_out = add_schema_prefix(row_schema_id, row_bin, row_len);
+    *row_len_out = row_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN;
+    return 0;
 }
 
 
@@ -101,55 +88,17 @@ void *add_schema_prefix(int schema_id, const void *avro_bin, size_t avro_len) {
 }
 
 
-/* Submits a new or updated schema to the registry. Re-registering a previously
- * registered schema is idempotent -- indeed, this is how we find out the schema
- * ID for an existing schema. Returns the topic list entry on success, or NULL
- * on failure. Consult registry->error for error message on failure. */
-topic_list_entry_t schema_registry_update(schema_registry_t registry,
-        int64_t relid, const char *topic_name,
-        const char *key_schema_json, size_t key_schema_len,
-        const char *row_schema_json, size_t row_schema_len) {
-
-    topic_list_entry_t entry = topic_list_replace(registry, relid);
-    entry->relid = relid;
-    entry->topic_name = strdup(topic_name);
-
-    if (registry_request(registry, entry, 1, key_schema_json, key_schema_len)) return NULL;
-    if (registry_request(registry, entry, 0, row_schema_json, row_schema_len)) return NULL;
-
-    int err;
-    if (key_schema_json) {
-        err = avro_schema_from_json_length(key_schema_json, key_schema_len, &entry->key_schema);
-        if (err) {
-            registry_error(registry, "Could not parse key schema (%d): %s", err, key_schema_json);
-            return NULL;
-        }
-    } else {
-        entry->key_schema = NULL;
-    }
-    if (row_schema_json) {
-        err = avro_schema_from_json_length(row_schema_json, row_schema_len, &entry->row_schema);
-        if (err) {
-            registry_error(registry, "Could not parse row schema (%d): %s", err, row_schema_json);
-            return NULL;
-        }
-    } else {
-        entry->row_schema = NULL;
-    }
-
-    return entry;
-}
-
-
 /* Submits a schema to the registry. If is_key == 1, it's a key schema, and if is_key == 0,
- * it's a row schema. Returns 0 on success. */
-int registry_request(schema_registry_t registry, topic_list_entry_t entry, int is_key,
-        const char *schema_json, size_t schema_len) {
+ * it's a row schema. Returns 0 on success, and assigns the schema id
+ * to *schema_id_out. */
+int schema_registry_request(schema_registry_t registry, const char *name, int is_key,
+        const char *schema_json, size_t schema_len,
+        int *schema_id_out) {
     if (!schema_json || schema_len == 0) return 0; // Nothing to do
 
     char url[512];
     int url_len = snprintf(url, sizeof(url), "%s/subjects/%s-%s/versions",
-                registry->registry_url, entry->topic_name, is_key ? "key" : "value");
+                registry->registry_url, name, is_key ? "key" : "value");
 
     if (url_len >= sizeof(url)) {
         registry_error(registry, "Schema registry URL is too long: %s", url);
@@ -177,15 +126,10 @@ int registry_request(schema_registry_t registry, topic_list_entry_t entry, int i
     int err = registry_parse_response(registry, result, response->data, response->len, &schema_id);
 
     if (!err) {
-        if (is_key) {
-            entry->key_schema_id = schema_id;
-            fprintf(stderr, "Registered key schema for topic \"%s\" with ID %d\n",
-                    entry->topic_name, schema_id);
-        } else {
-            entry->row_schema_id = schema_id;
-            fprintf(stderr, "Registered value schema for topic \"%s\" with ID %d\n",
-                    entry->topic_name, schema_id);
-        }
+        *schema_id_out = schema_id;
+        fprintf(stderr, "Registered %s schema for topic \"%s\" with ID %d\n",
+                is_key ? "key" : "value",
+                name, schema_id);
     }
 
     destroyPQExpBuffer(response);
@@ -270,61 +214,10 @@ int registry_parse_response(schema_registry_t registry, CURLcode result, char *r
 }
 
 
-/* Obtains the topic list entry for the given relid, and returns null if there is
- * no matching entry. */
-topic_list_entry_t topic_list_lookup(schema_registry_t registry, int64_t relid) {
-    for (int i = 0; i < registry->num_topics; i++) {
-        topic_list_entry_t entry = registry->topics[i];
-        if (entry->relid == relid) return entry;
-    }
-    return NULL;
-}
-
-
-/* If there is an existing list entry for the given relid, it is cleared (the memory
- * it references is freed) and then returned. If there is no existing list entry, a
- * new blank entry is returned. */
-topic_list_entry_t topic_list_replace(schema_registry_t registry, int64_t relid) {
-    topic_list_entry_t entry = topic_list_lookup(registry, relid);
-    if (entry) {
-        free(entry->topic_name);
-        avro_schema_decref(entry->key_schema);
-        avro_schema_decref(entry->row_schema);
-        return entry;
-    } else {
-        return topic_list_entry_new(registry);
-    }
-}
-
-
-/* Allocates a new topic list entry. */
-topic_list_entry_t topic_list_entry_new(schema_registry_t registry) {
-    if (registry->num_topics == registry->capacity) {
-        registry->capacity *= 4;
-        registry->topics = realloc(registry->topics, registry->capacity * sizeof(void*));
-    }
-
-    topic_list_entry_t new_entry = malloc(sizeof(topic_list_entry));
-    memset(new_entry, 0, sizeof(topic_list_entry));
-    registry->topics[registry->num_topics] = new_entry;
-    registry->num_topics++;
-
-    return new_entry;
-}
-
-
 /* Frees all the memory structures associated with a schema registry. */
 void schema_registry_free(schema_registry_t registry) {
-    for (int i = 0; i < registry->num_topics; i++) {
-        topic_list_entry_t entry = registry->topics[i];
-        if (entry->topic) rd_kafka_topic_destroy(entry->topic);
-        free(entry->topic_name);
-        free(entry);
-    }
-
     curl_slist_free_all(registry->curl_headers);
     curl_easy_cleanup(registry->curl);
-    free(registry->topics);
     free(registry->registry_url);
     free(registry);
 }
