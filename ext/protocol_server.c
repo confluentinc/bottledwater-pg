@@ -49,10 +49,12 @@ int update_frame_with_commit_txn(avro_value_t *frame_val, ReorderBufferTXN *txn,
  * as an Avro string using the table's key schema. */
 int extract_tuple_key(schema_cache_entry *entry, Relation rel, TupleDesc tupdesc, HeapTuple tuple, bytea **key_out) {
     int err = 0;
+    Relation index_rel;
+
     if (entry->key_schema) {
         check(err, avro_value_reset(&entry->key_value));
 
-        Relation index_rel = table_key_index(rel);
+        index_rel = table_key_index(rel);
         err = tuple_to_avro_key(&entry->key_value, tupdesc, tuple, rel, index_rel->rd_index);
         relation_close(index_rel, AccessShareLock);
 

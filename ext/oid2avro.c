@@ -503,11 +503,12 @@ int update_avro_with_date(avro_value_t *union_val, DateADT date) {
 }
 
 avro_schema_t schema_for_time_tz(predef_schema *predef) {
+    avro_schema_t record_schema, column_schema;
+
     if (predef->time_tz_schema) {
         return avro_schema_link(predef->time_tz_schema);
     }
 
-    avro_schema_t record_schema, column_schema;
     record_schema = avro_schema_record("TimeTZ", PREDEFINED_SCHEMA_NAMESPACE);
 
     /* microseconds since midnight */
@@ -567,6 +568,8 @@ int update_avro_with_time_tz(avro_value_t *record_val, TimeTzADT *time) {
  * executing "SET SESSION TIME ZONE UTC;".
  */
 avro_schema_t schema_for_timestamp(predef_schema *predef, bool with_tz) {
+    avro_schema_t record_schema;
+
     if (with_tz && predef->datetime_tz_schema) {
         return schema_for_special_times(predef,
                 avro_schema_link(predef->datetime_tz_schema));
@@ -576,7 +579,7 @@ avro_schema_t schema_for_timestamp(predef_schema *predef, bool with_tz) {
                 avro_schema_link(predef->datetime_schema));
     }
 
-    avro_schema_t record_schema = avro_schema_record(with_tz ? "DateTimeTZ" : "DateTime",
+    record_schema = avro_schema_record(with_tz ? "DateTimeTZ" : "DateTime",
             PREDEFINED_SCHEMA_NAMESPACE);
     schema_for_date_fields(record_schema);
     schema_for_time_fields(record_schema);

@@ -14,11 +14,11 @@ void tupdesc_debug_info(StringInfo msg, TupleDesc tupdesc);
 /* Creates a new schema cache. All palloc allocations for this cache will be
  * performed in the given memory context. */
 schema_cache_t schema_cache_new(MemoryContext context) {
+    HASHCTL hash_ctl;
     MemoryContext oldctx = MemoryContextSwitchTo(context);
     schema_cache_t cache = palloc0(sizeof(schema_cache));
     cache->context = context;
 
-    HASHCTL hash_ctl;
     memset(&hash_ctl, 0, sizeof(hash_ctl));
     hash_ctl.keysize = sizeof(Oid);
     hash_ctl.entrysize = sizeof(schema_cache_entry);
@@ -71,12 +71,15 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
 
 /* Populates a schema cache entry with the information from a given table. */
 void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, Relation rel) {
+    Relation index_rel;
+    MemoryContext oldctx;
+
     entry->relid = RelationGetRelid(rel);
     entry->ns_id = RelationGetNamespace(rel);
     strcpy(NameStr(entry->relname), RelationGetRelationName(rel));
     strcpy(NameStr(entry->ns_name), get_namespace_name(entry->ns_id));
 
-    Relation index_rel = table_key_index(rel);
+    index_rel = table_key_index(rel);
     if (index_rel) {
         entry->key_id = RelationGetRelid(index_rel);
         entry->keyns_id = RelationGetNamespace(index_rel);
@@ -88,7 +91,7 @@ void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, 
     }
 
     /* Make a copy of the tuple descriptors in the cache's memory context */
-    MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
+    oldctx = MemoryContextSwitchTo(cache->context);
     if (index_rel) {
         entry->key_tupdesc = CreateTupleDescCopyConstr(RelationGetDescr(index_rel));
         relation_close(index_rel, AccessShareLock);
@@ -115,13 +118,15 @@ void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, 
  * this might be to use event triggers:
  * http://www.postgresql.org/docs/9.4/static/event-triggers.html */
 bool schema_cache_entry_changed(schema_cache_entry *entry, Relation rel) {
+    Relation index_rel;
+    bool changed = false;
+
     if (entry->relid != RelationGetRelid(rel)) return true;
     if (entry->ns_id != RelationGetNamespace(rel)) return true;
     if (strcmp(NameStr(entry->relname), RelationGetRelationName(rel)) != 0) return true;
     if (strcmp(NameStr(entry->ns_name), get_namespace_name(entry->ns_id)) != 0) return true;
 
-    Relation index_rel = table_key_index(rel);
-    bool changed = false;
+    index_rel = table_key_index(rel);
     if (index_rel && OidIsValid(entry->key_id)) {
         if (entry->key_id != RelationGetRelid(index_rel)) changed = true;
         if (entry->keyns_id != RelationGetNamespace(index_rel)) changed = true;
