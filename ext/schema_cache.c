@@ -91,12 +91,12 @@ void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, 
     MemoryContext oldctx = MemoryContextSwitchTo(cache->context);
     if (index_rel) {
         entry->key_tupdesc = CreateTupleDescCopyConstr(RelationGetDescr(index_rel));
+        relation_close(index_rel, AccessShareLock);
     } else {
         entry->key_tupdesc = NULL;
     }
     entry->row_tupdesc = CreateTupleDescCopyConstr(RelationGetDescr(rel));
     MemoryContextSwitchTo(oldctx);
-    relation_close(index_rel, AccessShareLock);
 
     entry->key_schema = schema_for_table_key(rel);
     entry->row_schema = schema_for_table_row(rel);
@@ -131,7 +131,10 @@ bool schema_cache_entry_changed(schema_cache_entry *entry, Relation rel) {
     } else if (index_rel || OidIsValid(entry->key_id)) {
         changed = true;
     }
-    relation_close(index_rel, AccessShareLock);
+
+    if (index_rel) {
+        relation_close(index_rel, AccessShareLock);
+    }
     if (changed) return true;
 
     return !equalTupleDescs(entry->row_tupdesc, RelationGetDescr(rel));
