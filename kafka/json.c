@@ -1,4 +1,17 @@
-/* TODO docs */
+/* JSON encoding for messages written to Kafka.
+ *
+ * The JSON format is defined by libavro's avro_value_to_json function, which
+ * produces JSON as defined in the Avro spec:
+ * https://avro.apache.org/docs/1.7.7/spec.html#json_encoding
+ *
+ * Examples:
+ *
+ *  * {"id": {"int": 1}} // an integer key
+ *  * {"id": {"int": 3}, "title": {"string": "Man Bites Dog"}} // a row with two fields
+ *
+ * N.B. the output JSON does contain whitespace (as in the above examples), and
+ * so may be rejected by strict JSON parsers.
+ */
 
 #include "json.h"
 

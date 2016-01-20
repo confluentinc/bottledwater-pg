@@ -16,9 +16,9 @@ typedef struct {
     Oid relid;                  /* Uniquely identifies a table, even when it is renamed */
     rd_kafka_topic_t *topic;    /* Kafka topic to which messages are produced */
     int key_schema_id;          /* Identifier for the current key schema, assigned by the registry */
-    avro_schema_t key_schema;   /* Schema to use for parsing key values */
+    avro_schema_t key_schema;   /* Schema to use for converting key values to JSON */
     int row_schema_id;          /* Identifier for the current row schema, assigned by the registry */
-    avro_schema_t row_schema;   /* Schema to use for parsing row values */
+    avro_schema_t row_schema;   /* Schema to use for converting row values to JSON */
 } table_metadata;
 
 typedef table_metadata *table_metadata_t;

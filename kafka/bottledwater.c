@@ -56,8 +56,8 @@ typedef struct {
     rd_kafka_conf_t *kafka_conf;
     rd_kafka_topic_conf_t *topic_conf;
     rd_kafka_t *kafka;
-    table_mapper_t mapper;              /* TODO */
-    format_t output_format;             /* TODO */
+    table_mapper_t mapper;              /* Remembers topics and schemas for tables we've seen */
+    format_t output_format;             /* How to encode messages for writing to Kafka */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
 } producer_context;
 

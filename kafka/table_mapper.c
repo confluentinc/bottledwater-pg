@@ -1,4 +1,10 @@
-/* TODO docs */
+/* Mapping of tables to metadata needed for writing to Kafka:
+ *   * the Kafka topic to produce updates to (derived from Avro schema record
+ *     name, in turn derived from table name)
+ *   * the schema ids for keys and rows, assigned by the schema registry
+ *     (needed for Avro output)
+ *   * the Avro schemas for keys and rows (needed to convert the Avro-binary-
+ *     encoded values received from the Postgres extension into JSON output) */
 
 #include "table_mapper.h"
 
@@ -17,6 +23,12 @@ void mapper_error(table_mapper_t mapper, char *fmt, ...) __attribute__ ((format 
 #define logf(...) fprintf(stderr, __VA_ARGS__)
 
 
+/* Creates a new table_mapper.  Takes references to (but does not adopt
+ * ownership of) the Kafka producer connection and topic configuration (so it
+ * can create the topics associated with each table), and the schema registry
+ * client (so it can register schemas and retrieve schema ids).
+ *
+ * The registry parameter may be NULL if running without a schema registry. */
 table_mapper_t table_mapper_new(
         rd_kafka_t *kafka,
         rd_kafka_topic_conf_t *topic_conf,
@@ -35,6 +47,8 @@ table_mapper_t table_mapper_new(
     return mapper;
 }
 
+/* Returns the currently registered metadata for the table with the given
+ * relid, or NULL if there is no metadata for that relid. */
 table_metadata_t table_mapper_lookup(table_mapper_t mapper, Oid relid) {
     for (int i = 0; i < mapper->num_tables; i++) {
         table_metadata_t table = mapper->tables[i];
@@ -43,6 +57,16 @@ table_metadata_t table_mapper_lookup(table_mapper_t mapper, Oid relid) {
     return NULL;
 }
 
+/* Updates the metadata for the table with the given relid, replacing any
+ * previously known metadata.  Re-updating an already known relid with the
+ * same topic name and schemas is idempotent.  Otherwise, there are a couple of
+ * side effects:
+ *
+ *  * will open the named topic, closing the old one if necessary.
+ *  * if running with a schema registry, will register the schemas.
+ *
+ * Returns the updated metadata record on success, or NULL on failure.  Consult
+ * mapper->error for the error message on failure. */
 table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
         const char* topic_name,
         const char* key_schema_json, size_t key_schema_len,
@@ -69,6 +93,8 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
     return table;
 }
 
+/* Destroys the table mapper along with all stored metadata.  Will close any
+ * associated topics. */
 void table_mapper_free(table_mapper_t mapper) {
     for (int i = 0; i < mapper->num_tables; i++) {
         table_metadata_t table = mapper->tables[i];
@@ -100,6 +126,7 @@ table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid) {
     return table;
 }
 
+/* Returns 0 on success.  On failure, sets mapper->error and returns nonzero. */
 int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* topic_name) {
     const char* prev_topic_name = NULL;
     if (table->topic) prev_topic_name = rd_kafka_topic_name(table->topic);
@@ -123,6 +150,7 @@ int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, c
     return 0;
 }
 
+/* Returns 0 on success.  On failure, sets mapper->error and returns nonzero. */
 int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, int is_key, const char* schema_json, size_t schema_len) {
     int prev_schema_id = is_key ? table->key_schema_id : table->row_schema_id;
     int schema_id = TABLE_MAPPER_SCHEMA_ID_MISSING;
@@ -144,6 +172,17 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
 
     avro_schema_t schema;
 
+    /* If running with a schema registry, we can use the registry to detect
+     * if the schema we just saw is the same as the one we remembered
+     * previously (since the registry guarantees to return the same id for
+     * identical schemas).  If the registry returns the same id as before, we
+     * can skip parsing the new schema and just keep the previous one.
+     *
+     * However, if we're running without a registry, it's not so easy to detect
+     * whether or not the schema changed, so in that case we just always parse
+     * the new schema.  (We could store the previous schema JSON and strcmp()
+     * it with the new JSON, but that probably wouldn't save much over just
+     * parsing the JSON, given this isn't a hot code path.) */
     if (prev_schema_id == TABLE_MAPPER_SCHEMA_ID_MISSING || prev_schema_id != schema_id) {
         if (schema_json) {
             err = avro_schema_from_json_length(schema_json, schema_len, &schema);
