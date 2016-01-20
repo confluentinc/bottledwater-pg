@@ -9,10 +9,12 @@ table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid);
 int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* topic_name);
 int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, int is_key, const char* schema_json, size_t schema_len);
 void table_metadata_set_schema_id(table_metadata_t table, int is_key, int schema_id);
-void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t schema);
+void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t new_schema);
 void table_metadata_free(table_metadata_t table);
 
 void mapper_error(table_mapper_t mapper, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
+
+#define logf(...) fprintf(stderr, __VA_ARGS__)
 
 
 table_mapper_t table_mapper_new(
@@ -46,7 +48,10 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
         const char* key_schema_json, size_t key_schema_len,
         const char* row_schema_json, size_t row_schema_len) {
     table_metadata_t table = table_mapper_lookup(mapper, relid);
-    if (!table) {
+    if (table) {
+        logf("Updating metadata for table %" PRIu32 " (topic \"%s\")\n", relid, topic_name);
+    } else {
+        logf("Registering metadata for table %" PRIu32 " (topic \"%s\")\n", relid, topic_name);
         table = table_metadata_new(mapper, relid);
     }
 
@@ -96,16 +101,23 @@ table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid) {
 }
 
 int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* topic_name) {
-    if (!table->topic || strcmp(topic_name, rd_kafka_topic_name(table->topic))) {
-        if (table->topic) rd_kafka_topic_destroy(table->topic);
+    const char* prev_topic_name = NULL;
+    if (table->topic) prev_topic_name = rd_kafka_topic_name(table->topic);
 
-        table->topic = rd_kafka_topic_new(mapper->kafka, topic_name,
-                rd_kafka_topic_conf_dup(mapper->topic_conf));
-        if (!table->topic) {
-            mapper_error(mapper, "Cannot open Kafka topic %s: %s", topic_name,
-                    rd_kafka_err2str(rd_kafka_errno2err(errno)));
-            return -1;
-        }
+    if (!table->topic) {
+        logf("Registering topic \"%s\" for table %" PRIu32 "\n", topic_name, table->relid);
+    } else if (strcmp(topic_name, prev_topic_name)) {
+        logf("Registering new topic (was \"%s\", now \"%s\") for table %" PRIu32 "\n", prev_topic_name, topic_name, table->relid);
+
+        rd_kafka_topic_destroy(table->topic);
+    } else return 0; // topic name didn't change, nothing to do
+
+    table->topic = rd_kafka_topic_new(mapper->kafka, topic_name,
+            rd_kafka_topic_conf_dup(mapper->topic_conf));
+    if (!table->topic) {
+        mapper_error(mapper, "Cannot open Kafka topic %s: %s", topic_name,
+                rd_kafka_err2str(rd_kafka_errno2err(errno)));
+        return -1;
     }
 
     return 0;
@@ -159,14 +171,27 @@ void table_metadata_set_schema_id(table_metadata_t table, int is_key, int schema
     }
 }
 
-void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t schema) {
+void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t new_schema) {
+    const char* what;
+    avro_schema_t* schema;
     if (is_key) {
-        if (table->key_schema) avro_schema_decref(table->key_schema);
-        table->key_schema = schema;
+        what = "key";
+        schema = &table->key_schema;
     } else {
-        if (table->row_schema) avro_schema_decref(table->row_schema);
-        table->row_schema = schema;
+        what = "row";
+        schema = &table->row_schema;
     }
+    const char* new_schema_info = new_schema ? "" : " (null)";
+
+    if (*schema) {
+        logf("Updating stored %s schema%s for table %" PRIu32 "\n", what, new_schema_info, table->relid);
+
+        avro_schema_decref(*schema);
+    } else {
+        logf("Storing %s schema%s for table %" PRIu32 "\n", what, new_schema_info, table->relid);
+    }
+
+    *schema = new_schema;
 }
 
 void table_metadata_free(table_metadata_t table) {
