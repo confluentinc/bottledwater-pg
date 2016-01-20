@@ -122,6 +122,8 @@ void usage() {
             "                          Comma-separated list of Kafka broker hosts/ports.\n"
             "  -r, --schema-registry=http://hostname:port   (default: %s)\n"
             "                          URL of the service where Avro schemas are registered.\n"
+            "                          Used only for --output-format=avro.\n"
+            "                          Omit when --output-format=json.\n"
             "  -f, --output-format=[avro|json]   (default: %s)\n"
             "                          How to encode the messages for writing to Kafka.\n"
             "  -u, --allow-unkeyed     Allow export of tables that don't have a primary key.\n"
@@ -197,8 +199,11 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
     if (!context->client->conninfo || optind < argc) usage();
 
-    if (!context->registry) {
+    if (context->output_format == OUTPUT_FORMAT_AVRO && !context->registry) {
         init_schema_registry(context, DEFAULT_SCHEMA_REGISTRY);
+    } else if (context->output_format == OUTPUT_FORMAT_JSON && context->registry) {
+        fprintf(stderr, "Specifying --schema-registry doesn't make sense for --output-format=json\n");
+        usage();
     }
 }
 
