@@ -22,6 +22,7 @@
 
 #define CONTENT_TYPE "application/vnd.schemaregistry.v1+json"
 
+void schema_registry_set_url(schema_registry_t registry, char *url);
 void *add_schema_prefix(int schema_id, const void *avro_bin, size_t avro_len);
 static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *dest);
 int registry_parse_response(schema_registry_t registry, CURLcode result, char *resp_body,
@@ -44,9 +45,6 @@ schema_registry_t schema_registry_new(char *url) {
 
 /* Configures the URL for the schema registry. The argument is copied. */
 void schema_registry_set_url(schema_registry_t registry, char *url) {
-    if (registry->registry_url) {
-        free(registry->registry_url);
-    }
     registry->registry_url = strdup(url);
 
     // Strip trailing slash

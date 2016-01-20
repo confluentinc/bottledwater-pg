@@ -15,13 +15,12 @@ typedef struct {
     struct curl_slist *curl_headers;       /* HTTP headers for requests to schema registry */
     char curl_error[CURL_ERROR_SIZE];      /* Buffer for libcurl error messages */
     char error[SCHEMA_REGISTRY_ERROR_LEN]; /* Buffer for general error messages */
-    char *registry_url;                    /* URL of server (set with schema_registry_set_url()) */
+    char *registry_url;                    /* URL of server */
 } schema_registry;
 
 typedef schema_registry *schema_registry_t;
 
 schema_registry_t schema_registry_new(char *url);
-void schema_registry_set_url(schema_registry_t registry, char *url);
 int schema_registry_request(schema_registry_t registry, const char* name,
         int is_key,
         const char *schema_json, size_t schema_len,

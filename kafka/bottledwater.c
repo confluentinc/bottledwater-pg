@@ -78,6 +78,7 @@ static bool received_sigint = false;
 void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
 char *parse_config_option(char *option);
+void init_schema_registry(producer_context_t context, char *url);
 void set_output_format(producer_context_t context, char *format);
 void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
@@ -171,7 +172,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 context->brokers = strdup(optarg);
                 break;
             case 'r':
-                schema_registry_set_url(context->registry, optarg);
+                init_schema_registry(context, optarg);
                 break;
             case 'f':
                 set_output_format(context, optarg);
@@ -195,6 +196,10 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     }
 
     if (!context->client->conninfo || optind < argc) usage();
+
+    if (!context->registry) {
+        init_schema_registry(context, DEFAULT_SCHEMA_REGISTRY);
+    }
 }
 
 /* Splits an option string by equals sign. Modifies the option argument to be
@@ -211,6 +216,15 @@ char *parse_config_option(char *option) {
     // Overwrite equals sign with null, to split key and value into two strings
     *equals = '\0';
     return equals + 1;
+}
+
+void init_schema_registry(producer_context_t context, char *url) {
+    context->registry = schema_registry_new(url);
+
+    if (!context->registry) {
+        fprintf(stderr, "Failed to initialise schema registry!\n");
+        exit(1);
+    }
 }
 
 void set_output_format(producer_context_t context, char *format) {
@@ -521,8 +535,6 @@ producer_context_t init_producer(client_context_t client) {
 
     context->output_format = DEFAULT_OUTPUT_FORMAT;
 
-    context->registry = schema_registry_new(DEFAULT_SCHEMA_REGISTRY);
-
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
@@ -576,7 +588,7 @@ void exit_nicely(producer_context_t context, int status) {
     }
 
     table_mapper_free(context->mapper);
-    schema_registry_free(context->registry);
+    if (context->registry) schema_registry_free(context->registry);
     frame_reader_free(context->client->repl.frame_reader);
     db_client_free(context->client);
     if (context->kafka) rd_kafka_destroy(context->kafka);
