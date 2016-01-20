@@ -6,6 +6,10 @@
 
 
 table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid);
+int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* topic_name);
+int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, int is_key, const char* schema_json, size_t schema_len);
+void table_metadata_set_schema_id(table_metadata_t table, int is_key, int schema_id);
+void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t schema);
 void table_metadata_free(table_metadata_t table);
 
 void mapper_error(table_mapper_t mapper, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
@@ -46,73 +50,16 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
         table = table_metadata_new(mapper, relid);
     }
 
-    /* TODO break this up into setter functions! */
-
-    if (!table->topic || strcmp(topic_name, rd_kafka_topic_name(table->topic))) {
-        if (table->topic) rd_kafka_topic_destroy(table->topic);
-
-        table->topic = rd_kafka_topic_new(mapper->kafka, topic_name,
-                rd_kafka_topic_conf_dup(mapper->topic_conf));
-        if (!table->topic) {
-            mapper_error(mapper, "Cannot open Kafka topic %s: %s", topic_name,
-                    rd_kafka_err2str(rd_kafka_errno2err(errno)));
-            return NULL;
-        }
-    }
-
     int err;
 
-    int prev_key_schema_id = table->key_schema_id;
-    if (mapper->registry) {
-        err = schema_registry_request(mapper->registry, topic_name, 1,
-                key_schema_json, key_schema_len,
-                &table->key_schema_id);
-        if (err) {
-            mapper_error(mapper, "Failed to register key schema: %s", mapper->registry->error);
-            return NULL;
-        }
-    }
-    int prev_row_schema_id = table->row_schema_id;
-    if (mapper->registry) {
-        err = schema_registry_request(mapper->registry, topic_name, 0,
-                row_schema_json, row_schema_len,
-                &table->row_schema_id);
-        if (err) {
-            mapper_error(mapper, "Failed to register row schema: %s", mapper->registry->error);
-            return NULL;
-        }
-    }
+    err = table_metadata_update_topic(mapper, table, topic_name);
+    if (err) return NULL;
 
-    avro_schema_t schema;
-    if (prev_key_schema_id == TABLE_MAPPER_SCHEMA_ID_MISSING || prev_key_schema_id != table->key_schema_id) {
-        if (key_schema_json) {
-            err = avro_schema_from_json_length(key_schema_json, key_schema_len, &schema);
+    err = table_metadata_update_schema(mapper, table, 1, key_schema_json, key_schema_len);
+    if (err) return NULL;
 
-            if (err) {
-                mapper_error(mapper, "Could not parse key schema (%s)", avro_strerror());
-                return NULL;
-            }
-        } else {
-            schema = NULL;
-        }
-        if (table->key_schema) avro_schema_decref(table->key_schema);
-        table->key_schema = schema;
-    }
-
-    if (prev_row_schema_id == TABLE_MAPPER_SCHEMA_ID_MISSING || prev_row_schema_id != table->row_schema_id) {
-        if (row_schema_json) {
-            err = avro_schema_from_json_length(row_schema_json, row_schema_len, &schema);
-
-            if (err) {
-                mapper_error(mapper, "Could not parse row schema (%s)", avro_strerror());
-                return NULL;
-            }
-        } else {
-            schema = NULL;
-        }
-        if (table->row_schema) avro_schema_decref(table->row_schema);
-        table->row_schema = schema;
-    }
+    err = table_metadata_update_schema(mapper, table, 0, row_schema_json, row_schema_len);
+    if (err) return NULL;
 
     return table;
 }
@@ -146,6 +93,80 @@ table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid) {
     table->row_schema_id = TABLE_MAPPER_SCHEMA_ID_MISSING;
 
     return table;
+}
+
+int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* topic_name) {
+    if (!table->topic || strcmp(topic_name, rd_kafka_topic_name(table->topic))) {
+        if (table->topic) rd_kafka_topic_destroy(table->topic);
+
+        table->topic = rd_kafka_topic_new(mapper->kafka, topic_name,
+                rd_kafka_topic_conf_dup(mapper->topic_conf));
+        if (!table->topic) {
+            mapper_error(mapper, "Cannot open Kafka topic %s: %s", topic_name,
+                    rd_kafka_err2str(rd_kafka_errno2err(errno)));
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, int is_key, const char* schema_json, size_t schema_len) {
+    int prev_schema_id = is_key ? table->key_schema_id : table->row_schema_id;
+    int schema_id = TABLE_MAPPER_SCHEMA_ID_MISSING;
+
+    int err;
+
+    if (mapper->registry) {
+        err = schema_registry_request(mapper->registry, rd_kafka_topic_name(table->topic), is_key,
+                schema_json, schema_len,
+                &schema_id);
+        if (err) {
+            mapper_error(mapper, "Failed to register %s schema: %s",
+                    is_key ? "key" : "row", mapper->registry->error);
+            return err;
+        }
+
+        table_metadata_set_schema_id(table, is_key, schema_id);
+    }
+
+    avro_schema_t schema;
+
+    if (prev_schema_id == TABLE_MAPPER_SCHEMA_ID_MISSING || prev_schema_id != schema_id) {
+        if (schema_json) {
+            err = avro_schema_from_json_length(schema_json, schema_len, &schema);
+
+            if (err) {
+                mapper_error(mapper, "Could not parse %s schema: %s",
+                        is_key ? "key" : "row", avro_strerror());
+                return err;
+            }
+        } else {
+            schema = NULL;
+        }
+
+        table_metadata_set_schema(table, is_key, schema);
+    }
+
+    return 0;
+}
+
+void table_metadata_set_schema_id(table_metadata_t table, int is_key, int schema_id) {
+    if (is_key) {
+        table->key_schema_id = schema_id;
+    } else {
+        table->row_schema_id = schema_id;
+    }
+}
+
+void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t schema) {
+    if (is_key) {
+        if (table->key_schema) avro_schema_decref(table->key_schema);
+        table->key_schema = schema;
+    } else {
+        if (table->row_schema) avro_schema_decref(table->row_schema);
+        table->row_schema = schema;
+    }
 }
 
 void table_metadata_free(table_metadata_t table) {
