@@ -31,8 +31,11 @@
 #define PRODUCER_CONTEXT_ERROR_LEN 512
 #define MAX_IN_FLIGHT_TRANSACTIONS 1000
 
+typedef int format_t; /* should always be one of the following constants: */
+#define OUTPUT_FORMAT_UNDEFINED 0
 #define OUTPUT_FORMAT_AVRO 1
 #define OUTPUT_FORMAT_JSON 2
+
 #define DEFAULT_OUTPUT_FORMAT_NAME "avro"
 #define DEFAULT_OUTPUT_FORMAT OUTPUT_FORMAT_AVRO
 
@@ -54,7 +57,7 @@ typedef struct {
     rd_kafka_topic_conf_t *topic_conf;
     rd_kafka_t *kafka;
     table_mapper_t mapper;              /* TODO */
-    int output_format;                  /* TODO */
+    format_t output_format;             /* TODO */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
 } producer_context;
 
@@ -79,6 +82,7 @@ void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
 char *parse_config_option(char *option);
 void init_schema_registry(producer_context_t context, char *url);
+const char* output_format_name(format_t format);
 void set_output_format(producer_context_t context, char *format);
 void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
@@ -243,6 +247,15 @@ void set_output_format(producer_context_t context, char *format) {
     }
 }
 
+const char* output_format_name(format_t format) {
+    switch (format) {
+    case OUTPUT_FORMAT_AVRO: return "Avro";
+    case OUTPUT_FORMAT_JSON: return "JSON";
+    case OUTPUT_FORMAT_UNDEFINED: return "undefined (probably a bug)";
+    default: return "unknown (probably a bug)";
+    }
+}
+
 void set_kafka_config(producer_context_t context, char *property, char *value) {
     if (rd_kafka_conf_set(context->kafka_conf, property, value,
                 context->error, PRODUCER_CONTEXT_ERROR_LEN) != RD_KAFKA_CONF_OK) {
@@ -379,7 +392,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
     int err;
 
-    if (context->output_format == OUTPUT_FORMAT_JSON) {
+    switch (context->output_format) {
+    case OUTPUT_FORMAT_JSON:
         err = json_encode_msg(table,
                 key_bin, key_len, (char **) &key, &key_encoded_len, val_bin, val_len, (char **) &val, &val_encoded_len);
 
@@ -387,7 +401,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
             fprintf(stderr, "%s: error %s encoding JSON for topic %s\n", progname, strerror(err), rd_kafka_topic_name(table->topic));
             exit_nicely(context, 1);
         }
-    } else {
+        break;
+    case OUTPUT_FORMAT_AVRO:
         err = schema_registry_encode_msg(table->key_schema_id, table->row_schema_id,
                 key_bin, key_len, &key, &key_encoded_len, val_bin, val_len, &val, &val_encoded_len);
 
@@ -395,6 +410,10 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
             fprintf(stderr, "%s: error %s encoding Avro for topic %s\n", progname, strerror(err), rd_kafka_topic_name(table->topic));
             exit_nicely(context, 1);
         }
+        break;
+    default:
+        fprintf(stderr, "%s: invalid output format %s\n", progname, output_format_name(context->output_format));
+        exit_nicely(context, 1);
     }
 
     bool enqueued = false;
@@ -574,11 +593,7 @@ void start_producer(producer_context_t context) {
 
     context->mapper = table_mapper_new(context->kafka, context->topic_conf, context->registry);
 
-    if (context->output_format == OUTPUT_FORMAT_JSON) {
-        fprintf(stderr, "Writing messages to Kafka in JSON format\n");
-    } else {
-        fprintf(stderr, "Writing messages to Kafka in Avro format\n");
-    }
+    fprintf(stderr, "Writing messages to Kafka in %s format\n", output_format_name(context->output_format));
 }
 
 /* Shuts everything down and exits the process. */
