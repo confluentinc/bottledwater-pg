@@ -31,12 +31,12 @@ int json_encode_msg(table_metadata_t table,
     int err;
     err = avro_bin_to_json(table->key_schema, key_bin, key_len, key_out, key_len_out);
     if (err) {
-      fprintf(stderr, "json: error %s encoding key\n", avro_strerror());
+      fprintf(stderr, "json: error encoding key: %s\n", avro_strerror());
       return err;
     }
     err = avro_bin_to_json(table->row_schema, row_bin, row_len, row_out, row_len_out);
     if (err) {
-      fprintf(stderr, "json: error %s encoding row\n", avro_strerror());
+      fprintf(stderr, "json: error encoding row: %s\n", avro_strerror());
       return err;
     }
 
@@ -59,13 +59,26 @@ int avro_bin_to_json(avro_schema_t schema,
     avro_reader_t reader = avro_reader_memory(val_bin, val_len);
 
     avro_value_iface_t *iface = avro_generic_class_from_schema(schema);
-    // TODO error handling?
-    avro_value_t value;
-    avro_generic_value_new(iface, &value);
-    // TODO error handling?
+    if (!iface) {
+        fprintf(stderr, "json: error in avro_generic_class_from_schema: %s\n", avro_strerror());
+        avro_reader_free(reader);
+        return EINVAL;
+    }
 
-    int err = avro_value_read(reader, &value);
+    int err;
+
+    avro_value_t value;
+    err = avro_generic_value_new(iface, &value);
     if (err) {
+        fprintf(stderr, "json: error in avro_generic_value_new: %s\n", avro_strerror());
+        avro_value_iface_decref(iface);
+        avro_reader_free(reader);
+        return err;
+    }
+
+    err = avro_value_read(reader, &value);
+    if (err) {
+        fprintf(stderr, "json: error decoding Avro value: %s\n", avro_strerror());
         avro_value_decref(&value);
         avro_value_iface_decref(iface);
         avro_reader_free(reader);
@@ -74,6 +87,7 @@ int avro_bin_to_json(avro_schema_t schema,
 
     err = avro_value_to_json(&value, 1, val_out);
     if (err) {
+        fprintf(stderr, "json: error converting Avro value to JSON: %s\n", avro_strerror());
         avro_value_decref(&value);
         avro_value_iface_decref(iface);
         avro_reader_free(reader);
