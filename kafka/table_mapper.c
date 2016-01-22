@@ -197,6 +197,8 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
         }
 
         table_metadata_set_schema(table, is_key, schema);
+
+        if (schema) avro_schema_decref(schema);
     }
 
     return 0;
@@ -210,6 +212,7 @@ void table_metadata_set_schema_id(table_metadata_t table, int is_key, int schema
     }
 }
 
+/* Doesn't take ownership of new_schema; will take a copy (incref) if needed. */
 void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t new_schema) {
     const char* what;
     avro_schema_t* schema;
@@ -220,17 +223,24 @@ void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t
         what = "row";
         schema = &table->row_schema;
     }
-    const char* new_schema_info = new_schema ? "" : " (null)";
 
-    if (*schema) {
-        logf("Updating stored %s schema%s for table %" PRIu32 "\n", what, new_schema_info, table->relid);
+    if (*schema == new_schema) {
+        /* identical schema, nothing to do */
+    } else if (!*schema) {
+        logf("Storing %s schema for table %" PRIu32 "\n", what, table->relid);
+
+        *schema = avro_schema_incref(new_schema);
+    } else if (!new_schema) {
+        logf("Forgetting stored %s schema for table %" PRIu32 "\n", what, table->relid);
 
         avro_schema_decref(*schema);
+        *schema = NULL;
     } else {
-        logf("Storing %s schema%s for table %" PRIu32 "\n", what, new_schema_info, table->relid);
-    }
+        logf("Updating stored %s schema for table %" PRIu32 "\n", what, table->relid);
 
-    *schema = new_schema;
+        avro_schema_decref(*schema);
+        *schema = avro_schema_incref(new_schema);
+    }
 }
 
 void table_metadata_free(table_metadata_t table) {
