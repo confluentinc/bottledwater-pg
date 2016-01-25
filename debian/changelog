@@ -1,0 +1,17 @@
+bottledwater (0.1+bzr83-0ubuntu1) trusty; urgency=medium
+
+  * Require librdkafka 0.8.6.
+
+ -- Stuart Bishop (Work) <stuart.bishop@canonical.com>  Fri, 04 Dec 2015 19:40:28 +0700
+
+bottledwater (0.1+bzr83-0ubuntu1) trusty; urgency=medium
+
+  * New upstream snapshot.
+
+ -- Stuart Bishop (Work) <stuart.bishop@canonical.com>  Fri, 15 May 2015 12:23:34 +0200
+
+bottledwater (0.1-1) trusty; urgency=low
+
+  * Initial release
+
+ -- Stuart Bishop (Work) <stuart.bishop@canonical.com>  Thu, 14 May 2015 20:12:50 +0700
