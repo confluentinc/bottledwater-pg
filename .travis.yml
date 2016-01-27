@@ -2,14 +2,14 @@ sudo: required
 dist: trusty
 os: linux
 env:
-  - DIST=precise ARCH=amd64
-  - DIST=trusty ARCH=amd64
+  - DIST=precise ARCH=amd64 POSTGRES_VERSION=9.4.2-0~9~ubuntu14.04.1
+  - DIST=trusty ARCH=amd64 POSTGRES_VERSION=9.4.2-0~9~ubuntu14.04.1
 before_install:
   - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6609E57DA8BDDEE3E10C90A1387ACAE2E4FD7A7A
   # N.B. we always use the trusty PPA even when building for precise... *shrug*
   - echo deb http://ppa.launchpad.net/stub/bottledwater/ubuntu trusty main | sudo tee /etc/apt/sources.list.d/ppa-bottledwater.list
   - sudo apt-get update -qq
-  - sudo apt-get install -qq --no-install-recommends debhelper devscripts git-buildpackage build-essential libavro-dev libcurl4-openssl-dev libjansson-dev libpq-dev librdkafka-dev libsnappy-dev pkg-config postgresql-server-dev-9.4
+  - sudo apt-get install -qq --no-install-recommends debhelper devscripts git-buildpackage build-essential libavro-dev libcurl4-openssl-dev libjansson-dev libpq-dev=${POSTGRES_VERSION} librdkafka-dev libsnappy-dev pkg-config postgresql-server-dev-9.4=${POSTGRES_VERSION}
   - sudo apt-get autoremove -qq
 script:
   - sed -i "s:trusty:${DIST}:g" debian/changelog
