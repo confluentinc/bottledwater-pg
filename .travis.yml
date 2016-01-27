@@ -14,6 +14,8 @@ before_install:
 script:
   - sed -i "s:trusty:${DIST}:g" debian/changelog
   - debuild -us -uc -b
+  - ls ..
+  - mkdir tmp && cp ../*.deb tmp && cd tmp && dpkg-deb --extract bottledwater*.deb . && ./usr/bin/bottledwater || true
 #deploy:
 #  provider: packagecloud
 #  repository: dod
