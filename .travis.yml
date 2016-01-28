@@ -13,7 +13,9 @@ before_install:
   # N.B. we always use the trusty PPA even when building for precise... *shrug*
   - echo deb http://ppa.launchpad.net/stub/bottledwater/ubuntu trusty main | sudo tee /etc/apt/sources.list.d/ppa-bottledwater.list
   - sudo apt-get update -qq
+install:
   - sudo apt-get install -qq --no-install-recommends debhelper devscripts git-buildpackage build-essential libavro-dev libcurl4-openssl-dev libjansson-dev libpq-dev=${POSTGRES_VERSION} librdkafka-dev libsnappy-dev pkg-config postgresql-server-dev-9.4=${POSTGRES_VERSION}
+after_install:
   - sudo apt-get autoremove -qq
 script:
   - sed -i "s:trusty:${DIST}:g" debian/changelog
