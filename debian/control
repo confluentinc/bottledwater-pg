@@ -1,7 +1,7 @@
 Source: bottledwater
 Section: database
 Priority: optional
-Maintainer: Stuart Bishop (Work) <stuart.bishop@canonical.com>
+Maintainer: Sam Stokes <me@samstokes.co.uk>
 Build-Depends:
     debhelper (>= 9), pkg-config,
     postgresql-server-dev-9.4, libpq-dev, libsnappy-dev, libjansson-dev,

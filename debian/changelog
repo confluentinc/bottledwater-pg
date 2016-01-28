@@ -1,3 +1,9 @@
+bottledwater (0.1+master-0ubuntu0) trusty; urgency=medium
+
+  * Import debianization from https://code.launchpad.net/~stub/ubuntu/trusty/bottledwater/trunk
+
+ -- Sam Stokes <me@samstokes.co.uk>  Wed, 27 Jan 2016 16:23:11 -0800
+
 bottledwater (0.1+bzr83-0ubuntu1) trusty; urgency=medium
 
   * Require librdkafka 0.8.6.
