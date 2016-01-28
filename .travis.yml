@@ -2,8 +2,12 @@ sudo: required
 dist: trusty
 os: linux
 env:
-  - DIST=precise ARCH=amd64 POSTGRES_VERSION=9.4.2-0~9~ubuntu14.04.1
-  - DIST=trusty ARCH=amd64 POSTGRES_VERSION=9.4.2-0~9~ubuntu14.04.1
+  global:
+    - ARCH=amd64
+    - POSTGRES_VERSION=9.4.2-0~9~ubuntu14.04.1
+  matrix:
+    - DIST=precise
+    - DIST=trusty
 before_install:
   - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6609E57DA8BDDEE3E10C90A1387ACAE2E4FD7A7A
   # N.B. we always use the trusty PPA even when building for precise... *shrug*
