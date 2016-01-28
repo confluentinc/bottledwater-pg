@@ -5,6 +5,7 @@ env:
   global:
     - ARCH=amd64
     - POSTGRES_VERSION=9.4.2-0~9~ubuntu14.04.1
+    - secure: XgxYSh3wo7lxQOqCJ6G9vd73MYPPngc7Zo5DqeHtnnUkTKF0YmYgK8wh7/y9vBqeEYmZ7qkllO4SdhBQdcJkPWJVx8POERp2e6Ge6P/y1XJpKfsvI0SfN0DCir4PBT03PxKRyRfgnYZuddCKSuQNOEPxGTXW1FztKYwYE7BpNggo+ljg0Nox8h9kaF16pVg3KKYqJtCH5jb9AnDSmdX9Cwf/df8r0t7iQ73GyDBnDSkYZMTHf7Zdug71B+HUim45luoTC8IPMVJGk3e1Pl9B4+gzQCNrRnEcxqR1aZuyworwX+SU1dhHX115UkAOHQPARNi2+8KiR5dk5jjTTMDc4bIdu1dG8JGe8DoRDmdiwt1Vr2bVyKkTGNC7tL9paCkULtzhuI9v8adf2f0FqX6qErcnd76w3tPMJVWO0mKR3tOzQTCgMVz0u2OYjdwqaiIAJbQw2G6cY4Hl8vF0fSKjQO/vI4oD2F021vOHvWyGdtZzTi6y/keFKMqrNFR0kIwHZgKB73hrvxFHLbmwbzo6T+zfsZdlunB5lfkPOBCtoJ2nGNcjdHlec01sTtyYPrInkfmdZQYUQE6jDXJ9/RFtG4mT588MTedKHb2egY1Q+/4Emto7dgcbjNoflv0dWpoFKsFwMcg6e8+sEMBPiFHv+NDNbUyvnsurC0ZrBVYayig=
   matrix:
     - DIST=precise
     - DIST=trusty
@@ -20,9 +21,12 @@ after_install:
 script:
   - sed -i "s:trusty:${DIST}:g" debian/changelog
   - make -j5 deb-build
-  - git push --tags
   - ls ..
   - mkdir tmp && cp ../*.deb tmp && cd tmp && dpkg-deb --extract bottledwater*.deb . && ./usr/bin/bottledwater || true
+after_success:
+  # Need to hide the output here because git obligingly echoes the repo URL,
+  # including the unencrypted token, to the build log
+  - git push --tags https://${GITHUB_OAUTH_TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git >/dev/null 2>/dev/null && echo Pushed tag || echo Failed to push tag
 #deploy:
 #  provider: packagecloud
 #  repository: dod
