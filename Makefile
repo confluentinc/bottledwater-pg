@@ -27,5 +27,11 @@ deb-snapshot:
 deb-release:
 	gbp dch --debian-branch=$(DEBIAN_BRANCH) --release --distribution=trusty --commit
 
+deb-prepare:
+	: ${DIST?must be specified}
+	: ${ARCH?must be specified}
+	git-pbuilder create --components 'main universe' --hookdir debian/pbuilder-hooks
+
 deb-build:
-	gbp buildpackage -us -uc -b --git-ignore-branch --git-upstream-tag=$(DEBIAN_UPSTREAM_TAG) --git-verbose --git-tag --git-ignore-new
+	sed -i "s:trusty:${DIST}:g" debian/changelog
+	gbp buildpackage -us -uc --git-ignore-branch --git-upstream-tag=$(DEBIAN_UPSTREAM_TAG) --git-verbose --git-tag --git-ignore-new --git-pbuilder --git-arch=${ARCH} --git-dist=${DIST}

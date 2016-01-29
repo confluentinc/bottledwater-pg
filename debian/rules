@@ -11,6 +11,12 @@ include /usr/share/dpkg/default.mk
 %:
 	dh $@ 
 
+# suppress dh_auto_clean since:
+#  a) we're building fresh clones in Docker or Travis anyway so there should be
+#     nothing to clean
+#  b) for some reason it blows up in Travis when cleaning ext/Makefile
+override_dh_auto_clean:
+
 override_dh_install:
 	dh_install
 	install -D kafka/bottledwater debian/bottledwater/usr/bin/bottledwater
