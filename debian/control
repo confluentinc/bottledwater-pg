@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Sam Stokes <me@samstokes.co.uk>
 Build-Depends:
     debhelper (>= 9), pkg-config,
-    postgresql-server-dev-9.4, libpq-dev, libsnappy-dev, libjansson-dev,
+    postgresql-server-dev-9.4, libpq-dev (<< 9.5), libsnappy-dev, libjansson-dev,
     libcurl4-openssl-dev, libavro-dev, libavro, libjansson4,
     librdkafka-dev (>> 0.8.5), librdkafka1 (>> 0.8.5)
 Standards-Version: 3.9.5
