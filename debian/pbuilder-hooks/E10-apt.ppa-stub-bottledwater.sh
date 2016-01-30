@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -e
 
 # Add stub/bottledwater PPA for its libavro package.
 # N.B. We always use the trusty PPA even when building for precise, since the

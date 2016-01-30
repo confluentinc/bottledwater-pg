@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -e
 
 # Add the Confluent APT repository for its bleeding-edge librdkafka package.
 
