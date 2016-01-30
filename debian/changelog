@@ -1,3 +1,25 @@
+bottledwater (0.1+master-0ubuntu1) trusty; urgency=medium
+
+  * Travis build for debian package
+  * Constrain postgres version (and libpq-dev version) to 9.4
+  * Run bottledwater to see what we built
+  * Makefile for adding changelog entries
+  * Attempt to get Travis to push tag after build
+  * Simplify environment variable config
+  * Split install into steps
+  * Give Travis a key to push tags
+  * Cache apt
+  * Force libpq 9.4 since BW won't compile against 9.5 headers
+  * Build in chroot instead...
+  * Shut up git tag error in Docker
+  * run apt-get update fewer times
+  * Install updates repo to get fixed ssl-cert package
+  * Have to try harder to run the built package since the libs are in the chroot
+  * Better precondition checking for make targets
+  * Wrap complex docker commands in make targets
+
+ -- Sam Stokes <me@samstokes.co.uk>  Sat, 30 Jan 2016 01:10:44 -0800
+
 bottledwater (0.1+master-0ubuntu0) trusty; urgency=medium
 
   * Import debianization from https://code.launchpad.net/~stub/ubuntu/trusty/bottledwater/trunk
