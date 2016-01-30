@@ -6,4 +6,3 @@
 
 apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6609E57DA8BDDEE3E10C90A1387ACAE2E4FD7A7A
 echo deb http://ppa.launchpad.net/stub/bottledwater/ubuntu trusty main > /etc/apt/sources.list.d/ppa-bottledwater.list
-apt-get update
