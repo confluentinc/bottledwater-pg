@@ -15,6 +15,9 @@ RUN apt-get update && \
         fakeroot \
         git-buildpackage
 
+RUN git config --global user.name Dockerfile.debian
+RUN git config --global user.email docker@example.com
+
 COPY . /tmp/bottledwater
 
 WORKDIR /usr/src
