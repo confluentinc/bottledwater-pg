@@ -20,7 +20,11 @@ install:
 script:
   - make deb-build
   - ls ..
-  - mkdir tmp && cp ../*.deb tmp && cd tmp && dpkg-deb --extract bottledwater*.deb . && ./usr/bin/bottledwater || true
+  # try installing the package we built on the build host.  N.B. that means
+  # installing the DIST=precise build on the (trusty) build host, so that might
+  # not work...!
+  - sudo ./debian/pbuilder-hooks/*-apt.ppa-stub-bottledwater.sh && sudo apt-get update
+  - sudo dpkg -i --force-depends ../bottledwater*.deb && sudo apt-get install -y --fix-broken && bottledwater || true
 after_success:
   # Need to hide the output here because git obligingly echoes the repo URL,
   # including the unencrypted token, to the build log
