@@ -37,3 +37,19 @@ deb-prepare: deb-chroot-vars
 deb-build: deb-chroot-vars
 	sed -i "s:trusty:${DIST}:g" debian/changelog
 	gbp buildpackage -us -uc --git-ignore-branch --git-upstream-tag=$(DEBIAN_UPSTREAM_TAG) --git-verbose --git-tag --git-ignore-new --git-pbuilder --git-arch=${ARCH} --git-dist=${DIST}
+
+DOCKER_IMAGE = bwdeb
+PBUILDER_CACHE = /tmp/pbuilder-cache
+
+deb-docker:
+	docker build -t $(DOCKER_IMAGE) -f build/Dockerfile.debian .
+
+deb-prepare-docker: deb-chroot-vars deb-docker
+	docker run --rm --privileged=true -e DIST=${DIST} -e ARCH=${ARCH} -v $(PBUILDER_CACHE):/var/cache/pbuilder $(DOCKER_IMAGE) make deb-prepare
+
+deb-build-docker: deb-chroot-vars deb-docker
+# not making deb-prepare-docker a dependency to avoid rebuilding the chroot every time
+	docker run --rm --privileged=true -e DIST=${DIST} -e ARCH=${ARCH} -v $(PBUILDER_CACHE):/var/cache/pbuilder $(DOCKER_IMAGE) make deb-build
+
+deb-clean-docker:
+	sudo rm -rf $(PBUILDER_CACHE)
