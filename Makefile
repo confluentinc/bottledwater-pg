@@ -34,6 +34,9 @@ deb-chroot-vars:
 deb-prepare: deb-chroot-vars
 	git-pbuilder create --components 'main universe' --hookdir debian/pbuilder-hooks
 
+deb-update: deb-chroot-vars
+	git-pbuilder update --components 'main universe' --hookdir debian/pbuilder-hooks
+
 deb-build: deb-chroot-vars
 	sed -i "s:trusty:${DIST}:g" debian/changelog
 	gbp buildpackage -us -uc --git-ignore-branch --git-upstream-tag=$(DEBIAN_UPSTREAM_TAG) --git-verbose --git-tag --git-ignore-new --git-pbuilder --git-arch=${ARCH} --git-dist=${DIST}
@@ -46,6 +49,9 @@ deb-docker:
 
 deb-prepare-docker: deb-chroot-vars deb-docker
 	docker run --rm --privileged=true -e DIST=${DIST} -e ARCH=${ARCH} -v $(PBUILDER_CACHE):/var/cache/pbuilder $(DOCKER_IMAGE) make deb-prepare
+
+deb-update-docker: deb-chroot-vars deb-docker
+	docker run --rm --privileged=true -e DIST=${DIST} -e ARCH=${ARCH} -v $(PBUILDER_CACHE):/var/cache/pbuilder $(DOCKER_IMAGE) make deb-update
 
 deb-build-docker: deb-chroot-vars deb-docker
 # not making deb-prepare-docker a dependency to avoid rebuilding the chroot every time
