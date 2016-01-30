@@ -1,3 +1,11 @@
+bottledwater (0.1+master-0ubuntu2) trusty; urgency=medium
+
+  * Add make targets for updating the chroot
+  * Use Confluent's newer librdkafka build
+  * Use -e consistently in hook scripts
+
+ -- Sam Stokes <me@samstokes.co.uk>  Sat, 30 Jan 2016 01:50:46 -0800
+
 bottledwater (0.1+master-0ubuntu1) trusty; urgency=medium
 
   * Travis build for debian package
