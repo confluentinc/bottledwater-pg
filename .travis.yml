@@ -24,7 +24,7 @@ script:
   # installing the DIST=precise build on the (trusty) build host, so that might
   # not work...!
   - sudo ./debian/pbuilder-hooks/*-apt.ppa-stub-bottledwater.sh && sudo apt-get update
-  - sudo dpkg -i --force-depends ../bottledwater*.deb && sudo apt-get install -y --fix-broken && bottledwater || true
+  - sudo dpkg -i --force-depends ../bottledwater*.deb && sudo apt-get install -y --fix-broken && test -x /usr/bin/bottledwater && { bottledwater || true; }
 after_success:
   # Need to hide the output here because git obligingly echoes the repo URL,
   # including the unencrypted token, to the build log
