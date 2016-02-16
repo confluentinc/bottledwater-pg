@@ -19,15 +19,21 @@
 FROM postgres:9.4
 
 RUN apt-get update && \
-    apt-get install -y \
+    # --force-yes is needed because we are downgrading libpq5 to $PG_VERSION
+    # (set by the postgres:9.4 Docker image).  Confusingly the postgres:9.4
+    # Docker image includes libpq5 version 9.5.x, which we are not yet
+    # compatible with, even though the Postgres version (and $PG_VERSION) are
+    # 9.4.x.
+    apt-get install -y --force-yes \
         build-essential \
         cmake \
         curl \
         libcurl4-openssl-dev \
         libjansson-dev \
-        libpq-dev \
+        libpq5=${PG_VERSION} \
+        libpq-dev=${PG_VERSION} \
         pkg-config \
-        postgresql-server-dev-9.4
+        postgresql-server-dev-9.4=${PG_VERSION}
 
 # Avro
 RUN curl -o /root/avro-c-1.7.7.tar.gz -SL http://archive.apache.org/dist/avro/avro-1.7.7/c/avro-c-1.7.7.tar.gz && \
