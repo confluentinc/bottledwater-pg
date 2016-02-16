@@ -23,7 +23,7 @@ script:
   # try installing the package we built on the build host.  N.B. that means
   # installing the DIST=precise build on the (trusty) build host, so that might
   # not work...!
-  - sudo ./debian/pbuilder-hooks/*-apt.ppa-stub-bottledwater.sh && sudo apt-get update
+  - for i in ./debian/pbuilder-hooks/*-apt.*.sh; do sudo $i; done && sudo apt-get update
   - sudo dpkg -i --force-depends ../bottledwater*.deb && sudo apt-get install -y --fix-broken && test -x /usr/bin/bottledwater && { bottledwater || true; }
 after_success:
   # Need to hide the output here because git obligingly echoes the repo URL,
