@@ -31,12 +31,12 @@ int json_encode_msg(table_metadata_t table,
     int err;
     err = avro_bin_to_json(table->key_schema, key_bin, key_len, key_out, key_len_out);
     if (err) {
-      fprintf(stderr, "json: error encoding key: %s\n", avro_strerror());
+      fprintf(stderr, "json: error encoding key\n");
       return err;
     }
     err = avro_bin_to_json(table->row_schema, row_bin, row_len, row_out, row_len_out);
     if (err) {
-      fprintf(stderr, "json: error encoding row: %s\n", avro_strerror());
+      fprintf(stderr, "json: error encoding row\n");
       return err;
     }
 
@@ -51,7 +51,8 @@ int avro_bin_to_json(avro_schema_t schema,
         *val_out = NULL;
         return 0;
     } else if (!schema) {
-        /* got a value where we didn't expect one, and no schema to decode it */
+        fprintf(stderr,
+            "json: got a value where we didn't expect one, and no schema to decode it\n");
         *val_out = NULL;
         return EINVAL;
     }
