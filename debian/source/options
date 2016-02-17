@@ -1,1 +1,1 @@
-extend-diff-ignore = "\.travis\.yml|Makefile|build/Dockerfile\.debian"
+extend-diff-ignore = "\.travis\.yml|Makefile|README.Debian.md|build/Dockerfile\.debian"
