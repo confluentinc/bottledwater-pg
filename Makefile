@@ -15,12 +15,15 @@ clean:
 	$(MAKE) -C client clean
 	$(MAKE) -C kafka clean
 
-docker: avro-1.7.7.tar.gz librdkafka-0.9.0.tar.gz bottledwater-bin.tar.gz bottledwater-ext.tar.gz
+docker: tmp/avro-1.7.7.tar.gz tmp/librdkafka-0.9.0.tar.gz tmp/bottledwater-bin.tar.gz tmp/bottledwater-ext.tar.gz
 	docker build -f build/Dockerfile.postgres -t local-postgres-bw:$(DOCKER_TAG) .
 	docker build -f build/Dockerfile.client -t local-bottledwater:$(DOCKER_TAG) .
 
-%.tar.gz: docker-build
-	docker run --rm bwbuild:$(DOCKER_TAG) cat /$@ > $@
+tmp:
+	mkdir tmp
+
+tmp/%.tar.gz: tmp docker-build
+	docker run --rm bwbuild:$(DOCKER_TAG) cat /$*.tar.gz > $@
 
 docker-build:
 	docker build -f build/Dockerfile.build -t bwbuild:$(DOCKER_TAG) .

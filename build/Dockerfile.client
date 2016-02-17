@@ -12,9 +12,9 @@ RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y libcurl3 libjansson4 libpq5
 
-ADD avro-1.7.7.tar.gz /
-ADD librdkafka-0.9.0.tar.gz /
-ADD bottledwater-bin.tar.gz /
+ADD tmp/avro-1.7.7.tar.gz /
+ADD tmp/librdkafka-0.9.0.tar.gz /
+ADD tmp/bottledwater-bin.tar.gz /
 
 RUN cp /usr/local/lib/librdkafka.so.1 /usr/lib/x86_64-linux-gnu && \
     cp /usr/local/lib/libavro.so.22.0.0 /usr/lib/x86_64-linux-gnu
