@@ -27,6 +27,10 @@ deb-snapshot:
 deb-release:
 	gbp dch --debian-branch=$(DEBIAN_BRANCH) --release --distribution=trusty --commit
 
+deb-new-release:
+	test -n "${VERSION}" || { echo 'Please set VERSION (e.g. 0.1++mybranch-0ubuntu1)' >&2; exit 1; }
+	gbp dch --debian-branch=$(DEBIAN_BRANCH) --release --distribution=trusty "--new-version=${VERSION}" --commit
+
 deb-chroot-vars:
 	test -n "${DIST}" || { echo Please set DIST >&2; exit 1; }
 	test -n "${ARCH}" || { echo Please set ARCH >&2; exit 1; }
