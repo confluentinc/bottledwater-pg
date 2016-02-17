@@ -13,18 +13,15 @@ The basic workflow for releasing a new package:
 
 1. Check out the `debian` packaging branch (this branch).
 
-2. Merge in the commits you want: e.g. `git merge confluentinc/master`
+2. Merge in the commits you want: e.g. `REVISION=confluentinc/master make deb-merge`.  This will
+   also automatically update `DEBIAN_UPSTREAM_TAG` in the [Makefile](Makefile) and commit it.
 
-3. Update `DEBIAN_UPSTREAM_TAG` in the [Makefile](Makefile) to point to the *commit SHA of the ref
-   you merged in*: e.g. `git rev-parse --short confluentinc/master`.  Commit the change to the
-   Makefile.
-
-4. Mint a new package version and update the changelog: `make deb-release`.  (This will commit a
+3. Mint a new package version and update the changelog: `make deb-release`.  (This will commit a
    change to [debian/changelog](debian/changelog).)
 
-5. Push your commits (merge, Makefile change and changelog change) back to this branch.
+4. Push your commits (merge, Makefile change and changelog change) back to this branch.
 
-6. The push will trigger a [Travis build](https://travis-ci.org/samstokes/bottledwater-pg).  Travis
+5. The push will trigger a [Travis build](https://travis-ci.org/samstokes/bottledwater-pg).  Travis
    will:
     * compile the code
     * build binary packages
@@ -41,21 +38,19 @@ upstream), the flow is slightly different:
 1. Create a new packaging branch (e.g. `debian-myfeature`) based off the current `debian` branch.
    The packaging branch name should begin with `debian-` in order for Travis to build it.
 
-2. Merge in the branch you want: e.g. `git merge myfork/myfeature`
-
-3. Update `DEBIAN_UPSTREAM_TAG` in the [Makefile](Makefile) to point to the *commit SHA of the ref
-you merged in*: e.g. `git rev-parse --short myfork/myfeature`.  Commit the change to the Makefile.
-
-4. Update `DEBIAN_BRANCH` in the [Makefile](Makefile) to match the name of your packaging branch
+2. Update `DEBIAN_BRANCH` in the [Makefile](Makefile) to match the name of your packaging branch
    (e.g. `debian-myfeature`).
 
-5. Begin a new version series in the changelog: `VERSION=0.1++myfeature-0ubuntu1 make
+3. Merge in the branch you want: e.g. `REVISION=myfork/myfeature make deb-merge`.  This will
+   also automatically update `DEBIAN_UPSTREAM_TAG` in the [Makefile](Makefile) and commit it.
+
+4. Begin a new version series in the changelog: `VERSION=0.1++myfeature-0ubuntu1 make
    deb-new-release`.  This ensures that the branch name will be reflected in the package version
    string.  (This will commit a change to [debian/changelog](debian/changelog).)
 
-6. Push your packaging branch (merge, Makefile changes and changelog change) to the `samstokes` fork.
+5. Push your packaging branch (merge, Makefile changes and changelog change) to the `samstokes` fork.
 
-7. The push will trigger a [Travis build](https://travis-ci.org/samstokes/bottledwater-pg) as above.
+6. The push will trigger a [Travis build](https://travis-ci.org/samstokes/bottledwater-pg) as above.
 
 If you need to build subsequent packages from the same branch (e.g. to incorporate further progress
 on the branch), the process is similar except using `make deb-release` instead of `VERSION=blah make

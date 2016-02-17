@@ -5,7 +5,12 @@ DEBIAN_BRANCH = debian
 # For git-buildpackage's mysterious purposes we need to tell it the revision
 # of the upstream branch we are building from.  (We can't just give it the
 # branch name because Travis' git clone doesn't include branch refs.)
-# XXX update this if you merge in new changes from upstream!
+#
+# XXX update this if you merge in new changes from upstream!  If you use
+#     REVISION=origin/master make deb-merge
+# instead of
+#     git merge origin/master
+# then this will be updated for you.
 DEBIAN_UPSTREAM_TAG = 7b864b2
 
 all:
@@ -20,6 +25,12 @@ clean:
 	$(MAKE) -C ext clean
 	$(MAKE) -C client clean
 	$(MAKE) -C kafka clean
+
+deb-merge:
+	test -n "${REVISION}" || { echo 'Please set the REVISION you want to merge (e.g. origin/master)' >&2; exit 1; }
+	git rev-parse --short "${REVISION}" | xargs -I SHA sed -i 's/^\(DEBIAN_UPSTREAM_TAG\) = .*/\1 = SHA/' Makefile
+	git commit -m "Set git-upstream to ${REVISION}" Makefile
+	git merge "${REVISION}"
 
 deb-snapshot:
 	gbp dch --debian-branch=$(DEBIAN_BRANCH) --snapshot
