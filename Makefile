@@ -19,7 +19,7 @@ docker: avro-1.7.7.tar.gz librdkafka-0.9.0.tar.gz bottledwater-bin.tar.gz bottle
 	docker build -f build/Dockerfile.postgres -t local-postgres-bw:$(DOCKER_TAG) .
 	docker build -f build/Dockerfile.client -t local-bottledwater:$(DOCKER_TAG) .
 
-*.tar.gz: docker-build
+%.tar.gz: docker-build
 	docker run --rm bwbuild:$(DOCKER_TAG) cat /$@ > $@
 
 docker-build:
