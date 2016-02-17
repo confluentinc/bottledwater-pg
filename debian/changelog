@@ -1,3 +1,16 @@
+bottledwater (0.1+master-0ubuntu3) trusty; urgency=medium
+
+  * Test more thoroughly for package install success
+  * Install all dependency repos before testing package install
+  * Fail more informatively
+  * Run hooks more noisily
+  * Tell travis to build debian-* subbranches too
+  * `VERSION=0.1++mybranch-0ubuntu1 make deb-new-release`...
+  * Document Debian packaging workflow
+  * `REVISION=origin/master make deb-merge`...
+
+ -- Sam Stokes <me@samstokes.co.uk>  Wed, 17 Feb 2016 14:37:11 -0800
+
 bottledwater (0.1+master-0ubuntu2) trusty; urgency=medium
 
   * Add make targets for updating the chroot
