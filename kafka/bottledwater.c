@@ -1,4 +1,5 @@
 #include "connect.h"
+#include "json.h"
 #include "registry.h"
 
 #include <librdkafka/rdkafka.h>
@@ -30,6 +31,14 @@
 #define PRODUCER_CONTEXT_ERROR_LEN 512
 #define MAX_IN_FLIGHT_TRANSACTIONS 1000
 
+typedef int format_t; /* should always be one of the following constants: */
+#define OUTPUT_FORMAT_UNDEFINED 0
+#define OUTPUT_FORMAT_AVRO 1
+#define OUTPUT_FORMAT_JSON 2
+
+#define DEFAULT_OUTPUT_FORMAT_NAME "avro"
+#define DEFAULT_OUTPUT_FORMAT OUTPUT_FORMAT_AVRO
+
 typedef struct {
     uint32_t xid;         /* Postgres transaction identifier */
     int recvd_events;     /* Number of row-level events received so far for this transaction */
@@ -47,6 +56,8 @@ typedef struct {
     rd_kafka_conf_t *kafka_conf;
     rd_kafka_topic_conf_t *topic_conf;
     rd_kafka_t *kafka;
+    table_mapper_t mapper;              /* Remembers topics and schemas for tables we've seen */
+    format_t output_format;             /* How to encode messages for writing to Kafka */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
 } producer_context;
 
@@ -70,6 +81,9 @@ static bool received_sigint = false;
 void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
 char *parse_config_option(char *option);
+void init_schema_registry(producer_context_t context, char *url);
+const char* output_format_name(format_t format);
+void set_output_format(producer_context_t context, char *format);
 void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
@@ -112,6 +126,10 @@ void usage() {
             "                          Comma-separated list of Kafka broker hosts/ports.\n"
             "  -r, --schema-registry=http://hostname:port   (default: %s)\n"
             "                          URL of the service where Avro schemas are registered.\n"
+            "                          Used only for --output-format=avro.\n"
+            "                          Omit when --output-format=json.\n"
+            "  -f, --output-format=[avro|json]   (default: %s)\n"
+            "                          How to encode the messages for writing to Kafka.\n"
             "  -u, --allow-unkeyed     Allow export of tables that don't have a primary key.\n"
             "                          This is disallowed by default, because updates and\n"
             "                          deletes need a primary key to identify their row.\n"
@@ -122,7 +140,12 @@ void usage() {
             "                          Set topic configuration property for Kafka producer.\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
-            progname, DEFAULT_REPLICATION_SLOT, DEFAULT_BROKER_LIST, DEFAULT_SCHEMA_REGISTRY);
+
+            progname,
+            DEFAULT_REPLICATION_SLOT,
+            DEFAULT_BROKER_LIST,
+            DEFAULT_SCHEMA_REGISTRY,
+            DEFAULT_OUTPUT_FORMAT_NAME);
     exit(1);
 }
 
@@ -134,6 +157,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"slot",            required_argument, NULL, 's'},
         {"broker",          required_argument, NULL, 'b'},
         {"schema-registry", required_argument, NULL, 'r'},
+        {"output-format",   required_argument, NULL, 'f'},
         {"allow-unkeyed",   no_argument,       NULL, 'u'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
@@ -145,7 +169,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
     int option_index;
     while (true) {
-        int c = getopt_long(argc, argv, "d:s:b:r:uC:T:", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:f:uC:T:", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -159,7 +183,10 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 context->brokers = strdup(optarg);
                 break;
             case 'r':
-                schema_registry_set_url(context->registry, optarg);
+                init_schema_registry(context, optarg);
+                break;
+            case 'f':
+                set_output_format(context, optarg);
                 break;
             case 'u':
                 context->client->allow_unkeyed = true;
@@ -180,6 +207,15 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     }
 
     if (!context->client->conninfo || optind < argc) usage();
+
+    if (context->output_format == OUTPUT_FORMAT_AVRO && !context->registry) {
+        init_schema_registry(context, DEFAULT_SCHEMA_REGISTRY);
+    } else if (context->output_format == OUTPUT_FORMAT_JSON && context->registry) {
+        fprintf(stderr,
+                "Specifying --schema-registry doesn't make sense for "
+                "--output-format=json\n");
+        usage();
+    }
 }
 
 /* Splits an option string by equals sign. Modifies the option argument to be
@@ -196,6 +232,36 @@ char *parse_config_option(char *option) {
     // Overwrite equals sign with null, to split key and value into two strings
     *equals = '\0';
     return equals + 1;
+}
+
+void init_schema_registry(producer_context_t context, char *url) {
+    context->registry = schema_registry_new(url);
+
+    if (!context->registry) {
+        fprintf(stderr, "Failed to initialise schema registry!\n");
+        exit(1);
+    }
+}
+
+void set_output_format(producer_context_t context, char *format) {
+    if (!strcmp("avro", format)) {
+        context->output_format = OUTPUT_FORMAT_AVRO;
+    } else if (!strcmp("json", format)) {
+        context->output_format = OUTPUT_FORMAT_JSON;
+    } else {
+        fprintf(stderr,
+                "invalid output format (expected avro or json): %s\n", format);
+        exit(1);
+    }
+}
+
+const char* output_format_name(format_t format) {
+    switch (format) {
+    case OUTPUT_FORMAT_AVRO: return "Avro";
+    case OUTPUT_FORMAT_JSON: return "JSON";
+    case OUTPUT_FORMAT_UNDEFINED: return "undefined (probably a bug)";
+    default: return "unknown (probably a bug)";
+    }
 }
 
 void set_kafka_config(producer_context_t context, char *property, char *value) {
@@ -271,23 +337,14 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
     producer_context_t context = (producer_context_t) _context;
     const char *topic_name = avro_schema_name(row_schema);
 
-    topic_list_entry_t entry = schema_registry_update(context->registry, relid, topic_name,
+    table_metadata_t table = table_mapper_update(context->mapper, relid, topic_name,
             key_schema_json, key_schema_len, row_schema_json, row_schema_len);
 
-    if (!entry) {
-        fprintf(stderr, "%s: %s\n", progname, context->registry->error);
+    if (!table) {
+        fprintf(stderr, "%s: %s\n", progname, context->mapper->error);
         exit_nicely(context, 1);
     }
 
-    if (!entry->topic) {
-        entry->topic = rd_kafka_topic_new(context->kafka, topic_name,
-                rd_kafka_topic_conf_dup(context->topic_conf));
-        if (!entry->topic) {
-            fprintf(stderr, "%s: Cannot open Kafka topic %s: %s\n", progname, topic_name,
-                    rd_kafka_err2str(rd_kafka_errno2err(errno)));
-            exit_nicely(context, 1);
-        }
-    }
     return 0;
 }
 
@@ -334,19 +391,53 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     envelope->xact = xact;
 
     void *key = NULL, *val = NULL;
-    topic_list_entry_t entry = schema_registry_encode_msg(context->registry, relid,
-            key_bin, key_len, &key, val_bin, val_len, &val);
+    size_t key_encoded_len, val_encoded_len;
+    table_metadata_t table = table_mapper_lookup(context->mapper, relid);
+    if (!table) {
+        fprintf(stderr, "relid %" PRIu32 " has no registered schema", relid);
+        exit_nicely(context, 1);
+    }
 
-    if (!entry) {
-        fprintf(stderr, "%s: %s\n", progname, context->registry->error);
+    int err;
+
+    switch (context->output_format) {
+    case OUTPUT_FORMAT_JSON:
+        err = json_encode_msg(table,
+                key_bin, key_len, (char **) &key, &key_encoded_len,
+                val_bin, val_len, (char **) &val, &val_encoded_len);
+
+        if (err) {
+            fprintf(stderr,
+                    "%s: error %s encoding JSON for topic %s\n",
+                    progname, strerror(err), rd_kafka_topic_name(table->topic));
+            exit_nicely(context, 1);
+        }
+        break;
+    case OUTPUT_FORMAT_AVRO:
+        err = schema_registry_encode_msg(table->key_schema_id, table->row_schema_id,
+                key_bin, key_len, &key, &key_encoded_len,
+                val_bin, val_len, &val, &val_encoded_len);
+
+        if (err) {
+            fprintf(stderr,
+                    "%s: error %s encoding Avro for topic %s\n",
+                    progname, strerror(err), rd_kafka_topic_name(table->topic));
+            exit_nicely(context, 1);
+        }
+        break;
+    default:
+        fprintf(stderr,
+                "%s: invalid output format %s\n",
+                progname, output_format_name(context->output_format));
         exit_nicely(context, 1);
     }
 
     bool enqueued = false;
     while (!enqueued) {
-        int err = rd_kafka_produce(entry->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
-                val, val == NULL ? 0 : val_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
-                key, key == NULL ? 0 : key_len + SCHEMA_REGISTRY_MESSAGE_PREFIX_LEN,
+        int err = rd_kafka_produce(table->topic,
+                RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
+                val, val == NULL ? 0 : val_encoded_len,
+                key, key == NULL ? 0 : key_encoded_len,
                 envelope);
         enqueued = (err == 0);
 
@@ -482,7 +573,9 @@ producer_context_t init_producer(client_context_t client) {
     client->repl.frame_reader->cb_context = context;
 
     context->client = client;
-    context->registry = schema_registry_new(DEFAULT_SCHEMA_REGISTRY);
+
+    context->output_format = DEFAULT_OUTPUT_FORMAT;
+
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
@@ -514,6 +607,15 @@ void start_producer(producer_context_t context) {
         fprintf(stderr, "%s: No valid Kafka brokers specified\n", progname);
         exit(1);
     }
+
+    context->mapper = table_mapper_new(
+            context->kafka,
+            context->topic_conf,
+            context->registry);
+
+    fprintf(stderr,
+            "Writing messages to Kafka in %s format\n",
+            output_format_name(context->output_format));
 }
 
 /* Shuts everything down and exits the process. */
@@ -527,7 +629,8 @@ void exit_nicely(producer_context_t context, int status) {
         }
     }
 
-    schema_registry_free(context->registry);
+    table_mapper_free(context->mapper);
+    if (context->registry) schema_registry_free(context->registry);
     frame_reader_free(context->client->repl.frame_reader);
     db_client_free(context->client);
     if (context->kafka) rd_kafka_destroy(context->kafka);
