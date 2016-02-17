@@ -3,18 +3,12 @@
 # are installed into it. However, the build process generates tar'ed
 # binaries which you can copy out and apply to a base Postgres image.
 #
-# Usage:
+# The Makefile provides a 'docker' target that automates this process:
 #
-#   docker build -f build/Dockerfile.build -t bwbuild:v1 .
-#   docker run -it --name bwbuild --rm bwbuild:v1 bash
-#   (Meanwhile, in another terminal:)
-#   docker cp bwbuild:/avro-1.7.7.tar.gz tmp/
-#   docker cp bwbuild:/librdkafka-0.9.0.tar.gz tmp/
-#   docker cp bwbuild:/bottledwater-ext.tar.gz tmp/
-#   docker cp bwbuild:/bottledwater-bin.tar.gz tmp/
-#   (Now type `exit` in the bash shell above.)
+#   $ make docker
 #
-# See the other Dockerfiles in this directory for using those build artifacts.
+# See the Makefile and the other Dockerfiles in this directory for more
+# detail on how the build artifacts are used.
 
 FROM postgres:9.4
 
