@@ -44,4 +44,4 @@ notifications:
   email: false
 branches:
   only:
-    - debian
+    - /^debian(-.*)?$/
