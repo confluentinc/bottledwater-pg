@@ -23,7 +23,7 @@ script:
   # try installing the package we built on the build host.  N.B. that means
   # installing the DIST=precise build on the (trusty) build host, so that might
   # not work...!
-  - for i in ./debian/pbuilder-hooks/*-apt.*.sh; do sudo $i; done && sudo apt-get update
+  - 'for i in ./debian/pbuilder-hooks/*-apt.*.sh; do echo "+$i"; sudo $i; echo "-$i: $?"; done && sudo apt-get update'
   - sudo dpkg -i --force-depends ../bottledwater*.deb && sudo apt-get install -y --fix-broken
   - test -x /usr/bin/bottledwater && { bottledwater || true; } || { echo Package failed to install; false; }
 after_success:
