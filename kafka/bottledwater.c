@@ -140,7 +140,12 @@ void usage() {
             "                          Set topic configuration property for Kafka producer.\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
-            progname, DEFAULT_REPLICATION_SLOT, DEFAULT_BROKER_LIST, DEFAULT_SCHEMA_REGISTRY, DEFAULT_OUTPUT_FORMAT_NAME);
+
+            progname,
+            DEFAULT_REPLICATION_SLOT,
+            DEFAULT_BROKER_LIST,
+            DEFAULT_SCHEMA_REGISTRY,
+            DEFAULT_OUTPUT_FORMAT_NAME);
     exit(1);
 }
 
@@ -206,7 +211,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     if (context->output_format == OUTPUT_FORMAT_AVRO && !context->registry) {
         init_schema_registry(context, DEFAULT_SCHEMA_REGISTRY);
     } else if (context->output_format == OUTPUT_FORMAT_JSON && context->registry) {
-        fprintf(stderr, "Specifying --schema-registry doesn't make sense for --output-format=json\n");
+        fprintf(stderr,
+                "Specifying --schema-registry doesn't make sense for "
+                "--output-format=json\n");
         usage();
     }
 }
@@ -242,7 +249,8 @@ void set_output_format(producer_context_t context, char *format) {
     } else if (!strcmp("json", format)) {
         context->output_format = OUTPUT_FORMAT_JSON;
     } else {
-        fprintf(stderr, "invalid output format (expected avro or json): %s\n", format);
+        fprintf(stderr,
+                "invalid output format (expected avro or json): %s\n", format);
         exit(1);
     }
 }
@@ -329,8 +337,8 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
     producer_context_t context = (producer_context_t) _context;
     const char *topic_name = avro_schema_name(row_schema);
 
-    table_metadata_t table = table_mapper_update(context->mapper, relid,
-            topic_name, key_schema_json, key_schema_len, row_schema_json, row_schema_len);
+    table_metadata_t table = table_mapper_update(context->mapper, relid, topic_name,
+            key_schema_json, key_schema_len, row_schema_json, row_schema_len);
 
     if (!table) {
         fprintf(stderr, "%s: %s\n", progname, context->mapper->error);
@@ -395,30 +403,39 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     switch (context->output_format) {
     case OUTPUT_FORMAT_JSON:
         err = json_encode_msg(table,
-                key_bin, key_len, (char **) &key, &key_encoded_len, val_bin, val_len, (char **) &val, &val_encoded_len);
+                key_bin, key_len, (char **) &key, &key_encoded_len,
+                val_bin, val_len, (char **) &val, &val_encoded_len);
 
         if (err) {
-            fprintf(stderr, "%s: error %s encoding JSON for topic %s\n", progname, strerror(err), rd_kafka_topic_name(table->topic));
+            fprintf(stderr,
+                    "%s: error %s encoding JSON for topic %s\n",
+                    progname, strerror(err), rd_kafka_topic_name(table->topic));
             exit_nicely(context, 1);
         }
         break;
     case OUTPUT_FORMAT_AVRO:
         err = schema_registry_encode_msg(table->key_schema_id, table->row_schema_id,
-                key_bin, key_len, &key, &key_encoded_len, val_bin, val_len, &val, &val_encoded_len);
+                key_bin, key_len, &key, &key_encoded_len,
+                val_bin, val_len, &val, &val_encoded_len);
 
         if (err) {
-            fprintf(stderr, "%s: error %s encoding Avro for topic %s\n", progname, strerror(err), rd_kafka_topic_name(table->topic));
+            fprintf(stderr,
+                    "%s: error %s encoding Avro for topic %s\n",
+                    progname, strerror(err), rd_kafka_topic_name(table->topic));
             exit_nicely(context, 1);
         }
         break;
     default:
-        fprintf(stderr, "%s: invalid output format %s\n", progname, output_format_name(context->output_format));
+        fprintf(stderr,
+                "%s: invalid output format %s\n",
+                progname, output_format_name(context->output_format));
         exit_nicely(context, 1);
     }
 
     bool enqueued = false;
     while (!enqueued) {
-        int err = rd_kafka_produce(table->topic, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
+        int err = rd_kafka_produce(table->topic,
+                RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
                 val, val == NULL ? 0 : val_encoded_len,
                 key, key == NULL ? 0 : key_encoded_len,
                 envelope);
@@ -591,9 +608,14 @@ void start_producer(producer_context_t context) {
         exit(1);
     }
 
-    context->mapper = table_mapper_new(context->kafka, context->topic_conf, context->registry);
+    context->mapper = table_mapper_new(
+            context->kafka,
+            context->topic_conf,
+            context->registry);
 
-    fprintf(stderr, "Writing messages to Kafka in %s format\n", output_format_name(context->output_format));
+    fprintf(stderr,
+            "Writing messages to Kafka in %s format\n",
+            output_format_name(context->output_format));
 }
 
 /* Shuts everything down and exits the process. */
