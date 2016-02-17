@@ -8,9 +8,6 @@
  *
  *  * {"id": {"int": 1}} // an integer key
  *  * {"id": {"int": 3}, "title": {"string": "Man Bites Dog"}} // a row with two fields
- *
- * N.B. the output JSON does contain whitespace (as in the above examples), and
- * so may be rejected by strict JSON parsers.
  */
 
 #include "json.h"
