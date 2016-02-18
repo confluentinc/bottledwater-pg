@@ -9,10 +9,11 @@
 #include "table_mapper.h"
 
 #include <stdarg.h>
+#include <string.h>
 
 
 table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid);
-int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* topic_name);
+int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* table_name);
 int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, int is_key, const char* schema_json, size_t schema_len);
 void table_metadata_set_schema_id(table_metadata_t table, int is_key, int schema_id);
 void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t new_schema);
@@ -26,13 +27,15 @@ void mapper_error(table_mapper_t mapper, char *fmt, ...) __attribute__ ((format 
 /* Creates a new table_mapper.  Takes references to (but does not adopt
  * ownership of) the Kafka producer connection and topic configuration (so it
  * can create the topics associated with each table), and the schema registry
- * client (so it can register schemas and retrieve schema ids).
+ * client (so it can register schemas and retrieve schema ids).  Takes a copy
+ * of topic_prefix (unless it is NULL).
  *
  * The registry parameter may be NULL if running without a schema registry. */
 table_mapper_t table_mapper_new(
         rd_kafka_t *kafka,
         rd_kafka_topic_conf_t *topic_conf,
-        schema_registry_t registry) {
+        schema_registry_t registry,
+        const char *topic_prefix) {
     table_mapper_t mapper = malloc(sizeof(table_mapper));
     memset(mapper, 0, sizeof(table_mapper));
 
@@ -43,6 +46,10 @@ table_mapper_t table_mapper_new(
     mapper->kafka = kafka;
     mapper->topic_conf = topic_conf;
     mapper->registry = registry;
+
+    if (topic_prefix != NULL) {
+        mapper->topic_prefix = strdup(topic_prefix);
+    }
 
     return mapper;
 }
@@ -59,7 +66,7 @@ table_metadata_t table_mapper_lookup(table_mapper_t mapper, Oid relid) {
 
 /* Updates the metadata for the table with the given relid, replacing any
  * previously known metadata.  Re-updating an already known relid with the
- * same topic name and schemas is idempotent.  Otherwise, there are a couple of
+ * same table name and schemas is idempotent.  Otherwise, there are a couple of
  * side effects:
  *
  *  * will open the named topic, closing the old one if necessary.
@@ -68,20 +75,20 @@ table_metadata_t table_mapper_lookup(table_mapper_t mapper, Oid relid) {
  * Returns the updated metadata record on success, or NULL on failure.  Consult
  * mapper->error for the error message on failure. */
 table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
-        const char* topic_name,
+        const char* table_name,
         const char* key_schema_json, size_t key_schema_len,
         const char* row_schema_json, size_t row_schema_len) {
     table_metadata_t table = table_mapper_lookup(mapper, relid);
     if (table) {
-        logf("Updating metadata for table %" PRIu32 " (topic \"%s\")\n", relid, topic_name);
+        logf("Updating metadata for table %" PRIu32 " (topic \"%s\")\n", relid, table_name);
     } else {
-        logf("Registering metadata for table %" PRIu32 " (topic \"%s\")\n", relid, topic_name);
+        logf("Registering metadata for table %" PRIu32 " (topic \"%s\")\n", relid, table_name);
         table = table_metadata_new(mapper, relid);
     }
 
     int err;
 
-    err = table_metadata_update_topic(mapper, table, topic_name);
+    err = table_metadata_update_topic(mapper, table, table_name);
     if (err) return NULL;
 
     err = table_metadata_update_schema(mapper, table, 1, key_schema_json, key_schema_len);
@@ -96,6 +103,8 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
 /* Destroys the table mapper along with all stored metadata.  Will close any
  * associated topics. */
 void table_mapper_free(table_mapper_t mapper) {
+    if (mapper->topic_prefix) free(mapper->topic_prefix);
+
     for (int i = 0; i < mapper->num_tables; i++) {
         table_metadata_t table = mapper->tables[i];
         table_metadata_free(table);
@@ -127,17 +136,43 @@ table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid) {
 }
 
 /* Returns 0 on success.  On failure, sets mapper->error and returns nonzero. */
-int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* topic_name) {
-    const char* prev_topic_name = NULL;
-    if (table->topic) prev_topic_name = rd_kafka_topic_name(table->topic);
+int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* table_name) {
+    const char* prev_table_name = table->table_name;
 
     if (!table->topic) {
-        logf("Registering topic \"%s\" for table %" PRIu32 "\n", topic_name, table->relid);
-    } else if (strcmp(topic_name, prev_topic_name)) {
-        logf("Registering new topic (was \"%s\", now \"%s\") for table %" PRIu32 "\n", prev_topic_name, topic_name, table->relid);
+        logf("Registering table \"%s\" for relid %" PRIu32 "\n", table_name, table->relid);
+    } else if (strcmp(table_name, prev_table_name)) {
+        logf("Registering new table (was \"%s\", now \"%s\") for relid %" PRIu32 "\n", prev_table_name, table_name, table->relid);
 
+        free(table->table_name);
         rd_kafka_topic_destroy(table->topic);
-    } else return 0; // topic name didn't change, nothing to do
+    } else return 0; // table name didn't change, nothing to do
+
+    table->table_name = strdup(table_name);
+
+    const char *topic_name;
+    /* both branches set topic_name to a pointer we don't need to free,
+     * since rd_kafka_topic_new below is going to copy it anyway */
+    if (mapper->topic_prefix != NULL) {
+        char prefixed_name[TABLE_MAPPER_MAX_TOPIC_LEN];
+        int size = snprintf(prefixed_name, TABLE_MAPPER_MAX_TOPIC_LEN,
+                "%s%c%s",
+                mapper->topic_prefix, TABLE_MAPPER_TOPIC_PREFIX_DELIMITER, table_name);
+
+        if (size >= TABLE_MAPPER_MAX_TOPIC_LEN) {
+            mapper_error(mapper, "prefixed topic name is too long (max %d bytes): prefix %s, table name %s",
+                    TABLE_MAPPER_MAX_TOPIC_LEN, mapper->topic_prefix, table_name);
+            return -1;
+        }
+
+        topic_name = prefixed_name;
+        /* needn't free topic_name because prefixed_name was stack-allocated */
+    } else {
+        topic_name = table_name;
+        /* needn't free topic_name because it aliases table_name which we don't own */
+    }
+
+    logf("Opening Kafka topic \"%s\" for table \"%s\"\n", topic_name, table_name);
 
     table->topic = rd_kafka_topic_new(mapper->kafka, topic_name,
             rd_kafka_topic_conf_dup(mapper->topic_conf));
@@ -244,6 +279,7 @@ void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t
 }
 
 void table_metadata_free(table_metadata_t table) {
+    if (table->table_name) free(table->table_name);
     if (table->topic) {
         rd_kafka_topic_destroy(table->topic);
     }

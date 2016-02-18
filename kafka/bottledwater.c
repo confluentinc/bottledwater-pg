@@ -611,7 +611,8 @@ void start_producer(producer_context_t context) {
     context->mapper = table_mapper_new(
             context->kafka,
             context->topic_conf,
-            context->registry);
+            context->registry,
+            NULL);
 
     fprintf(stderr,
             "Writing messages to Kafka in %s format\n",
