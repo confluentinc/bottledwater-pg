@@ -1,0 +1,27 @@
+#FROM heroku/dod-package-dev:latest
+
+FROM ubuntu:trusty
+
+#RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6609E57DA8BDDEE3E10C90A1387ACAE2E4FD7A7A
+#RUN echo deb http://ppa.launchpad.net/stub/bottledwater/ubuntu trusty main > /etc/apt/sources.list.d/ppa-bottledwater.list
+
+ENV DEBIAN_FRONTEND noninteractive
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cowbuilder \
+        debhelper \
+        fakeroot \
+        git-buildpackage
+
+RUN git config --global user.name Dockerfile.debian
+RUN git config --global user.email docker@example.com
+
+COPY . /tmp/bottledwater
+
+WORKDIR /usr/src
+RUN git clone --depth=50 --branch=debian file:///tmp/bottledwater bottledwater-pg
+
+WORKDIR /usr/src/bottledwater-pg
+RUN git checkout -qf $(git rev-parse HEAD)

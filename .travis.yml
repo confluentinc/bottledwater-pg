@@ -1,0 +1,47 @@
+sudo: required
+dist: trusty
+os: linux
+env:
+  global:
+    - ARCH=amd64
+    - secure: XgxYSh3wo7lxQOqCJ6G9vd73MYPPngc7Zo5DqeHtnnUkTKF0YmYgK8wh7/y9vBqeEYmZ7qkllO4SdhBQdcJkPWJVx8POERp2e6Ge6P/y1XJpKfsvI0SfN0DCir4PBT03PxKRyRfgnYZuddCKSuQNOEPxGTXW1FztKYwYE7BpNggo+ljg0Nox8h9kaF16pVg3KKYqJtCH5jb9AnDSmdX9Cwf/df8r0t7iQ73GyDBnDSkYZMTHf7Zdug71B+HUim45luoTC8IPMVJGk3e1Pl9B4+gzQCNrRnEcxqR1aZuyworwX+SU1dhHX115UkAOHQPARNi2+8KiR5dk5jjTTMDc4bIdu1dG8JGe8DoRDmdiwt1Vr2bVyKkTGNC7tL9paCkULtzhuI9v8adf2f0FqX6qErcnd76w3tPMJVWO0mKR3tOzQTCgMVz0u2OYjdwqaiIAJbQw2G6cY4Hl8vF0fSKjQO/vI4oD2F021vOHvWyGdtZzTi6y/keFKMqrNFR0kIwHZgKB73hrvxFHLbmwbzo6T+zfsZdlunB5lfkPOBCtoJ2nGNcjdHlec01sTtyYPrInkfmdZQYUQE6jDXJ9/RFtG4mT588MTedKHb2egY1Q+/4Emto7dgcbjNoflv0dWpoFKsFwMcg6e8+sEMBPiFHv+NDNbUyvnsurC0ZrBVYayig=
+  matrix:
+    - DIST=precise
+    - DIST=trusty
+cache:
+  apt: true
+  directories:
+    - /var/cache/pbuilder
+before_install:
+  - sudo apt-get update -qq
+install:
+  - sudo apt-get install -qq --no-install-recommends build-essential cowbuilder debhelper fakeroot git-buildpackage
+  - make deb-prepare
+script:
+  - make deb-build
+  - ls ..
+  # try installing the package we built on the build host.  N.B. that means
+  # installing the DIST=precise build on the (trusty) build host, so that might
+  # not work...!
+  - 'for i in ./debian/pbuilder-hooks/*-apt.*.sh; do echo "+$i"; sudo $i; echo "-$i: $?"; done && sudo apt-get update'
+  - sudo dpkg -i --force-depends ../bottledwater*.deb && sudo apt-get install -y --fix-broken
+  - test -x /usr/bin/bottledwater && { bottledwater || true; } || { echo Package failed to install; false; }
+after_success:
+  # Need to hide the output here because git obligingly echoes the repo URL,
+  # including the unencrypted token, to the build log
+  - git push --tags https://${GITHUB_OAUTH_TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git >/dev/null 2>/dev/null && echo Pushed tag || echo Failed to push tag
+deploy:
+ provider: packagecloud
+ repository: dod
+ username: heroku
+ token:
+   secure: "gklrGnY0vldIl1hC2GwgBfU4NruHjx8zsqAhs3dB/DNlHEEDgaGm7X27aVob4SPXH8NUVPN5ex54LCdDEgNecdVmdkmqxA7jxAJgGnGbxMgmJ4EpaQwoLtdJs/opdeKm2qvYzdBoR3Npcf9PHvpA6IYbhYaXuRFzYSTaF3tGb3wmNuOccqNoB5QDB+uiyfW86gkhsAJONBNdnwPBLvC4F6tM2fCWUL1SKwFiFVDJJ6HCEGiO2ctU8OJHxq7emC0OEj9Gr19hZwX/6Hm61573qd42Or223NflYB5sdiEeVinfDQl564SoMXXEHyQ8ikqxh2DZC0iawpHlYy2rzEjnwflCBGCbpu9tBMQxNkAO+A6B6hcOLWjVQYe91vTlS8lyfJ213tUXQS1MEwDk21HcB+/LI8ldJP69wiVyIRnbP/LhZNSTc1zdMLUwlFpXDM/JDe2xm+fyMTmMDMavdChUBYzf0uFV3vA7xfp3wtqO/xMDp0PVNpzZHlRifdKwWSd31dl7y6cokT5vdmyOW+UovTypKoEQIb46if6TOElC/rKvE2U+od/l3oQGQB4Xagf+YVo2ttBtzo73Ly5qX0JEF299t3FfpSw0EGaegIPibaQgD+H683iygImXH0Qu+xv7rWLcbwcD8j/B+nTb5VDatQ/9HslwFJC0V/CWk7Uw8ec="
+ dist: "ubuntu/$DIST"
+ package_glob: "$HOME/result/*.deb"
+ on:
+   all_branches: true
+notifications:
+  email: false
+branches:
+  only:
+    - /^debian(-.*)?$/

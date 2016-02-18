@@ -1,0 +1,44 @@
+Source: bottledwater
+Section: database
+Priority: optional
+Maintainer: Sam Stokes <me@samstokes.co.uk>
+Build-Depends:
+    debhelper (>= 9), pkg-config,
+    postgresql-server-dev-9.4, libpq-dev (<< 9.5), libsnappy-dev, libjansson-dev,
+    libcurl4-openssl-dev, libavro-dev, libavro, libjansson4,
+    librdkafka-dev (>> 0.8.5), librdkafka1 (>> 0.8.5)
+Standards-Version: 3.9.5
+Homepage: https://github.com/confluentinc/bottledwater-pg
+#Vcs-Git: git://anonscm.debian.org/collab-maint/bottledwater.git
+#Vcs-Browser: http://anonscm.debian.org/?p=collab-maint/bottledwater.git;a=summary
+
+Package: bottledwater
+Architecture: any
+Depends:
+    ${shlibs:Depends}, ${misc:Depends},
+    libpq5, libsnappy1, libjansson4, curl, libavro, librdkafka1 (>> 0.8.4)
+Description: Bottled Water, Change Data Capture from PostgreSQL to Kafka.
+ Bottled Water uses PostgreSQL 9.4's logical replication feature to
+ replicate databases in real-time into Apache's Kafka messaging-system.
+ This Change Data Capture system can publish your relational database
+ updates throughout your systems.
+ .
+ This package contains the replication daemon. It connects to
+ a PostgreSQL 9.4 server with the postgresql-9.4-bottledwater
+ package installed and Kafka.
+
+Package: postgresql-9.4-bottledwater
+Architecture: any
+Depends:
+    ${shlibs:Depends}, ${misc:Depends},
+    libpq5, libsnappy1, libjansson4, curl, libavro, librdkafka1 (>> 0.8.5),
+    postgresql-9.4
+Description: Bottled Water, Change Data Capture from PostgreSQL to Kafka.
+ Bottled Water uses PostgreSQL 9.4's logical replication feature to
+ replicate databases in real-time into Apache's Kafka messaging-system.
+ This Change Data Capture system can publish your relational database
+ updates throughout your systems.
+ .
+ This package contains the replication daemon. It connects to
+ a PostgreSQL 9.4 server with the postgresql-9.4-bottledwater
+ package installed and Kafka.
