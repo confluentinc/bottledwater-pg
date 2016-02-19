@@ -508,7 +508,7 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
     msg_envelope_t envelope = (msg_envelope_t) msg->_private;
 
     if (msg->err) {
-        fprintf(stderr, "%s: Message delivery failed: %s\n", progname, rd_kafka_message_errstr(msg));
+        fprintf(stderr, "%s: Message delivery failed: %s\n", progname, rd_kafka_err2str(msg->err));
         exit_nicely(envelope->context, 1);
     } else {
         // Message successfully delivered to Kafka
