@@ -80,9 +80,9 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
         const char* row_schema_json, size_t row_schema_len) {
     table_metadata_t table = table_mapper_lookup(mapper, relid);
     if (table) {
-        logf("Updating metadata for table %" PRIu32 " (topic \"%s\")\n", relid, table_name);
+        logf("Updating metadata for table %s (relid %" PRIu32 ")\n", table_name, relid);
     } else {
-        logf("Registering metadata for table %" PRIu32 " (topic \"%s\")\n", relid, table_name);
+        logf("Registering metadata for table %s (relid %" PRIu32 ")\n", table_name, relid);
         table = table_metadata_new(mapper, relid);
     }
 
