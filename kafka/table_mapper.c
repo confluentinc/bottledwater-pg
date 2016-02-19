@@ -139,14 +139,14 @@ table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid) {
 int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* table_name) {
     const char* prev_table_name = table->table_name;
 
-    if (!table->topic) {
-        logf("Registering table \"%s\" for relid %" PRIu32 "\n", table_name, table->relid);
-    } else if (strcmp(table_name, prev_table_name)) {
-        logf("Registering new table (was \"%s\", now \"%s\") for relid %" PRIu32 "\n", prev_table_name, table_name, table->relid);
+    if (table->topic) {
+        if (strcmp(table_name, prev_table_name)) {
+            logf("Registering new table (was \"%s\", now \"%s\") for relid %" PRIu32 "\n", prev_table_name, table_name, table->relid);
 
-        free(table->table_name);
-        rd_kafka_topic_destroy(table->topic);
-    } else return 0; // table name didn't change, nothing to do
+            free(table->table_name);
+            rd_kafka_topic_destroy(table->topic);
+        } else return 0; // table name didn't change, nothing to do
+    }
 
     table->table_name = strdup(table_name);
 
