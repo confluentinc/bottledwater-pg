@@ -25,12 +25,14 @@ schema-registry:
   environment:
     SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: none
 postgres:
-  image: local-postgres-bw:dev
+  build: ./tmp
+  dockerfile: Dockerfile.postgres
   hostname: postgres
   ports:
     - '45432:5432'
 bottledwater:
-  image: local-bottledwater:dev
+  build: ./tmp
+  dockerfile: Dockerfile.client
   hostname: bottledwater
   links:
     - postgres

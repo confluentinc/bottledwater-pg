@@ -17,6 +17,9 @@ clean:
 
 docker: docker-client docker-postgres
 
+docker-compose: docker
+	docker-compose build
+
 tmp:
 	mkdir tmp
 
