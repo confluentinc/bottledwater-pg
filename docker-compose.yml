@@ -25,12 +25,12 @@ schema-registry:
   environment:
     SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: none
 postgres:
-  image: confluent/postgres-bw:0.1
+  image: local-postgres-bw:dev
   hostname: postgres
   ports:
     - '45432:5432'
 bottledwater:
-  image: confluent/bottledwater:0.1
+  image: local-bottledwater:dev
   hostname: bottledwater
   links:
     - postgres
