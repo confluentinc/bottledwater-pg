@@ -1,0 +1,50 @@
+zookeeper:
+  image: confluent/zookeeper
+  hostname: zookeeper
+  ports:
+    - '42181:2181'
+    - '42888:2888'
+    - '43888:3888'
+kafka:
+  image: confluent/kafka
+  hostname: kafka
+  links:
+    - zookeeper
+  environment:
+    KAFKA_LOG_CLEANUP_POLICY: compact
+  ports:
+    - '49092:9092'
+schema-registry:
+  image: confluent/schema-registry
+  hostname: schema-registry
+  links:
+    - zookeeper
+    - kafka
+  ports:
+    - '48081:8081'
+  environment:
+    SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: none
+postgres:
+  image: confluent/postgres-bw:0.1
+  hostname: postgres
+  ports:
+    - '45432:5432'
+bottledwater:
+  image: confluent/bottledwater:0.1
+  hostname: bottledwater
+  links:
+    - postgres
+    - kafka
+    - schema-registry
+psql:
+  image: postgres:9.4
+  links:
+    - postgres
+  command: 'sh -c ''exec psql -h "$POSTGRES_PORT_5432_TCP_ADDR" -p "$POSTGRES_PORT_5432_TCP_PORT" -U postgres'''
+kcc:
+  image: confluent/tools
+  links:
+    - zookeeper
+    - kafka
+    - schema-registry
+  entrypoint: ['/confluent-tools.sh', 'kafka-avro-console-consumer']
