@@ -6,10 +6,6 @@ module StringLogger
     @stringio ||= StringIO.new
     @logger ||= Logger.new(@stringio)
   end
-
-  def dump_logs!
-    puts @stringio.string
-  end
 end
 
 RSpec.configure do |config|
@@ -17,10 +13,10 @@ RSpec.configure do |config|
 
   config.around(:example) do |example|
     example.run
-    if example.exception
+    if example.exception && @logger
       puts "Dumping logs due to failed example:"
       puts "-----------------------------------"
-      dump_logs!
+      puts @stringio.string
     end
   end
 end
