@@ -12,7 +12,7 @@ class TestCluster
     # TODO this probably needs to change for boot2docker
     @host = 'localhost'
     # TODO probably need to detect this
-    ENV['KAFKA_ADVERTISED_HOST_NAME'] = '172.17.0.1'
+    self.kafka_advertised_host_name = '172.17.0.1'
 
     self.kafka_auto_create_topics_enable = true
   end
@@ -51,6 +51,10 @@ class TestCluster
 
   def stopped?
     @state == :stopped
+  end
+
+  def kafka_advertised_host_name=(hostname)
+    ENV['KAFKA_ADVERTISED_HOST_NAME'] = hostname
   end
 
   def kafka_auto_create_topics_enable=(enabled)
