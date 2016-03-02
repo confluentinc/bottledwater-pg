@@ -1,3 +1,4 @@
+require 'docker'
 require 'docker/compose'
 require 'kazoo'
 require 'pg'
@@ -6,11 +7,14 @@ require 'socket'
 class TestCluster
   def initialize
     @compose = Docker::Compose.new
+    @docker = Docker.new
 
     # TODO this probably needs to change for boot2docker
     @host = 'localhost'
     # TODO probably need to detect this
     ENV['KAFKA_ADVERTISED_HOST_NAME'] = '172.17.0.1'
+
+    self.kafka_auto_create_topics_enable = true
   end
 
   def start
@@ -49,6 +53,10 @@ class TestCluster
     @state == :stopped
   end
 
+  def kafka_auto_create_topics_enable=(enabled)
+    ENV['KAFKA_AUTO_CREATE_TOPICS_ENABLE'] = enabled.to_s
+  end
+
   def postgres
     check_started!
     @postgres
@@ -76,6 +84,10 @@ class TestCluster
 
   def kafka_hostport
     "#{kafka_host}:#{kafka_port}"
+  end
+
+  def bottledwater_running?
+    container_for_service('bottledwater-json').status == 'running'
   end
 
   def stop
@@ -116,6 +128,13 @@ class TestCluster
     end
 
     mapped_port
+  end
+
+  def container_for_service(service)
+    check_started!
+    id_output = @compose.run!(:ps, {q: true}, service)
+    return nil if id_output.nil?
+    @docker.inspect(id_output.strip)
   end
 
   def check_started!
