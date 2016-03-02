@@ -35,6 +35,7 @@ PLATFORMS
 DEPENDENCIES
   docker-compose (>= 0.4.2)
   kafka-consumer
+  kazoo-ruby
   pg
   rspec
 

@@ -1,4 +1,5 @@
 require 'docker/compose'
+require 'kazoo'
 require 'pg'
 require 'socket'
 
@@ -25,6 +26,7 @@ class TestCluster
       TCPSocket.open(@host, port).close
       true
     end
+    @kazoo = Kazoo::Cluster.new("#{@host}:#{@zookeeper_port}")
 
     @kafka_port = wait_for_port(:kafka, 9092) do |port|
       TCPSocket.open(@host, port).close
@@ -54,6 +56,11 @@ class TestCluster
     "#{@host}:#{@zookeeper_port}"
   end
 
+  def kazoo
+    check_started!
+    @kazoo
+  end
+
   def kafka_host
     check_started!
     @host
@@ -71,6 +78,7 @@ class TestCluster
   def stop
     return unless started?
 
+    kazoo.close rescue nil
     postgres.close rescue nil
 
     @compose.stop
