@@ -6,5 +6,5 @@ before_install:
 install:
   - make test-deps
 script:
-  - make docker
+  - make docker-compose
   - make test
