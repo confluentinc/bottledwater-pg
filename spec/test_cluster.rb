@@ -11,6 +11,11 @@ class TestCluster
 
     # TODO this probably needs to change for boot2docker
     @host = 'localhost'
+
+    reset
+  end
+
+  def reset
     # TODO probably need to detect this
     self.kafka_advertised_host_name = '172.17.0.1'
 
@@ -102,6 +107,8 @@ class TestCluster
 
     @compose.stop
     @compose.run! :rm, f: true
+
+    reset
 
     @state = :stopped
   end
