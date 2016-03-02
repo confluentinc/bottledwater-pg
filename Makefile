@@ -15,6 +15,12 @@ clean:
 	$(MAKE) -C client clean
 	$(MAKE) -C kafka clean
 
+test-deps:
+	bundle install
+
+test: test-deps
+	bundle exec rspec
+
 docker: docker-client docker-postgres
 
 docker-compose: docker
