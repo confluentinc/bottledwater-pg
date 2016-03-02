@@ -1,3 +1,11 @@
+# N.B. assumes you have set the environment variable
+# KAFKA_ADVERTISED_HOST_NAME, in the environment of the host where you are
+# running docker-compose, to the IP address of the Docker host.
+#
+# You can determine the Docker host IP with a command like (on Linux):
+#
+#   ip -o -4 addr show dev docker0 | awk '{sub(/\/[0-9]+$/, "", $4); print $4}'
+
 zookeeper:
   image: confluent/zookeeper
   hostname: zookeeper
@@ -10,6 +18,7 @@ kafka:
     - zookeeper
   environment:
     KAFKA_LOG_CLEANUP_POLICY: compact
+    KAFKA_ADVERTISED_HOST_NAME:
   ports:
     - '9092:9092'
 schema-registry:
