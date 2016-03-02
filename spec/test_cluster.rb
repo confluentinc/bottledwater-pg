@@ -14,6 +14,8 @@ class TestCluster
   end
 
   def start
+    raise "cluster already #{state}!" if started?
+
     @compose.up(:kafka, :postgres, detached: true)
 
     pg_port = wait_for_port(:postgres, 5432, max_tries: 10) do |port|
