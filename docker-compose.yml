@@ -3,8 +3,6 @@ zookeeper:
   hostname: zookeeper
   ports:
     - '42181:2181'
-    - '42888:2888'
-    - '43888:3888'
 kafka:
   image: confluent/kafka
   hostname: kafka
