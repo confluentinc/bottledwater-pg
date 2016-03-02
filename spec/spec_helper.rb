@@ -1,3 +1,5 @@
+require 'kafka_helpers'
+
 require 'logger'
 require 'stringio'
 
@@ -10,6 +12,7 @@ end
 
 RSpec.configure do |config|
   config.include StringLogger
+  config.include KafkaHelpers
 
   config.around(:example) do |example|
     example.run
