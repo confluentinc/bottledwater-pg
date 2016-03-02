@@ -36,6 +36,7 @@ class TestCluster
     end
 
     @compose.up('bottledwater-json', detached: true)
+    sleep 1
 
     @state = :started
   end
