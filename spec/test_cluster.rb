@@ -121,6 +121,8 @@ class TestCluster
     print "Waiting for #{service} on port #{mapped_port}..."
     tries = 0
     loop do
+      sleep 1
+
       tries += 1
       begin
         if yield mapped_port
@@ -134,8 +136,6 @@ class TestCluster
       end
 
       raise "#{service} not ready after #{max_tries} attempts" if tries >= max_tries
-
-      sleep 1
     end
 
     mapped_port
