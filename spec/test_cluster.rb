@@ -98,7 +98,7 @@ class TestCluster
   end
 
   def bottledwater_running?
-    container_for_service('bottledwater-json').status == 'running'
+    container_for_service('bottledwater-json').to_h.fetch('State').fetch('Running')
   end
 
   def stop
@@ -133,7 +133,7 @@ class TestCluster
   def wait_for_container(service, max_tries: 5)
     wait_for(service, max_tries: max_tries) do
       container = container_for_service(service)
-      if container && container.status == 'running'
+      if container && container.to_h.fetch('State').fetch('Running')
         container
       else
         nil
