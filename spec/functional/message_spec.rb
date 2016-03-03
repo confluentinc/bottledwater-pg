@@ -38,7 +38,7 @@ describe 'publishing messages', functional: true do
 
   example 'deleting a row in Postgres should publish a null message to Kafka' do
     postgres.exec('CREATE TABLE widgets (id SERIAL PRIMARY KEY, widget TEXT)')
-    postgres.exec("INSERT INTO widgets (widget) VALUES ('Hello')")
+    postgres.exec_params('INSERT INTO widgets (widget) VALUES ($1)', ['Hello'])
     postgres.exec('DELETE FROM widgets'); # no WHERE, don't try this at home
     sleep 1
 
@@ -51,8 +51,8 @@ describe 'publishing messages', functional: true do
 
   example 'updating a row in Postgres should publish the new value to Kafka' do
     postgres.exec('CREATE TABLE gadgets (id SERIAL PRIMARY KEY, gadget TEXT)')
-    postgres.exec("INSERT INTO gadgets (gadget) VALUES ('Hello')")
-    postgres.exec("UPDATE gadgets SET gadget = 'Goodbye'"); # no WHERE, don't try this at home
+    postgres.exec_params('INSERT INTO gadgets (gadget) VALUES ($1)', ['Hello'])
+    postgres.exec_params('UPDATE gadgets SET gadget = $1', ['Goodbye']); # no WHERE, don't try this at home
     sleep 1
 
     messages = kafka_take_messages('gadgets', 2)
