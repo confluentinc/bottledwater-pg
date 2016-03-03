@@ -44,8 +44,10 @@ class TestCluster
       true
     end
 
+    @state = :starting
+
     @compose.up('bottledwater-json', detached: true)
-    sleep 1
+    wait_for_container('bottledwater-json')
 
     @state = :started
   end
@@ -128,6 +130,17 @@ class TestCluster
     end
   end
 
+  def wait_for_container(service, max_tries: 5)
+    wait_for(service, max_tries: max_tries) do
+      container = container_for_service(service)
+      if container && container.status == 'running'
+        container
+      else
+        nil
+      end
+    end
+  end
+
   def wait_for(service, message: service, max_tries:)
     print "Waiting for #{message}..."
     tries = 0
@@ -155,10 +168,14 @@ class TestCluster
   end
 
   def container_for_service(service)
-    check_started!
+    check_started! unless starting?
     id_output = @compose.run!(:ps, {q: true}, service)
     return nil if id_output.nil?
     @docker.inspect(id_output.strip)
+  end
+
+  def starting?
+    @state == :starting
   end
 
   def check_started!
