@@ -118,14 +118,27 @@ class TestCluster
     mapped_hostport = @compose.port(service, port)
     _, mapped_port = mapped_hostport.split(':', 2)
     mapped_port = Integer(mapped_port)
-    print "Waiting for #{service} on port #{mapped_port}..."
+
+    wait_for(service, message: "#{service} on port #{mapped_port}", max_tries: max_tries) do
+      if yield mapped_port
+        mapped_port
+      else
+        nil
+      end
+    end
+  end
+
+  def wait_for(service, message: service, max_tries:)
+    print "Waiting for #{message}..."
     tries = 0
+    result = nil
     loop do
       sleep 1
 
       tries += 1
       begin
-        if yield mapped_port
+        result = yield
+        if result
           puts ' OK'
           break
         else
@@ -138,7 +151,7 @@ class TestCluster
       raise "#{service} not ready after #{max_tries} attempts" if tries >= max_tries
     end
 
-    mapped_port
+    result
   end
 
   def container_for_service(service)
