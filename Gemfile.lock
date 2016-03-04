@@ -35,6 +35,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  backticks
   docker
   docker-compose (>= 0.4.2)
   kafka-consumer

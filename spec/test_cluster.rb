@@ -1,3 +1,4 @@
+require 'backticks'
 require 'docker'
 require 'docker/compose'
 require 'kazoo'
@@ -6,7 +7,10 @@ require 'socket'
 
 class TestCluster
   def initialize
-    @compose = Docker::Compose.new
+    # override Docker::Compose's default interactive: true
+    runner = Backticks::Runner.new(interactive: false)
+    @compose = Docker::Compose::Session.new(runner)
+
     @docker = Docker.new
 
     # TODO this probably needs to change for boot2docker
