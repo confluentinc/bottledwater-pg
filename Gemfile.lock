@@ -2,6 +2,7 @@ GEM
   remote: https://rubygems.org/
   specs:
     backticks (0.4.0)
+    coderay (1.1.1)
     diff-lcs (1.2.5)
     docker (0.3.1)
       backticks (~> 0.3)
@@ -13,8 +14,13 @@ GEM
     kazoo-ruby (0.4.0)
       thor (~> 0.19.1)
       zookeeper (~> 1.4)
+    method_source (0.8.2)
     pg (0.18.4)
     poseidon (0.0.5)
+    pry (0.10.3)
+      coderay (~> 1.1.0)
+      method_source (~> 0.8.1)
+      slop (~> 3.4)
     rspec (3.4.0)
       rspec-core (~> 3.4.0)
       rspec-expectations (~> 3.4.0)
@@ -28,6 +34,7 @@ GEM
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.4.0)
     rspec-support (3.4.1)
+    slop (3.6.0)
     thor (0.19.1)
     zookeeper (1.4.11)
 
@@ -41,6 +48,7 @@ DEPENDENCIES
   kafka-consumer
   kazoo-ruby
   pg
+  pry
   rspec
 
 BUNDLED WITH
