@@ -8,4 +8,7 @@ install:
 script:
   - sed -i "s/172\.17\.0\.1/$(docker run debian:jessie ip route | sed -n 's/^default via \(.*\) dev .*/\1/p')/" spec/test_cluster.rb
   - make docker-compose
-  - make test
+  - make test 2>make-test.err
+after_failure:
+  - "echo Tests failed, stderr was:"
+  - cat make-test.err
