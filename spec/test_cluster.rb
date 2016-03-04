@@ -2,6 +2,7 @@ require 'backticks'
 require 'docker'
 require 'docker/compose'
 require 'kazoo'
+require 'logger'
 require 'pg'
 require 'socket'
 
@@ -15,6 +16,8 @@ class TestCluster
 
     # TODO this probably needs to change for boot2docker
     @host = 'localhost'
+
+    @logger = Logger.new($stderr)
 
     reset
   end
@@ -146,7 +149,7 @@ class TestCluster
   end
 
   def wait_for(service, message: service, max_tries:)
-    print "Waiting for #{message}..."
+    @logger << "Waiting for #{message}..."
     tries = 0
     result = nil
     loop do
@@ -156,13 +159,13 @@ class TestCluster
       begin
         result = yield
         if result
-          puts ' OK'
+          @logger << " OK\n"
           break
         else
-          print '.'
+          @logger << '.'
         end
       rescue
-        print "not ready: #$! "
+        @logger << "not ready: #$! "
       end
 
       raise "#{service} not ready after #{max_tries} attempts" if tries >= max_tries
