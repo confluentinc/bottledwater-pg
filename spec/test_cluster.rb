@@ -27,6 +27,8 @@ class TestCluster
     self.kafka_advertised_host_name = '172.17.0.1'
 
     self.kafka_auto_create_topics_enable = true
+
+    self.bottledwater_format = :json
   end
 
   def start
@@ -40,21 +42,20 @@ class TestCluster
     @postgres = PG::Connection.open(host: @host, port: pg_port, user: 'postgres')
     @postgres.exec('CREATE EXTENSION IF NOT EXISTS bottledwater')
 
-    @zookeeper_port = wait_for_port(:zookeeper, 2181) do |port|
-      TCPSocket.open(@host, port).close
-      true
-    end
+    @zookeeper_port = wait_for_tcp_port(:zookeeper, 2181)
     @kazoo = Kazoo::Cluster.new("#{@host}:#{@zookeeper_port}")
 
-    @kafka_port = wait_for_port(:kafka, 9092) do |port|
-      TCPSocket.open(@host, port).close
-      true
+    @kafka_port = wait_for_tcp_port(:kafka, 9092)
+
+    if schema_registry_needed?
+      @compose.up('schema-registry', detached: true)
+      @schema_registry_port = wait_for_tcp_port('schema-registry', 8081)
     end
 
     @state = :starting
 
-    @compose.up('bottledwater-json', detached: true)
-    wait_for_container('bottledwater-json')
+    @compose.up(bottledwater_service, detached: true)
+    wait_for_container(bottledwater_service)
 
     @state = :started
   end
@@ -73,6 +74,16 @@ class TestCluster
 
   def kafka_auto_create_topics_enable=(enabled)
     ENV['KAFKA_AUTO_CREATE_TOPICS_ENABLE'] = enabled.to_s
+  end
+
+  attr_accessor :bottledwater_format
+
+  def bottledwater_service
+    :"bottledwater-#{bottledwater_format}"
+  end
+
+  def schema_registry_needed?
+    bottledwater_format == :avro
   end
 
   def postgres
@@ -105,7 +116,7 @@ class TestCluster
   end
 
   def bottledwater_running?
-    container_for_service('bottledwater-json').to_h.fetch('State').fetch('Running')
+    container_for_service(bottledwater_service).to_h.fetch('State').fetch('Running')
   end
 
   def stop
@@ -123,6 +134,13 @@ class TestCluster
   end
 
   private
+  def wait_for_tcp_port(service, port, max_tries: 5)
+    wait_for_port(service, port) do |mapped_port|
+      TCPSocket.open(@host, mapped_port).close
+      true
+    end
+  end
+
   def wait_for_port(service, port, max_tries: 5)
     mapped_hostport = @compose.port(service, port)
     _, mapped_port = mapped_hostport.split(':', 2)

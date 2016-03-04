@@ -1,24 +1,31 @@
 require 'spec_helper'
 
 describe 'smoke test', functional: true do
-  before(:context) do
-    require 'test_cluster'
-    TEST_CLUSTER.start
-  end
 
-  after(:context) do
-    TEST_CLUSTER.stop
-  end
+  %i(json avro).map do |format|
 
-  let(:postgres) { TEST_CLUSTER.postgres }
+    describe "#{format} format" do
+      before(:context) do
+        require 'test_cluster'
+        TEST_CLUSTER.bottledwater_format = format
+        TEST_CLUSTER.start
+      end
 
-  example 'inserting rows in Postgres should publish messages to Kafka' do
-    postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
-    postgres.exec('INSERT INTO things (thing) SELECT * FROM generate_series(1, 10) AS thing')
-    sleep 1
+      after(:context) do
+        TEST_CLUSTER.stop
+      end
 
-    messages = kafka_take_messages('things', 10)
+      let(:postgres) { TEST_CLUSTER.postgres }
 
-    expect(messages.size).to eq 10
+      example 'inserting rows in Postgres should publish messages to Kafka' do
+        postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+        postgres.exec('INSERT INTO things (thing) SELECT * FROM generate_series(1, 10) AS thing')
+        sleep 1
+
+        messages = kafka_take_messages('things', 10)
+
+        expect(messages.size).to eq 10
+      end
+    end
   end
 end
