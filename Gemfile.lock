@@ -3,8 +3,8 @@ GEM
   specs:
     backticks (0.4.0)
     diff-lcs (1.2.5)
-    docker-compose (0.4.1)
-      backticks (~> 0.3)
+    docker-compose (0.4.3)
+      backticks (~> 0.4)
     kafka-consumer (0.1.2)
       kazoo-ruby (~> 0.4.0)
       poseidon (~> 0.0.5)
@@ -33,7 +33,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  docker-compose
+  docker-compose (>= 0.4.2)
   kafka-consumer
   pg
   rspec
