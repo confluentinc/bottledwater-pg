@@ -19,7 +19,7 @@ test-deps:
 	bundle install
 
 test: test-deps
-	bundle exec rspec
+	bundle exec rspec --order random
 
 docker: docker-client docker-postgres
 
