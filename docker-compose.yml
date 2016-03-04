@@ -14,24 +14,51 @@ kafka:
     KAFKA_LOG_CLEANUP_POLICY: compact
   ports:
     - '49092:9092'
+schema-registry:
+  image: confluent/schema-registry
+  hostname: schema-registry
+  links:
+    - zookeeper
+    - kafka
+  ports:
+    - '48081:8081'
+  environment:
+    SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: none
 postgres:
   build: ./tmp
   dockerfile: Dockerfile.postgres
   hostname: postgres
   ports:
     - '45432:5432'
-bottledwater:
+bottledwater-json:
   build: ./tmp
   dockerfile: Dockerfile.client
   hostname: bottledwater
   links:
     - postgres
     - kafka
+  command: --output-format=json --allow-unkeyed
+bottledwater-avro:
+  build: ./tmp
+  dockerfile: Dockerfile.client
+  hostname: bottledwater
+  links:
+    - postgres
+    - kafka
+    - schema-registry
+  command: --output-format=avro --allow-unkeyed
 psql:
   image: postgres:9.4
   links:
     - postgres
   command: 'sh -c ''exec psql -h "$POSTGRES_PORT_5432_TCP_ADDR" -p "$POSTGRES_PORT_5432_TCP_PORT" -U postgres'''
+kafka-avro-console-consumer:
+  image: confluent/tools
+  links:
+    - zookeeper
+    - kafka
+    - schema-registry
+  entrypoint: ['/confluent-tools.sh', 'kafka-avro-console-consumer']
 kafka-tools:
   image: confluent/tools
   links:
