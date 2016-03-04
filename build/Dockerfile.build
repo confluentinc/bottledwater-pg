@@ -18,42 +18,59 @@
 
 FROM postgres:9.4
 
+ENV LIBRDKAFKA_VERSION=0.9.0 \
+    LIBRDKAFKA_SHASUM="e7d0d5bbaed8c6b163bdcc74274b7c1608b4d8a06522c4fed1856986aee0a71a  librdkafka-0.9.0.tar.gz" \
+    AVRO_C_VERSION=1.7.7 \
+    AVRO_C_SHASUM="69b56580f4cc63acbc49825153664ead44abdf1ff8f6f3511d5877533a745a66  avro-c-1.7.7.tar.gz"
+
 RUN apt-get update && \
     # --force-yes is needed because we are downgrading libpq5 to $PG_VERSION
     # (set by the postgres:9.4 Docker image).  Confusingly the postgres:9.4
     # Docker image includes libpq5 version 9.5.x, which we are not yet
     # compatible with, even though the Postgres version (and $PG_VERSION) are
     # 9.4.x.
-    apt-get install -y --force-yes \
+    apt-get install -y --no-install-recommends --force-yes \
         build-essential \
+        ca-certificates \
         cmake \
         curl \
         libcurl4-openssl-dev \
         libjansson-dev \
-        libpq5=${PG_VERSION} \
-        libpq-dev=${PG_VERSION} \
+        libpq5=${PG_MAJOR}\* \
+        libpq-dev=${PG_MAJOR}\* \
         pkg-config \
-        postgresql-server-dev-9.4=${PG_VERSION}
+        postgresql-server-dev-${PG_MAJOR}=${PG_MAJOR}\*
 
 # Avro
-RUN curl -o /root/avro-c-1.7.7.tar.gz -SL http://archive.apache.org/dist/avro/avro-1.7.7/c/avro-c-1.7.7.tar.gz && \
-    tar -xzf /root/avro-c-1.7.7.tar.gz -C /root && \
-    mkdir /root/avro-c-1.7.7/build && \
-    cd /root/avro-c-1.7.7/build && \
+RUN curl -o /root/avro-c-${AVRO_C_VERSION}.tar.gz -SL "http://archive.apache.org/dist/avro/avro-${AVRO_C_VERSION}/c/avro-c-${AVRO_C_VERSION}.tar.gz" && \
+    cd /root && \
+    echo ${AVRO_C_SHASUM} | sha256sum -c && \
+    tar -xzf /root/avro-c-${AVRO_C_VERSION}.tar.gz -C /root && \
+    mkdir /root/avro-c-${AVRO_C_VERSION}/build && \
+    cd /root/avro-c-${AVRO_C_VERSION}/build && \
     cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
     make && make test && make install && cd / && \
-    tar czf avro-1.7.7.tar.gz usr/local/include/avro usr/local/lib/libavro* usr/local/lib/pkgconfig/avro-c.pc
+    strip /usr/local/lib/libavro.so.22.0.0 && \
+    strip /usr/local/lib/libavro.so && \
+    rm /root/avro-c-${AVRO_C_VERSION}.tar.gz && \
+    tar czf avro-${AVRO_C_VERSION}.tar.gz usr/local/include/avro usr/local/lib/libavro* usr/local/lib/pkgconfig/avro-c.pc
 
 # librdkafka
-RUN curl -o /root/librdkafka-0.9.0.tar.gz -SL https://github.com/edenhill/librdkafka/archive/v0.9.0.tar.gz && \
-    tar -xzf /root/librdkafka-0.9.0.tar.gz -C /root && \
-    cd /root/librdkafka-0.9.0 && ./configure && make && make install && cd / && \
-    tar czf librdkafka-0.9.0.tar.gz usr/local/include/librdkafka usr/local/lib/librdkafka*
+RUN curl -o /root/librdkafka-${LIBRDKAFKA_VERSION}.tar.gz -SL "https://github.com/edenhill/librdkafka/archive/v$LIBRDKAFKA_VERSION.tar.gz" && \
+    cd /root && \
+    echo ${LIBRDKAFKA_SHASUM} | sha256sum -c && \
+    tar -xzf /root/librdkafka-${LIBRDKAFKA_VERSION}.tar.gz -C /root && \
+    cd /root/librdkafka-${LIBRDKAFKA_VERSION} && ./configure && make && make install && cd / && \
+    strip usr/local/lib/librdkafka.so.1 && \
+    strip usr/local/lib/librdkafka++.so.1 && \
+    rm /root/librdkafka-${LIBRDKAFKA_VERSION}.tar.gz && \
+    tar czf librdkafka-${LIBRDKAFKA_VERSION}.tar.gz usr/local/include/librdkafka usr/local/lib/librdkafka*
 
 # Bottled Water
 COPY . /root/bottledwater
 RUN cd /root/bottledwater && \
     make clean && make && make install && cd / && \
-    tar czf bottledwater-ext.tar.gz usr/lib/postgresql/9.4/lib/bottledwater.so usr/share/postgresql/9.4/extension/bottledwater* && \
+    strip usr/lib/postgresql/${PG_MAJOR}/lib/bottledwater.so && \
+    tar czf bottledwater-ext.tar.gz usr/lib/postgresql/${PG_MAJOR}/lib/bottledwater.so usr/share/postgresql/${PG_MAJOR}/extension/bottledwater* && \
     cp /root/bottledwater/kafka/bottledwater /root/bottledwater/client/bwtest /usr/local/bin && \
     tar czf bottledwater-bin.tar.gz usr/local/bin/bottledwater usr/local/bin/bwtest
