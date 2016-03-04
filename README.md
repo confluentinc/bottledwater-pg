@@ -111,6 +111,20 @@ by tab). Now go back to the `psql` terminal, and change some data — insert, up
 some rows in the `test` table. You should see the changes swiftly appear in the Kafka
 consumer terminal.
 
+There is also a helper script - `build_docker_infra.sh` - that builds the above Docker infrastructure
+given the PostgreSQL version (9.4 or 9.5 at the moment). It also allows to stop and remove all the
+created containers by it. Please make sure it's executed from the `build/` directory, it can be used
+to remove all old versions of the images created. A few examples:
+
+    $ cd build/
+    # Recommended when building the Docker infrastructure for the first time:
+    $ ./build_docker_infra.sh -b 9.4
+
+    # To rebuild the infrastructure:
+    $ ./build_docker_infra.sh -r -b 9.4
+
+    # To rebuild the infrastructure in PostgreSQL 9.5:
+    $ ./build_docker_infra.sh -r -b 9.5
 
 Building from source
 --------------------
