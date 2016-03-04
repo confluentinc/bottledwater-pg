@@ -4,6 +4,7 @@ require 'docker/compose'
 require 'kazoo'
 require 'logger'
 require 'pg'
+require 'schema_registry'
 require 'socket'
 
 class TestCluster
@@ -49,7 +50,12 @@ class TestCluster
 
     if schema_registry_needed?
       @compose.up('schema-registry', detached: true)
-      @schema_registry_port = wait_for_tcp_port('schema-registry', 8081)
+      schema_registry = nil
+      wait_for_port('schema-registry', 8081, max_tries: 10) do |port|
+        schema_registry = SchemaRegistry::Client.new("http://#{@host}:#{port}")
+        schema_registry.subjects rescue nil
+      end
+      @schema_registry = schema_registry
     end
 
     @state = :starting

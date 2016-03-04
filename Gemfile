@@ -8,6 +8,7 @@ group :development do
   gem 'kafka-consumer'
   gem 'kazoo-ruby'
   gem 'pg'
+  gem 'schema_registry'
 
   gem 'pry'
 end
