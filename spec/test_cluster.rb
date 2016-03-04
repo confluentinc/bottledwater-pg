@@ -125,6 +125,8 @@ class TestCluster
     kazoo.close rescue nil
     postgres.close rescue nil
 
+    failed_services.each {|container| dump_container_logs(container) }
+
     @compose.stop
     @compose.run! :rm, f: true
 
@@ -208,6 +210,39 @@ class TestCluster
     when :started; return
     when nil; raise 'cluster not started'
     else; raise "cluster #{@state}"
+    end
+  end
+
+  def failed_services
+    ps_output = @compose.run!(:ps).
+      split("\n").
+      drop(2) # header rows
+    container_names = ps_output.map {|line| line.strip.split.first }
+    containers = container_names.map {|name| @docker.inspect(name) }
+    containers.select {|container| container.exit_code != 0 }
+  end
+
+  def dump_container_logs(container)
+    logs_command = @docker.shell.run(:docker, :logs, container.id).join
+    unless logs_command.status.success?
+      @logger.warn "Failed to capture logs for container #{container.name} (exit code #{container.exit_code})"
+      return
+    end
+    stdout = logs_command.captured_output
+    stderr = logs_command.captured_error
+    unless stdout.strip.empty?
+      @logger << "Stdout from container #{container.name} (exit code #{container.exit_code})\n"
+      @logger << ('-' * 80 + "\n")
+      @logger << stdout
+      @logger << "\n"
+      @logger << ('-' * 80 + "\n")
+    end
+    unless stderr.strip.empty?
+      @logger << "Stdout from container #{container.name} (exit code #{container.exit_code})\n"
+      @logger << ('-' * 80 + "\n")
+      @logger << stderr
+      @logger << "\n"
+      @logger << ('-' * 80 + "\n")
     end
   end
 end
