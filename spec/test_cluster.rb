@@ -51,7 +51,7 @@ class TestCluster
     if schema_registry_needed?
       @compose.up('schema-registry', detached: true)
       schema_registry = nil
-      wait_for_port('schema-registry', 8081, max_tries: 10) do |port|
+      @schema_registry_port = wait_for_port('schema-registry', 8081, max_tries: 10) do |port|
         schema_registry = SchemaRegistry::Client.new("http://#{@host}:#{port}")
         schema_registry.subjects rescue nil
       end
@@ -119,6 +119,11 @@ class TestCluster
 
   def kafka_hostport
     "#{kafka_host}:#{kafka_port}"
+  end
+
+  def schema_registry_url
+    check_started!
+    "http://#{@host}:#{@schema_registry_port}"
   end
 
   def bottledwater_running?

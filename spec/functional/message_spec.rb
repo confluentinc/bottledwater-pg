@@ -1,6 +1,8 @@
 require 'spec_helper'
 
-describe 'publishing messages', functional: true do
+require 'avro/registered_schema_decoder'
+
+shared_examples 'publishing messages' do |format|
   # We only stop the cluster after all examples in the context have run, so
   # state in Postgres, Kafka and Bottled Water can leak between examples.  We
   # therefore need to make sure examples look at different tables, so they
@@ -8,6 +10,7 @@ describe 'publishing messages', functional: true do
 
   before(:context) do
     require 'test_cluster'
+    TEST_CLUSTER.bottledwater_format = format
     TEST_CLUSTER.start
   end
 
@@ -28,12 +31,12 @@ describe 'publishing messages', functional: true do
       expect(messages.size).to eq 10
 
       messages.each_with_index do |message, index|
-        key = JSON.parse message.key
-        value = JSON.parse message.value
+        key = decode_key message.key
+        value = decode_value message.value
 
-        expect(key.fetch('id').fetch('int')).to eq(index + 1)
+        expect(fetch_int(key, 'id')).to eq(index + 1)
 
-        expect(value.fetch('thing').fetch('int')).to eq(index + 1)
+        expect(fetch_int(value, 'thing')).to eq(index + 1)
       end
     end
 
@@ -61,8 +64,8 @@ describe 'publishing messages', functional: true do
       expect(messages[1].key).to eq(messages[0].key)
       expect(messages[0].value).to match(/Hello/)
 
-      new_value = JSON.parse(messages[1].value)
-      expect(new_value.fetch('gadget').fetch('string')).to eq('Goodbye')
+      new_value = decode_value(messages[1].value)
+      expect(fetch_string(new_value, 'gadget')).to eq('Goodbye')
     end
   end
 
@@ -75,8 +78,8 @@ describe 'publishing messages', functional: true do
       messages = kafka_take_messages('logs', 1)
 
       expect(messages[0].key).to be_nil
-      value = JSON.parse(messages[0].value)
-      expect(value.fetch('message').fetch('string')).to eq('Launching missiles')
+      value = decode_value(messages[0].value)
+      expect(fetch_string(value, 'message')).to eq('Launching missiles')
     end
 
     example 'deleting rows should not publish any messages' do
@@ -93,7 +96,7 @@ describe 'publishing messages', functional: true do
 
       message_details = messages.map do |message|
         expect(message.value).not_to be_nil
-        JSON.parse(message.value).fetch('details').fetch('string')
+        fetch_string(decode_value(message.value), 'details')
       end
 
       expect(message_details).to eq(['User 1 signup', 'User 2 signup'])
@@ -109,9 +112,57 @@ describe 'publishing messages', functional: true do
 
       numbers = messages.map do |message|
         expect(message.value).not_to be_nil
-        JSON.parse(message.value).fetch('number').fetch('int')
+        fetch_int(decode_value(message.value), 'number')
       end
       expect(numbers).to eq([42, 43])
     end
   end
+end
+
+shared_context 'JSON format' do
+  def parse(*args); JSON.parse(*args); end
+  alias decode_key parse
+  alias decode_value parse
+
+  def fetch_int(object, name)
+    object.fetch(name).fetch('int')
+  end
+
+  def fetch_string(object, name)
+    object.fetch(name).fetch('string')
+  end
+end
+
+shared_context 'Avro format' do
+  let(:decoder) do
+    Avro::RegisteredSchemaDecoder.new(
+      TEST_CLUSTER.schema_registry_url,
+      logger: logger)
+  end
+
+  def decode_key(*args)
+    decoder.decode_key(*args)
+  end
+
+  def decode_value(*args)
+    decoder.decode_value(*args)
+  end
+
+  def fetch_entry(object, name)
+    object.fetch(name)
+  end
+  alias fetch_int fetch_entry
+  alias fetch_string fetch_entry
+end
+
+describe 'publishing messages (JSON)', functional: true do
+  include_context 'JSON format'
+
+  include_examples 'publishing messages', :json
+end
+
+describe 'publishing messages (Avro)', functional: true do
+  include_context 'Avro format'
+
+  include_examples 'publishing messages', :avro
 end

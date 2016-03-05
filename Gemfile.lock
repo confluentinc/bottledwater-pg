@@ -1,6 +1,11 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    avro (1.8.0)
+      multi_json
+    avro-registered-schema-decoder (0.1.1)
+      avro
+      schema_registry
     backticks (0.4.0)
     coderay (1.1.1)
     diff-lcs (1.2.5)
@@ -15,6 +20,7 @@ GEM
       thor (~> 0.19.1)
       zookeeper (~> 1.4)
     method_source (0.8.2)
+    multi_json (1.11.2)
     pg (0.18.4)
     poseidon (0.0.5)
     pry (0.10.3)
@@ -43,6 +49,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  avro-registered-schema-decoder
   backticks
   docker
   docker-compose (>= 0.4.2)
