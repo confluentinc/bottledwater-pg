@@ -33,7 +33,7 @@ class TestCluster
   end
 
   def start
-    raise "cluster already #{state}!" if started?
+    raise "cluster already #{@state}!" if started?
 
     @compose.up(:kafka, :postgres, detached: true)
 
