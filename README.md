@@ -221,12 +221,31 @@ complain and refuse to start. You can override this with the `--allow-unkeyed` o
 Any inserts and updates to tables without primary key or replica identity will be
 sent to Kafka as messages without a key. Deletes to such tables are not sent to Kafka.
 
-Messages are written to Kafka in a binary Avro encoding, which is efficient, but not
-human-readable. To view the contents of a Kafka topic, you can use the Avro console
-consumer:
+Messages are written to Kafka by default in a binary Avro encoding, which is
+efficient, but not human-readable. To view the contents of a Kafka topic, you can use
+the Avro console consumer:
 
     ./bin/kafka-avro-console-consumer --topic test --zookeeper localhost:2181 \
         --property print.key=true
+
+
+### Output formats
+
+Bottled Water currently supports writing messages to Kafka in one of two output
+formats: Avro, or JSON.  The output format is configured via the `--output-format`
+command-line switch.
+
+Avro is recommended for large scale use, since it uses a much more efficient binary
+encoding for messages, defines rules for [schema
+evolution](http://docs.confluent.io/1.0/avro.html), and is able to faithfully
+represent a wide range of column types.  Avro output requires an instance of the
+[Confluent Schema
+Registry](http://docs.confluent.io/1.0/schema-registry/docs/intro.html) to be running,
+and consumers will need to query the schema registry in order to decode messages.
+
+JSON is ideal for evaluation and prototyping, or integration with languages
+without good Avro library support.  JSON is human readable, and widely supported among
+programming languages.  JSON output does not require a schema registry.
 
 
 Known gotchas with older librdkafka versions
