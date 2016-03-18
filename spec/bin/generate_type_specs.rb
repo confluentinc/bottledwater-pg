@@ -114,7 +114,7 @@ def print_examples(level, type)
     if BOUNDED_LENGTH_TYPES.include?(name)
       value = '1110'
       length = value.size
-      iputs level, %(include_examples 'bit-string type', #{name.inspect}, #{value.inspect}, #{length})
+      iputs level, %(include_examples 'bit-string type', #{name.inspect}, #{value.inspect}, length: #{length})
     else
       iputs level, %(include_examples 'bit-string type', #{name.inspect})
     end
@@ -124,7 +124,7 @@ def print_examples(level, type)
     if BOUNDED_LENGTH_TYPES.include?(name)
       value = 'Hello'
       length = value.size
-      iputs level, %(include_examples 'string type', #{name.inspect}, #{value.inspect}, #{length})
+      iputs level, %(include_examples 'string type', #{name.inspect}, #{value.inspect}, length: #{length})
     else
       iputs level, %(include_examples 'string type', #{name.inspect})
     end

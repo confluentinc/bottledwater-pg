@@ -69,7 +69,7 @@ shared_examples 'database schema support' do |format|
     kafka_take_messages(table_name, 1).first
   end
 
-  shared_examples 'roundtrip type' do |type, value, length = nil|
+  shared_examples 'roundtrip type' do |type, value, length: nil|
     example 'retrieve same value from Kafka as was stored in Postgres' do
       message = retrieve_roundtrip_message(type, value, length: length)
 
@@ -208,16 +208,16 @@ shared_examples 'database schema support' do |format|
     end
   end
 
-  shared_examples 'bit-string type' do |type, value = '00101010', length = nil|
-    include_examples 'roundtrip type', type, value, length
+  shared_examples 'bit-string type' do |type, value = '00101010', length: nil|
+    include_examples 'roundtrip type', type, value, length: length
   end
 
   shared_examples 'numeric type' do |type, value = 42|
     include_examples 'roundtrip type', type, value
   end
 
-  shared_examples 'string type' do |type, value = 'Hello, world!', length = nil|
-    include_examples 'roundtrip type', type, value, length
+  shared_examples 'string type' do |type, value = 'Hello, world!', length: nil|
+    include_examples 'roundtrip type', type, value, length: length
   end
 
 

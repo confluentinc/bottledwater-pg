@@ -21,7 +21,7 @@ shared_examples 'type specs' do
   end
 
   describe 'bit' do
-    include_examples 'bit-string type', "bit", "1110", 4
+    include_examples 'bit-string type', "bit", "1110", length: 4
   end
 
   describe 'bit varying' do
@@ -45,7 +45,7 @@ shared_examples 'type specs' do
   end
 
   describe 'character' do
-    include_examples 'string type', "character", "Hello", 5
+    include_examples 'string type', "character", "Hello", length: 5
   end
 
   describe 'character varying' do
