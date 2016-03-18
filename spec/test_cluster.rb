@@ -147,7 +147,7 @@ class TestCluster
     failed_services.each {|container| dump_container_logs(container) }
 
     @compose.stop
-    @compose.run! :rm, f: true
+    @compose.run! :rm, f: true, v: true
 
     reset if should_reset
 
