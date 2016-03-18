@@ -82,7 +82,7 @@ shared_examples 'database schema support' do |format|
     day + hour * 60 * 60 + min * 60 + sec + usec * 1e-6
   end
 
-  def parse_bottledwater_date_format(date_hash, assume_offset = nil)
+  def parse_bottledwater_date_format(date_hash, assume_offset: nil)
     # e.g. {"year"=>2016, "month"=>3, "day"=>15, "hour"=>21, "minute"=>59, "second"=>30, "micro"=>0, "zoneOffset"=>0}
     year = date_hash['year']
     month = date_hash['month']
@@ -113,21 +113,30 @@ shared_examples 'database schema support' do |format|
     end
   end
 
-  shared_examples 'timestamp' do |type, value = TEST_DATETIME|
+  shared_examples 'date/time type' do |type, value = TEST_DATETIME|
     include DateMatchers
 
-    def format_timestamp(timestamp)
-      timestamp.strftime('%FT%T.%N%:z')
-    end
-
     example 'value comes back in a parseable form with µsec fidelity' do
-      formatted = format_timestamp(value)
+      formatted = format(value)
       message = retrieve_roundtrip_message(type, formatted)
 
       row = decode_value(message.value)
       roundtrip_value = fetch_any(row, 'value')
-      parsed_value = parse_bottledwater_date_format(roundtrip_value, assumed_offset)
-      expect(parsed_value).to equal_up_to_usec(value)
+
+      interpret_and_compare(roundtrip_value, value)
+    end
+  end
+
+  shared_examples 'timestamp' do |type, value = TEST_DATETIME|
+    include_examples 'date/time type', type, value
+
+    def format(timestamp)
+      timestamp.strftime('%FT%T.%N%:z')
+    end
+
+    def interpret_and_compare(received_hash, expected)
+      parsed = parse_bottledwater_date_format(received_hash, assume_offset: assumed_offset)
+      expect(parsed).to equal_up_to_usec(expected)
     end
   end
   shared_examples 'timestamp without time zone' do |value = TEST_DATETIME|
@@ -140,62 +149,43 @@ shared_examples 'database schema support' do |format|
   end
 
   shared_examples 'date' do |value = TEST_DATETIME.to_date|
-    include DateMatchers
+    include_examples 'date/time type', 'date', value
 
-    def format_date(date)
+    def format(date)
       date.to_s
     end
 
-    example 'value comes back in a parseable form with µsec fidelity' do
-      formatted = format_date(value)
-      message = retrieve_roundtrip_message('date', formatted)
-
-      row = decode_value(message.value)
-      roundtrip_value = fetch_any(row, 'value')
-      parsed_value = parse_bottledwater_date_format(roundtrip_value)
-      expect(parsed_value).to eq(value)
+    def interpret_and_compare(received_hash, expected)
+      parsed = parse_bottledwater_date_format(received_hash)
+      expect(parsed).to eq(expected)
     end
   end
 
   shared_examples 'time without time zone' do |value = TEST_DATETIME|
-    include DateMatchers
+    include_examples 'date/time type', 'time without time zone', value
 
-    def format_time(time)
+    def format(time)
       time.strftime('%T.%N%:z')
     end
 
-    before(:example) { postgres.exec("SET timezone = 'UTC'") }
-    after(:example) { postgres.exec('SET timezone = DEFAULT') }
+    def interpret_and_compare(received_usec_since_start_of_day, expected)
+      # interpret the received time in TODAY's timezone
+      today_received = TODAY + received_usec_since_start_of_day * 1e-6
 
-    example 'value comes back in a parseable form with µsec fidelity' do
-      formatted = format_time(value)
-      message = retrieve_roundtrip_message('time without time zone', formatted)
-
-      row = decode_value(message.value)
-      usec_since_start_of_day = fetch_any(row, 'value')
-
-      # interpret the received time in `value`'s timezone
-      today_received = TODAY + usec_since_start_of_day * 1e-6
-
-      expect(today_received).to equal_time_up_to_usec(value)
+      expect(today_received).to equal_time_up_to_usec(expected)
     end
   end
 
   shared_examples 'time with time zone' do |value = TEST_DATETIME|
-    include DateMatchers
+    include_examples 'date/time type', 'time with time zone', value
 
-    def format_time(time)
+    def format(time)
       time.strftime('%T.%N%:z')
     end
 
-    example 'value comes back in a parseable form with µsec fidelity' do
-      formatted = format_time(value)
-      message = retrieve_roundtrip_message('time with time zone', formatted)
-
-      row = decode_value(message.value)
-      roundtrip_value = fetch_any(row, 'value')
-      parsed_value = parse_bottledwater_date_format(roundtrip_value)
-      expect(parsed_value).to equal_up_to_usec(value)
+    def interpret_and_compare(received_hash, expected)
+      parsed = parse_bottledwater_date_format(received_hash)
+      expect(parsed).to equal_time_up_to_usec(expected)
     end
   end
 
