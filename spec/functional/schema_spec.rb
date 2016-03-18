@@ -57,11 +57,12 @@ shared_examples 'database schema support' do |format|
 
   let(:postgres) { TEST_CLUSTER.postgres }
 
-  def retrieve_roundtrip_message(type, value_str, length = nil)
-    table_name = "test_#{type.gsub(/\W/, '_')}"
+  def retrieve_roundtrip_message(type, value_str, as_key: false, length: nil)
+    table_name = "test_#{as_key ? 'key' : 'value'}_#{type.gsub(/\W/, '_')}"
 
     lengthspec = "(#{length})" unless length.nil?
-    postgres.exec(%{CREATE TABLE "#{table_name}" (value #{type}#{lengthspec} NOT NULL)})
+    keyspec = 'PRIMARY KEY' if as_key
+    postgres.exec(%{CREATE TABLE "#{table_name}" (value #{type}#{lengthspec} NOT NULL #{keyspec})})
     postgres.exec_params(%{INSERT INTO "#{table_name}" (value) VALUES ($1)}, [value_str])
     sleep 1 # for topic to be created
 
@@ -70,10 +71,18 @@ shared_examples 'database schema support' do |format|
 
   shared_examples 'roundtrip type' do |type, value, length = nil|
     example 'retrieve same value from Kafka as was stored in Postgres' do
-      message = retrieve_roundtrip_message(type, value, length)
+      message = retrieve_roundtrip_message(type, value, length: length)
 
       row = decode_value(message.value)
       roundtrip_value = fetch_any(row, 'value')
+      expect(roundtrip_value).to eq(value)
+    end
+
+    example 'retrieve same value from Kafka message key as was stored in Postgres' do
+      message = retrieve_roundtrip_message(type, value, as_key: true, length: length)
+
+      key = decode_key(message.key)
+      roundtrip_value = fetch_any(key, 'value')
       expect(roundtrip_value).to eq(value)
     end
   end
@@ -124,6 +133,16 @@ shared_examples 'database schema support' do |format|
       roundtrip_value = fetch_any(row, 'value')
 
       interpret_and_compare(roundtrip_value, value)
+    end
+
+    example 'value comes back in message key in a parseable form with µsec fidelity' do
+      formatted = format(value)
+      message = retrieve_roundtrip_message(type, formatted, as_key: true)
+
+      key = decode_key(message.key)
+      roundtrip_key = fetch_any(key, 'value')
+
+      interpret_and_compare(roundtrip_key, value)
     end
   end
 
