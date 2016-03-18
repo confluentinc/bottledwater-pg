@@ -13,6 +13,10 @@ shared_context 'JSON format' do
   def fetch_string(object, name)
     object.fetch(name).fetch('string')
   end
+
+  def fetch_any(object, name)
+    object.fetch(name).values.first
+  end
 end
 
 shared_context 'Avro format' do
@@ -35,4 +39,5 @@ shared_context 'Avro format' do
   end
   alias fetch_int fetch_entry
   alias fetch_string fetch_entry
+  alias fetch_any fetch_entry
 end

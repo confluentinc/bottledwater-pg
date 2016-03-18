@@ -15,7 +15,10 @@ clean:
 	$(MAKE) -C client clean
 	$(MAKE) -C kafka clean
 
-test-deps:
+spec/functional/type_specs.rb: spec/bin/generate_type_specs.rb
+	bundle exec ruby $< >$@
+
+test-deps: spec/functional/type_specs.rb
 	bundle install
 
 test: test-deps
