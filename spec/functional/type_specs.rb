@@ -17,7 +17,7 @@ shared_examples 'type specs' do
   end
 
   describe 'bigint' do
-    include_examples 'numeric type', "bigint"
+    include_examples 'numeric type', "bigint", 42
   end
 
   describe 'bit' do
@@ -49,7 +49,7 @@ shared_examples 'type specs' do
   end
 
   describe 'character varying' do
-    include_examples 'string type', "character varying"
+    include_examples 'string type', "character varying", "Hello, world!"
   end
 
   describe 'cid' do
@@ -57,7 +57,7 @@ shared_examples 'type specs' do
   end
 
   describe 'cidr' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "cidr", "192.168.1.0/24"
   end
 
   describe 'circle' do
@@ -73,7 +73,7 @@ shared_examples 'type specs' do
   end
 
   describe 'double precision' do
-    include_examples 'numeric type', "double precision"
+    include_examples 'numeric type', "double precision", 42
   end
 
   describe 'gtsvector' do
@@ -81,7 +81,7 @@ shared_examples 'type specs' do
   end
 
   describe 'inet' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "inet", "192.168.1.1/24"
   end
 
   describe 'int2vector' do
@@ -97,7 +97,7 @@ shared_examples 'type specs' do
   end
 
   describe 'integer' do
-    include_examples 'numeric type', "integer"
+    include_examples 'numeric type', "integer", 42
   end
 
   describe 'interval' do
@@ -129,7 +129,7 @@ shared_examples 'type specs' do
       xbug "mysteriously gets multiplied by 100"
     end
 
-    include_examples 'numeric type', "money"
+    include_examples 'numeric type', "money", 42
   end
 
   describe 'name' do
@@ -141,7 +141,7 @@ shared_examples 'type specs' do
       known_bug "replaced by zero", "https://github.com/confluentinc/bottledwater-pg/issues/4"
     end
 
-    include_examples 'numeric type', "numeric"
+    include_examples 'numeric type', "numeric", 42
   end
 
   describe 'numrange' do
@@ -149,7 +149,7 @@ shared_examples 'type specs' do
   end
 
   describe 'oid' do
-    include_examples 'numeric type', "oid"
+    include_examples 'numeric type', "oid", 42
   end
 
   describe 'oidvector' do
@@ -177,7 +177,7 @@ shared_examples 'type specs' do
   end
 
   describe 'real' do
-    include_examples 'numeric type', "real"
+    include_examples 'numeric type', "real", 42
   end
 
   describe 'refcursor' do
@@ -221,7 +221,7 @@ shared_examples 'type specs' do
   end
 
   describe 'smallint' do
-    include_examples 'numeric type', "smallint"
+    include_examples 'numeric type', "smallint", 42
   end
 
   describe 'smgr' do
@@ -229,7 +229,7 @@ shared_examples 'type specs' do
   end
 
   describe 'text' do
-    include_examples 'string type', "text"
+    include_examples 'string type', "text", "Hello, world!"
   end
 
   describe 'tid' do

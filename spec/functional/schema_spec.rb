@@ -212,11 +212,11 @@ shared_examples 'database schema support' do |format|
     include_examples 'roundtrip type', type, value, length: length
   end
 
-  shared_examples 'numeric type' do |type, value = 42|
+  shared_examples 'numeric type' do |type, value|
     include_examples 'roundtrip type', type, value
   end
 
-  shared_examples 'string type' do |type, value = 'Hello, world!', length: nil|
+  shared_examples 'string type' do |type, value, length: nil|
     include_examples 'roundtrip type', type, value, length: length
   end
 

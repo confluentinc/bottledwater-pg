@@ -44,6 +44,14 @@ types = pg.exec(<<-SQL)
   ORDER BY name
 SQL
 
+# add types to this list if they require a more specific literal to create a
+# test value than can be inferred from just their 'typcategory'
+CUSTOM_LITERAL_TYPES = {
+  'cidr'    => '192.168.1.0/24',
+  'inet'    => '192.168.1.1/24',
+  'macaddr' => '08:00:2b:01:02:03',
+}
+
 # add types to this list if the test table needs to explicitly specify the
 # length of the type
 BOUNDED_LENGTH_TYPES = Set[*%w(
@@ -106,32 +114,40 @@ def print_examples(level, type)
     # fall through
   end
 
+  value = CUSTOM_LITERAL_TYPES[name]
+
   # see http://www.postgresql.org/docs/9.5/static/catalog-pg-type.html#CATALOG-TYPCATEGORY-TABLE
   case type.fetch('typcategory')
   when 'B' # boolean
     iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, true)
   when 'V' # bit-string
     if BOUNDED_LENGTH_TYPES.include?(name)
-      value = '1110'
+      value = '1110' if value.nil?
       length = value.size
       iputs level, %(include_examples 'bit-string type', #{name.inspect}, #{value.inspect}, length: #{length})
     else
       iputs level, %(include_examples 'bit-string type', #{name.inspect})
     end
   when 'N' # numeric
-    iputs level,   %(include_examples 'numeric type', #{name.inspect})
+    value = 42 if value.nil?
+    iputs level,   %(include_examples 'numeric type', #{name.inspect}, #{value.inspect})
   when 'S' # string
     if BOUNDED_LENGTH_TYPES.include?(name)
-      value = 'Hello'
+      value = 'Hello' if value.nil?
       length = value.size
       iputs level, %(include_examples 'string type', #{name.inspect}, #{value.inspect}, length: #{length})
     else
-      iputs level, %(include_examples 'string type', #{name.inspect})
+      value = 'Hello, world!' if value.nil?
+      iputs level, %(include_examples 'string type', #{name.inspect}, #{value.inspect})
     end
   when 'D' # date/time
+    raise "Custom literals not implemented for date/time type #{name}" unless value.nil?
     iputs level,   %(include_examples #{name.inspect})
+  when 'I' # inet
+    raise "Please specify custom literal for inet type #{name}" if value.nil?
+    iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{value.inspect})
   else
-    iputs level,   %(pending('should have specs') { fail 'spec not yet implemented' })
+    iputs level,   %(pending('should have specs') { fail 'spec not yet implemented for typcategory #{type['typcategory']}' })
   end
 end
 
