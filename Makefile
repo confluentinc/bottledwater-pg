@@ -15,7 +15,7 @@ clean:
 	$(MAKE) -C client clean
 	$(MAKE) -C kafka clean
 
-spec/functional/type_specs.rb: spec/bin/generate_type_specs.rb
+spec/functional/type_specs.rb: spec/bin/generate_type_specs.rb docker-compose
 	bundle exec ruby $< >$@
 
 test-deps: spec/functional/type_specs.rb

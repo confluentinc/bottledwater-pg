@@ -2,28 +2,13 @@ require 'optparse'
 require 'pg'
 require 'set'
 
-postgres_host = nil
-postgres_port = nil
-postgres_user = nil
-postgres_database = 'postgres'
+require File.expand_path(File.join(File.dirname(__FILE__), '..', 'test_cluster'))
 
 indent_level = 0
 
 OptionParser.new do |opts|
   opts.banner = "Usage: #$PROGRAM_NAME [options]"
 
-  opts.on('-HHOST', '--host=HOST', 'Postgres hostname') do |host|
-    postgres_host = host
-  end
-  opts.on('-pPORT', '--port=PORT', 'Postgres port') do |port|
-    postgres_port = Integer(port)
-  end
-  opts.on('-uUSER', '--user=USER', 'Postgres user') do |user|
-    postgres_user = user
-  end
-  opts.on('-dDATABASE', '--database=DATABASE', 'Postgres database') do |db|
-    postgres_database = db
-  end
   opts.on('-iLEVEL', '--indent=LEVEL', 'Indent level') do |indent|
     indent_level = Integer(indent)
   end
@@ -37,7 +22,11 @@ def iputs(level, *args)
   puts(*args)
 end
 
-pg = PG::Connection.open(host: postgres_host, port: postgres_port, user: postgres_user, dbname: postgres_database)
+TEST_CLUSTER.bottledwater_format = :json # skip schema registry
+TEST_CLUSTER.start
+at_exit { TEST_CLUSTER.stop }
+pg = TEST_CLUSTER.postgres
+
 types = pg.exec(<<-SQL)
   SELECT
     -- get e.g. 'timestamp with time zone' instead of 'timestamptz'
