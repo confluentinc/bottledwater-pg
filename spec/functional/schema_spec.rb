@@ -214,6 +214,32 @@ shared_examples 'database schema support' do |format|
 
   include_examples 'type specs'
 
+
+  describe 'table with no columns' do
+    after(:example) do
+      # this is known to crash Postgres
+      unless TEST_CLUSTER.healthy?
+        TEST_CLUSTER.restart
+      end
+    end
+
+    example 'sends empty messages' do
+      xbug 'seems to crash Postgres!'
+
+      table_name = 'zero_columns'
+
+      postgres.exec(%{CREATE TABLE "#{table_name}" ()})
+      postgres.exec(%{INSERT INTO "#{table_name}" DEFAULT VALUES})
+      sleep 1 # for topic to be created
+
+      message = kafka_take_messages(table_name, 1).first
+
+      expect(message.value).to_not be_nil
+      row = decode_value(message.value)
+      expect(row).to be_empty
+    end
+  end
+
 end
 
 

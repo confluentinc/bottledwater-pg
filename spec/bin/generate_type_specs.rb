@@ -91,6 +91,7 @@ KNOWN_BUGS = {
 
 # only use this list during development, otherwise file an issue!
 UNKNOWN_BUGS = {
+  'money' => 'mysteriously gets multiplied by 100',
 }
 
 def print_examples(level, type)

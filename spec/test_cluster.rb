@@ -126,11 +126,19 @@ class TestCluster
     "http://#{@host}:#{@schema_registry_port}"
   end
 
-  def bottledwater_running?
-    container_for_service(bottledwater_service).to_h.fetch('State').fetch('Running')
+  def healthy?
+    postgres_running? && bottledwater_running?
   end
 
-  def stop
+  def postgres_running?
+    service_running?(:postgres)
+  end
+
+  def bottledwater_running?
+    service_running?(bottledwater_service)
+  end
+
+  def stop(should_reset: true)
     return unless started?
 
     kazoo.close rescue nil
@@ -141,12 +149,21 @@ class TestCluster
     @compose.stop
     @compose.run! :rm, f: true
 
-    reset
+    reset if should_reset
 
     @state = :stopped
   end
 
+  def restart
+    stop(should_reset: false)
+    start
+  end
+
   private
+  def service_running?(service)
+    container_for_service(service).to_h.fetch('State').fetch('Running')
+  end
+
   def wait_for_tcp_port(service, port, max_tries: 5)
     wait_for_port(service, port) do |mapped_port|
       TCPSocket.open(@host, mapped_port).close
