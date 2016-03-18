@@ -7,6 +7,7 @@ GEM
       avro
       schema_registry
     backticks (0.4.0)
+    byebug (8.2.2)
     coderay (1.1.1)
     diff-lcs (1.2.5)
     docker (0.3.1)
@@ -27,6 +28,9 @@ GEM
       coderay (~> 1.1.0)
       method_source (~> 0.8.1)
       slop (~> 3.4)
+    pry-byebug (3.3.0)
+      byebug (~> 8.0)
+      pry (~> 0.10)
     rspec (3.4.0)
       rspec-core (~> 3.4.0)
       rspec-expectations (~> 3.4.0)
@@ -57,6 +61,7 @@ DEPENDENCIES
   kazoo-ruby
   pg
   pry
+  pry-byebug
   rspec
   schema_registry
 

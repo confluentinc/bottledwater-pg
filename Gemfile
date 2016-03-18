@@ -12,4 +12,5 @@ group :development do
   gem 'schema_registry'
 
   gem 'pry'
+  gem 'pry-byebug'
 end
