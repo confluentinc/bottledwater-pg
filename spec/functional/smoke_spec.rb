@@ -24,10 +24,10 @@ shared_examples 'smoke test' do |format|
   end
 end
 
-describe 'smoke test (JSON)', functional: true do
+describe 'smoke test (JSON)', functional: true, format: :json do
   it_should_behave_like 'smoke test', :json
 end
 
-describe 'smoke test (Avro)', functional: true do
+describe 'smoke test (Avro)', functional: true, format: :avro do
   it_should_behave_like 'smoke test', :avro
 end

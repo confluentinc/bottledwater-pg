@@ -1,7 +1,7 @@
 require 'avro/registered_schema_decoder'
 
 
-shared_context 'JSON format' do
+shared_context 'JSON format', format: :json do
   def parse(*args); JSON.parse(*args); end
   alias decode_key parse
   alias decode_value parse
@@ -19,7 +19,7 @@ shared_context 'JSON format' do
   end
 end
 
-shared_context 'Avro format' do
+shared_context 'Avro format', format: :avro do
   let(:decoder) do
     Avro::RegisteredSchemaDecoder.new(
       TEST_CLUSTER.schema_registry_url,

@@ -119,14 +119,10 @@ shared_examples 'publishing messages' do |format|
 end
 
 
-describe 'publishing messages (JSON)', functional: true do
-  include_context 'JSON format'
-
+describe 'publishing messages (JSON)', functional: true, format: :json do
   include_examples 'publishing messages', :json
 end
 
-describe 'publishing messages (Avro)', functional: true do
-  include_context 'Avro format'
-
+describe 'publishing messages (Avro)', functional: true, format: :avro do
   include_examples 'publishing messages', :avro
 end

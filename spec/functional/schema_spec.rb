@@ -252,14 +252,10 @@ shared_examples 'database schema support' do |format|
 end
 
 
-describe 'database schema support (JSON)', functional: true do
-  include_context 'JSON format'
-
+describe 'database schema support (JSON)', functional: true, format: :json do
   include_examples 'database schema support', :json
 end
 
-describe 'database schema support (Avro)', functional: true do
-  include_context 'Avro format'
-
+describe 'database schema support (Avro)', functional: true, format: :avro do
   include_examples 'database schema support', :avro
 end
