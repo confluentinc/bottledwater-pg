@@ -15,11 +15,13 @@ clean:
 	$(MAKE) -C client clean
 	$(MAKE) -C kafka clean
 
-spec/functional/type_specs.rb: spec/bin/generate_type_specs.rb docker-compose
+test-bundle: Gemfile.lock
+	bundle install
+
+spec/functional/type_specs.rb: spec/bin/generate_type_specs.rb test-bundle docker-compose
 	bundle exec ruby $< >$@
 
-test-deps: spec/functional/type_specs.rb
-	bundle install
+test-deps: test-bundle spec/functional/type_specs.rb
 
 test: test-deps
 	bundle exec rspec --order random
