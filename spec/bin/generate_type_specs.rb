@@ -96,6 +96,7 @@ INTERNAL_TYPES = Set[*%w(
   regprocedure
   regtype
   reltime
+  tinterval
   txid_snapshot
   unknown
   xid
@@ -176,6 +177,9 @@ def print_examples(level, type)
   when 'R' # range
     raise "Please specify custom literal for range type #{name}" if value.nil?
     iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)})
+  when 'T' # timespan
+    value = '01:23:45.123456' if value.nil?
+    iputs level,   %(include_examples 'interval type', #{name.inspect}, #{genvalue(value)})
   else
     iputs level,   %(pending('should have specs') { fail 'spec not yet implemented for typcategory #{type['typcategory']}' })
   end

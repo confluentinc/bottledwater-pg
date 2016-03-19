@@ -205,6 +205,50 @@ shared_examples 'database schema support' do |format|
     end
   end
 
+  shared_examples 'interval type' do |type, value|
+    # returns a Postgres interval literal equivalent to the received hash
+    def parse_bottledwater_interval_format(interval_hash)
+      second = interval_hash.fetch('second', 0)
+      micro = interval_hash.fetch('micro', 0)
+
+      %w(
+        year
+        month
+        day
+        hour
+        minute
+      ).
+      map do |name|
+        part = interval_hash.fetch(name, 0)
+        "#{part} #{name}s"
+      end.
+      join(' ') + " #{second + 1e-6 * micro} seconds"
+    end
+
+    # rather than bothering with formatting the interval, let's just check that
+    # Postgres interprets the value we parsed the same as the original one we
+    # sent it
+    def postgres_canonicalize(type, formatted)
+      postgres.exec_params("SELECT $1::#{type}", [formatted]).first.values.first
+    end
+
+    example 'value comes back in a parseable form with µsec fidelity' do
+      message = retrieve_roundtrip_message(type, value)
+
+      row = decode_value(message.value)
+      received_interval = parse_bottledwater_interval_format(fetch_any(row, 'value'))
+      expect(postgres_canonicalize(type, received_interval)).to eq(value)
+    end
+
+    example 'value comes back in message key in a parseable form with µsec fidelity' do
+      message = retrieve_roundtrip_message(type, value, as_key: true)
+
+      key = decode_key(message.key)
+      received_interval = parse_bottledwater_interval_format(fetch_any(key, 'value'))
+      expect(postgres_canonicalize(type, received_interval)).to eq(value)
+    end
+  end
+
   shared_examples 'bit-string type' do |type, value = '00101010', length: nil|
     include_examples 'roundtrip type', type, value, length: length
   end

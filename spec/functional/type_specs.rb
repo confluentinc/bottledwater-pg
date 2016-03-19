@@ -105,7 +105,7 @@ shared_examples 'type specs' do
   end
 
   describe 'interval' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'interval type', "interval", "01:23:45.123456"
   end
 
   describe 'json' do
@@ -257,7 +257,7 @@ shared_examples 'type specs' do
   end
 
   describe 'tinterval' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'tsquery' do
