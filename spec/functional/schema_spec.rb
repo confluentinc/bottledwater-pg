@@ -3,11 +3,8 @@ require 'format_contexts'
 require File.join(File.dirname(__FILE__), 'type_specs')
 
 
-# Arbitrary datetime to test with: first commit to Bottled Water (per Git)
-# (plus invented fractional seconds to test roundtrip fidelity)
-TEST_DATETIME = Time.new(2014, 12, 27, 17, 40, 15.123456, '+01:00')
 # freeze "today" to avoid intermittent second-boundary failures
-TODAY =         Time.new(2014, 12, 27, 0,  0,  0,         '+01:00')
+TODAY = Time.new(2015, 12, 27, 0, 0, 0, '+02:00')
 
 
 module DateMatchers
@@ -122,7 +119,7 @@ shared_examples 'database schema support' do |format|
     end
   end
 
-  shared_examples 'date/time type' do |type, value = TEST_DATETIME|
+  shared_examples 'date/time type' do |type, value|
     include DateMatchers
 
     example 'value comes back in a parseable form with µsec fidelity' do
@@ -146,7 +143,7 @@ shared_examples 'database schema support' do |format|
     end
   end
 
-  shared_examples 'timestamp' do |type, value = TEST_DATETIME|
+  shared_examples 'timestamp' do |type, value|
     include_examples 'date/time type', type, value
 
     def format(timestamp)
@@ -158,16 +155,16 @@ shared_examples 'database schema support' do |format|
       expect(parsed).to equal_up_to_usec(expected)
     end
   end
-  shared_examples 'timestamp without time zone' do |value = TEST_DATETIME|
+  shared_examples 'timestamp without time zone' do |value|
     let(:assumed_offset) { value.utc_offset }
     include_examples 'timestamp', 'timestamp without time zone', value
   end
-  shared_examples 'timestamp with time zone' do |value = TEST_DATETIME|
+  shared_examples 'timestamp with time zone' do |value|
     let(:assumed_offset) { nil }
     include_examples 'timestamp', 'timestamp with time zone', value
   end
 
-  shared_examples 'date' do |value = TEST_DATETIME.to_date|
+  shared_examples 'date' do |value|
     include_examples 'date/time type', 'date', value
 
     def format(date)
@@ -180,7 +177,7 @@ shared_examples 'database schema support' do |format|
     end
   end
 
-  shared_examples 'time without time zone' do |value = TEST_DATETIME|
+  shared_examples 'time without time zone' do |value|
     include_examples 'date/time type', 'time without time zone', value
 
     def format(time)
@@ -195,7 +192,7 @@ shared_examples 'database schema support' do |format|
     end
   end
 
-  shared_examples 'time with time zone' do |value = TEST_DATETIME|
+  shared_examples 'time with time zone' do |value|
     include_examples 'date/time type', 'time with time zone', value
 
     def format(time)

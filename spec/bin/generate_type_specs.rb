@@ -44,13 +44,28 @@ types = pg.exec(<<-SQL)
   ORDER BY name
 SQL
 
-# add types to this list if they require a more specific literal to create a
+# Add types to this list if they require a more specific way to create a
 # test value than can be inferred from just their 'typcategory'
-CUSTOM_LITERAL_TYPES = {
+#
+# If the value is a string, it will be escaped (via String#inspect) and
+# included in the generated code as a string literal.  If the value is wrapped
+# in a single-element Array, it will be included unescaped in the generated
+# code.  See function #genvalue below for reference.
+CUSTOM_VALUE_TYPES = {
   'cidr'    => '192.168.1.0/24',
+  'date'    => ['TEST_DATETIME.to_date'],
   'inet'    => '192.168.1.1/24',
   'macaddr' => '08:00:2b:01:02:03',
 }
+def genvalue(value)
+  case value
+  when Array
+    raise "Bad value expression: #{value.inspect}" if value.size != 1
+    value.first
+  else
+    value.inspect
+  end
+end
 
 # add types to this list if the test table needs to explicitly specify the
 # length of the type
@@ -91,6 +106,12 @@ UNKNOWN_BUGS = {
   'money' => 'mysteriously gets multiplied by 100',
 }
 
+def print_constants(level)
+  iputs level, %(# Arbitrary datetime to test with: first commit to Bottled Water (per Git))
+  iputs level, %(# (plus invented fractional seconds to test roundtrip fidelity))
+  iputs level, %(TEST_DATETIME = Time.new(2014, 12, 27, 17, 40, 15.123456, '+01:00'))
+end
+
 def print_examples(level, type)
   name = type.fetch('name')
 
@@ -114,7 +135,7 @@ def print_examples(level, type)
     # fall through
   end
 
-  value = CUSTOM_LITERAL_TYPES[name]
+  value = CUSTOM_VALUE_TYPES[name]
 
   # see http://www.postgresql.org/docs/9.5/static/catalog-pg-type.html#CATALOG-TYPCATEGORY-TABLE
   case type.fetch('typcategory')
@@ -124,28 +145,28 @@ def print_examples(level, type)
     if BOUNDED_LENGTH_TYPES.include?(name)
       value = '1110' if value.nil?
       length = value.size
-      iputs level, %(include_examples 'bit-string type', #{name.inspect}, #{value.inspect}, length: #{length})
+      iputs level, %(include_examples 'bit-string type', #{name.inspect}, #{genvalue(value)}, length: #{length})
     else
       iputs level, %(include_examples 'bit-string type', #{name.inspect})
     end
   when 'N' # numeric
     value = 42 if value.nil?
-    iputs level,   %(include_examples 'numeric type', #{name.inspect}, #{value.inspect})
+    iputs level,   %(include_examples 'numeric type', #{name.inspect}, #{genvalue(value)})
   when 'S' # string
     if BOUNDED_LENGTH_TYPES.include?(name)
       value = 'Hello' if value.nil?
       length = value.size
-      iputs level, %(include_examples 'string type', #{name.inspect}, #{value.inspect}, length: #{length})
+      iputs level, %(include_examples 'string type', #{name.inspect}, #{genvalue(value)}, length: #{length})
     else
       value = 'Hello, world!' if value.nil?
-      iputs level, %(include_examples 'string type', #{name.inspect}, #{value.inspect})
+      iputs level, %(include_examples 'string type', #{name.inspect}, #{genvalue(value)})
     end
   when 'D' # date/time
-    raise "Custom literals not implemented for date/time type #{name}" unless value.nil?
-    iputs level,   %(include_examples #{name.inspect})
+    value = ['TEST_DATETIME'] if value.nil?
+    iputs level,   %(include_examples #{name.inspect}, #{genvalue(value)})
   when 'I' # inet
     raise "Please specify custom literal for inet type #{name}" if value.nil?
-    iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{value.inspect})
+    iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)})
   else
     iputs level,   %(pending('should have specs') { fail 'spec not yet implemented for typcategory #{type['typcategory']}' })
   end
@@ -158,6 +179,8 @@ iputs 0,     %(### not manually edited.)
 iputs 0,     %(### This is to make it easier to maintain tests for all supported Postgres)
 iputs 0,     %(### types, even as extensions or new Postgres versions add new types.)
 iputs 0,     ('#' * 80)
+puts
+print_constants(0)
 puts
 iputs 0,     %(shared_examples 'type specs' do)
 puts

@@ -6,6 +6,10 @@
 ### types, even as extensions or new Postgres versions add new types.
 ################################################################################
 
+# Arbitrary datetime to test with: first commit to Bottled Water (per Git)
+# (plus invented fractional seconds to test roundtrip fidelity)
+TEST_DATETIME = Time.new(2014, 12, 27, 17, 40, 15.123456, '+01:00')
+
 shared_examples 'type specs' do
 
   describe 'abstime' do
@@ -65,7 +69,7 @@ shared_examples 'type specs' do
   end
 
   describe 'date' do
-    include_examples "date"
+    include_examples "date", TEST_DATETIME.to_date
   end
 
   describe 'daterange' do
@@ -237,19 +241,19 @@ shared_examples 'type specs' do
   end
 
   describe 'timestamp without time zone' do
-    include_examples "timestamp without time zone"
+    include_examples "timestamp without time zone", TEST_DATETIME
   end
 
   describe 'timestamp with time zone' do
-    include_examples "timestamp with time zone"
+    include_examples "timestamp with time zone", TEST_DATETIME
   end
 
   describe 'time without time zone' do
-    include_examples "time without time zone"
+    include_examples "time without time zone", TEST_DATETIME
   end
 
   describe 'time with time zone' do
-    include_examples "time with time zone"
+    include_examples "time with time zone", TEST_DATETIME
   end
 
   describe 'tinterval' do
