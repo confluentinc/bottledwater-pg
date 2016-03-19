@@ -73,7 +73,7 @@ shared_examples 'type specs' do
   end
 
   describe 'daterange' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "daterange", "[1837-06-20,1901-01-22)"
   end
 
   describe 'double precision' do
@@ -93,11 +93,11 @@ shared_examples 'type specs' do
   end
 
   describe 'int4range' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "int4range", "[1,5)"
   end
 
   describe 'int8range' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "int8range", "[1,5)"
   end
 
   describe 'integer' do
@@ -149,7 +149,7 @@ shared_examples 'type specs' do
   end
 
   describe 'numrange' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "numrange", "[1,5)"
   end
 
   describe 'oid' do
@@ -265,11 +265,11 @@ shared_examples 'type specs' do
   end
 
   describe 'tsrange' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "tsrange", "[\"1837-06-20 00:00:00\",\"1901-01-22 00:00:00\")"
   end
 
   describe 'tstzrange' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "tstzrange", "[\"1837-06-20 00:00:00+00\",\"1901-01-22 00:00:00+00\")"
   end
 
   describe 'tsvector' do

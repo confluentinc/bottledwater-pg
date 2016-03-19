@@ -54,8 +54,14 @@ SQL
 CUSTOM_VALUE_TYPES = {
   'cidr'    => '192.168.1.0/24',
   'date'    => ['TEST_DATETIME.to_date'],
+  'daterange' => '[1837-06-20,1901-01-22)', # the reign of Queen Victoria
   'inet'    => '192.168.1.1/24',
+  'int4range' => '[1,5)',
+  'int8range' => '[1,5)',
   'macaddr' => '08:00:2b:01:02:03',
+  'numrange' => '[1,5)',
+  'tsrange' =>   '["1837-06-20 00:00:00","1901-01-22 00:00:00")',
+  'tstzrange' => '["1837-06-20 00:00:00+00","1901-01-22 00:00:00+00")',
 }
 def genvalue(value)
   case value
@@ -166,6 +172,9 @@ def print_examples(level, type)
     iputs level,   %(include_examples #{name.inspect}, #{genvalue(value)})
   when 'I' # inet
     raise "Please specify custom literal for inet type #{name}" if value.nil?
+    iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)})
+  when 'R' # range
+    raise "Please specify custom literal for range type #{name}" if value.nil?
     iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)})
   else
     iputs level,   %(pending('should have specs') { fail 'spec not yet implemented for typcategory #{type['typcategory']}' })
