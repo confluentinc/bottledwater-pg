@@ -109,11 +109,11 @@ shared_examples 'type specs' do
   end
 
   describe 'json' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'JSON type', "json", {"service"=>"bottledwater", "pid"=>2634}
   end
 
   describe 'jsonb' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'JSON type', "jsonb", {"service"=>"bottledwater", "pid"=>2634}
   end
 
   describe 'line' do
@@ -125,7 +125,7 @@ shared_examples 'type specs' do
   end
 
   describe 'macaddr' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "macaddr", '08:00:2b:01:02:03'
   end
 
   describe 'money' do
@@ -293,7 +293,8 @@ shared_examples 'type specs' do
   end
 
   describe 'xml' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    # xml can't be in a primary key because it can't be indexed directly
+    include_examples 'roundtrip type', "xml", "<person name=\"Abraham Lincoln\"><occupations><occupation title=\"President\" /></occupations></person>", as_key: false
   end
 
 end

@@ -57,7 +57,6 @@ CUSTOM_VALUE_TYPES = {
   # inet types
   'cidr'    => '192.168.1.0/24',
   'inet'    => '192.168.1.1/24',
-  'macaddr' => '08:00:2b:01:02:03',
 
   # range types
   'int4range' => '[1,5)',
@@ -162,44 +161,59 @@ def print_examples(level, type)
   # see http://www.postgresql.org/docs/9.5/static/catalog-pg-type.html#CATALOG-TYPCATEGORY-TABLE
   case type.fetch('typcategory')
   when 'B' # boolean
-    iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, true)
+    iputs level,     %(include_examples 'roundtrip type', #{name.inspect}, true)
   when 'V' # bit-string
     if BOUNDED_LENGTH_TYPES.include?(name)
       value = '1110' if value.nil?
       length = value.size
-      iputs level, %(include_examples 'bit-string type', #{name.inspect}, #{genvalue(value)}, length: #{length})
+      iputs level,   %(include_examples 'bit-string type', #{name.inspect}, #{genvalue(value)}, length: #{length})
     else
-      iputs level, %(include_examples 'bit-string type', #{name.inspect})
+      iputs level,   %(include_examples 'bit-string type', #{name.inspect})
     end
   when 'N' # numeric
     value = 42 if value.nil?
-    iputs level,   %(include_examples 'numeric type', #{name.inspect}, #{genvalue(value)})
+    iputs level,     %(include_examples 'numeric type', #{name.inspect}, #{genvalue(value)})
   when 'S' # string
     if BOUNDED_LENGTH_TYPES.include?(name)
       value = 'Hello' if value.nil?
       length = value.size
-      iputs level, %(include_examples 'string type', #{name.inspect}, #{genvalue(value)}, length: #{length})
+      iputs level,   %(include_examples 'string type', #{name.inspect}, #{genvalue(value)}, length: #{length})
     else
       value = 'Hello, world!' if value.nil?
-      iputs level, %(include_examples 'string type', #{name.inspect}, #{genvalue(value)})
+      iputs level,   %(include_examples 'string type', #{name.inspect}, #{genvalue(value)})
     end
   when 'D' # date/time
     value = ['TEST_DATETIME'] if value.nil?
-    iputs level,   %(include_examples #{name.inspect}, #{genvalue(value)})
+    iputs level,     %(include_examples #{name.inspect}, #{genvalue(value)})
   when 'I' # inet
     raise "Please specify custom literal for inet type #{name}" if value.nil?
-    iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)})
+    iputs level,     %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)})
   when 'R' # range
     raise "Please specify custom literal for range type #{name}" if value.nil?
-    iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)})
+    iputs level,     %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)})
   when 'T' # timespan
     value = '01:23:45.123456' if value.nil?
-    iputs level,   %(include_examples 'interval type', #{name.inspect}, #{genvalue(value)})
+    iputs level,     %(include_examples 'interval type', #{name.inspect}, #{genvalue(value)})
   when 'G' # geo
     raise "Please specify custom literal for geometric type #{name}" if value.nil?
-    iputs level,   %(include_examples 'geometric type', #{name.inspect}, #{genvalue(value)})
+    iputs level,     %(include_examples 'geometric type', #{name.inspect}, #{genvalue(value)})
+  when 'U' # user-defined
+    raise "Custom literal not supported for user-defined types (#{name})" unless value.nil?
+    case name
+    when 'json', 'jsonb'
+      value = {'service' => 'bottledwater', 'pid' => 2634}
+      iputs level,   %(include_examples 'JSON type', #{name.inspect}, #{value.inspect})
+    when 'xml'
+      value = '<person name="Abraham Lincoln"><occupations><occupation title="President" /></occupations></person>'
+      iputs level,   %(# #{name} can't be in a primary key because it can't be indexed directly)
+      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)}, as_key: false)
+    when 'macaddr'
+      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, '08:00:2b:01:02:03')
+    else
+      iputs level,   %(pending('should have specs') { fail 'spec not yet implemented' })
+    end
   else
-    iputs level,   %(pending('should have specs') { fail 'spec not yet implemented for typcategory #{type['typcategory']}' })
+    iputs level,     %(pending('should have specs') { fail 'spec not yet implemented for typcategory #{type['typcategory']}' })
   end
 end
 

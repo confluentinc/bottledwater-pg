@@ -269,6 +269,19 @@ shared_examples 'database schema support' do |format|
     include_examples 'roundtrip type', type, value, as_key: false
   end
 
+  shared_examples 'JSON type' do |type, value|
+    # JSON types can't be in a primary key because they don't support a default
+    # operator class
+
+    example 'retrieve same value from Kafka as was stored in Postgres' do
+      message = retrieve_roundtrip_message(type, JSON.generate(value))
+
+      row = decode_value(message.value)
+      roundtrip_value = JSON.parse(fetch_string(row, 'value'))
+      expect(roundtrip_value).to eq(value)
+    end
+  end
+
 
   include_examples 'type specs'
 
