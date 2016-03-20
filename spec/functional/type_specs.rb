@@ -37,7 +37,7 @@ shared_examples 'type specs' do
   end
 
   describe 'box' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'geometric type', "box", "(3,4),(0,0)"
   end
 
   describe 'bytea' do
@@ -65,7 +65,7 @@ shared_examples 'type specs' do
   end
 
   describe 'circle' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'geometric type', "circle", "<(1,2),5>"
   end
 
   describe 'date' do
@@ -117,11 +117,11 @@ shared_examples 'type specs' do
   end
 
   describe 'line' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'geometric type', "line", "{3,4,5}"
   end
 
   describe 'lseg' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'geometric type', "lseg", "[(0,0),(3,4)]"
   end
 
   describe 'macaddr' do
@@ -161,7 +161,7 @@ shared_examples 'type specs' do
   end
 
   describe 'path' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'geometric type', "path", "((1,2),(0,0),(3,4))"
   end
 
   describe 'pg_lsn' do
@@ -173,11 +173,11 @@ shared_examples 'type specs' do
   end
 
   describe 'point' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'geometric type', "point", "(3,4)"
   end
 
   describe 'polygon' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'geometric type', "polygon", "((1,2),(0,0),(3,4))"
   end
 
   describe 'real' do

@@ -66,7 +66,7 @@ shared_examples 'database schema support' do |format|
     kafka_take_messages(table_name, 1).first
   end
 
-  shared_examples 'roundtrip type' do |type, value, length: nil|
+  shared_examples 'roundtrip type' do |type, value, length: nil, as_key: true|
     example 'retrieve same value from Kafka as was stored in Postgres' do
       message = retrieve_roundtrip_message(type, value, length: length)
 
@@ -75,12 +75,14 @@ shared_examples 'database schema support' do |format|
       expect(roundtrip_value).to eq(value)
     end
 
-    example 'retrieve same value from Kafka message key as was stored in Postgres' do
-      message = retrieve_roundtrip_message(type, value, as_key: true, length: length)
+    if as_key
+      example 'retrieve same value from Kafka message key as was stored in Postgres' do
+        message = retrieve_roundtrip_message(type, value, as_key: true, length: length)
 
-      key = decode_key(message.key)
-      roundtrip_value = fetch_any(key, 'value')
-      expect(roundtrip_value).to eq(value)
+        key = decode_key(message.key)
+        roundtrip_value = fetch_any(key, 'value')
+        expect(roundtrip_value).to eq(value)
+      end
     end
   end
 
@@ -259,6 +261,12 @@ shared_examples 'database schema support' do |format|
 
   shared_examples 'string type' do |type, value, length: nil|
     include_examples 'roundtrip type', type, value, length: length
+  end
+
+  shared_examples 'geometric type' do |type, value|
+    # geometric types can't be in a primary key because they don't support the
+    # right index types
+    include_examples 'roundtrip type', type, value, as_key: false
   end
 
 

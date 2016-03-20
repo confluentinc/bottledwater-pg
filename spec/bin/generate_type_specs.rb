@@ -66,6 +66,15 @@ CUSTOM_VALUE_TYPES = {
   'daterange' => '[1837-06-20,1901-01-22)', # the reign of Queen Victoria
   'tsrange' =>   '["1837-06-20 00:00:00","1901-01-22 00:00:00")',
   'tstzrange' => '["1837-06-20 00:00:00+00","1901-01-22 00:00:00+00")',
+
+  # geometric types
+  'point' => '(3,4)',
+  'line' => '{3,4,5}',
+  'lseg' => '[(0,0),(3,4)]',
+  'box' => '(3,4),(0,0)',
+  'path' => '((1,2),(0,0),(3,4))',
+  'polygon' => '((1,2),(0,0),(3,4))',
+  'circle' => '<(1,2),5>',
 }
 def genvalue(value)
   case value
@@ -184,6 +193,9 @@ def print_examples(level, type)
   when 'T' # timespan
     value = '01:23:45.123456' if value.nil?
     iputs level,   %(include_examples 'interval type', #{name.inspect}, #{genvalue(value)})
+  when 'G' # geo
+    raise "Please specify custom literal for geometric type #{name}" if value.nil?
+    iputs level,   %(include_examples 'geometric type', #{name.inspect}, #{genvalue(value)})
   else
     iputs level,   %(pending('should have specs') { fail 'spec not yet implemented for typcategory #{type['typcategory']}' })
   end
