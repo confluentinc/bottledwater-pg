@@ -277,7 +277,7 @@ shared_examples 'database schema support' do |format|
     after(:example) do
       # this is known to crash Postgres
       unless TEST_CLUSTER.healthy?
-        TEST_CLUSTER.restart
+        TEST_CLUSTER.restart(dump_logs: false)
       end
     end
 

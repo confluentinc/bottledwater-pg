@@ -138,13 +138,13 @@ class TestCluster
     service_running?(bottledwater_service)
   end
 
-  def stop(should_reset: true)
+  def stop(should_reset: true, dump_logs: true)
     return unless started?
 
     kazoo.close rescue nil
     postgres.close rescue nil
 
-    failed_services.each {|container| dump_container_logs(container) }
+    failed_services.each {|container| dump_container_logs(container) } if dump_logs
 
     @compose.stop
     @compose.run! :rm, f: true, v: true
@@ -154,8 +154,8 @@ class TestCluster
     @state = :stopped
   end
 
-  def restart
-    stop(should_reset: false)
+  def restart(**kwargs)
+    stop(should_reset: false, **kwargs)
     start
   end
 
