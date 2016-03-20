@@ -10,24 +10,19 @@
 # See the Makefile and the other Dockerfiles in this directory for more
 # detail on how the build artifacts are used.
 
-FROM postgres:9.4
+FROM postgres:9.5
 
 RUN apt-get update && \
-    # --force-yes is needed because we are downgrading libpq5 to $PG_VERSION
-    # (set by the postgres:9.4 Docker image).  Confusingly the postgres:9.4
-    # Docker image includes libpq5 version 9.5.x, which we are not yet
-    # compatible with, even though the Postgres version (and $PG_VERSION) are
-    # 9.4.x.
-    apt-get install -y --force-yes \
+    apt-get install -y \
         build-essential \
         cmake \
         curl \
         libcurl4-openssl-dev \
         libjansson-dev \
-        libpq5=${PG_VERSION} \
-        libpq-dev=${PG_VERSION} \
+        libpq5 \
+        libpq-dev \
         pkg-config \
-        postgresql-server-dev-9.4=${PG_VERSION}
+		postgresql-server-dev-9.5
 
 # Avro
 RUN curl -o /root/avro-c-1.7.7.tar.gz -SL http://archive.apache.org/dist/avro/avro-1.7.7/c/avro-c-1.7.7.tar.gz && \
@@ -48,6 +43,6 @@ RUN curl -o /root/librdkafka-0.9.0.tar.gz -SL https://github.com/edenhill/librdk
 COPY . /root/bottledwater
 RUN cd /root/bottledwater && \
     make clean && make && make install && cd / && \
-    tar czf bottledwater-ext.tar.gz usr/lib/postgresql/9.4/lib/bottledwater.so usr/share/postgresql/9.4/extension/bottledwater* && \
+    tar czf bottledwater-ext.tar.gz usr/lib/postgresql/9.5/lib/bottledwater.so usr/share/postgresql/9.5/extension/bottledwater* && \
     cp /root/bottledwater/kafka/bottledwater /root/bottledwater/client/bwtest /usr/local/bin && \
     tar czf bottledwater-bin.tar.gz usr/local/bin/bottledwater usr/local/bin/bwtest
