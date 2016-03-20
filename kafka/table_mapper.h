@@ -5,7 +5,7 @@
 
 #include <avro.h>
 #include <librdkafka/rdkafka.h>
-#include <postgresql/postgres_ext.h>
+#include <postgres_ext.h>
 
 
 #define TABLE_MAPPER_SCHEMA_ID_MISSING (-1)
