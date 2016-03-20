@@ -89,7 +89,7 @@ shared_examples 'type specs' do
   end
 
   describe 'int2vector' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'int4range' do
@@ -157,7 +157,7 @@ shared_examples 'type specs' do
   end
 
   describe 'oidvector' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'path' do

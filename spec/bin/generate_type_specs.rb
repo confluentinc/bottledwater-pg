@@ -98,7 +98,9 @@ BOUNDED_LENGTH_TYPES = Set[*%w(
 INTERNAL_TYPES = Set[*%w(
   abstime
   "char"
+  int2vector
   name
+  oidvector
   pg_node_tree
   regclass
   regconfig
