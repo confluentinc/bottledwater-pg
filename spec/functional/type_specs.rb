@@ -81,7 +81,7 @@ shared_examples 'type specs' do
   end
 
   describe 'gtsvector' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'inet' do
@@ -261,7 +261,8 @@ shared_examples 'type specs' do
   end
 
   describe 'tsquery' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    # tsquery can't be in a primary key because it can't be indexed directly
+    include_examples 'roundtrip type', "tsquery", "'fat':AB & ( 'cat' | 'postgres':* )", as_key: false
   end
 
   describe 'tsrange' do
@@ -273,7 +274,8 @@ shared_examples 'type specs' do
   end
 
   describe 'tsvector' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    # tsvector can't be in a primary key because it can't be indexed directly
+    include_examples 'roundtrip type', "tsvector", "'brown':3 'fox':4 'quick':2", as_key: false
   end
 
   describe 'txid_snapshot' do

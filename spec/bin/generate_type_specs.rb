@@ -97,6 +97,8 @@ BOUNDED_LENGTH_TYPES = Set[*%w(
 INTERNAL_TYPES = Set[*%w(
   abstime
   "char"
+  gtsquery
+  gtsvector
   int2vector
   name
   oidvector
@@ -209,6 +211,12 @@ def print_examples(level, type)
       iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{genvalue(value)}, as_key: false)
     when 'macaddr'
       iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, '08:00:2b:01:02:03')
+    when 'tsvector'
+      iputs level,   %(# #{name} can't be in a primary key because it can't be indexed directly)
+      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, "'brown':3 'fox':4 'quick':2", as_key: false)
+    when 'tsquery'
+      iputs level,   %(# #{name} can't be in a primary key because it can't be indexed directly)
+      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, "'fat':AB & ( 'cat' | 'postgres':* )", as_key: false)
     else
       iputs level,   %(pending('should have specs') { fail 'spec not yet implemented' })
     end
