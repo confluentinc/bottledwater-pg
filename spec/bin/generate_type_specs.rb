@@ -96,13 +96,16 @@ BOUNDED_LENGTH_TYPES = Set[*%w(
 # not supporting them (e.g. Postgres internals)
 INTERNAL_TYPES = Set[*%w(
   abstime
+  aclitem
   "char"
+  cid
   gtsquery
   gtsvector
   int2vector
   name
   oidvector
   pg_node_tree
+  refcursor
   regclass
   regconfig
   regdictionary
@@ -112,6 +115,8 @@ INTERNAL_TYPES = Set[*%w(
   regprocedure
   regtype
   reltime
+  smgr
+  tid
   tinterval
   txid_snapshot
   unknown
@@ -217,6 +222,13 @@ def print_examples(level, type)
     when 'tsquery'
       iputs level,   %(# #{name} can't be in a primary key because it can't be indexed directly)
       iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, "'fat':AB & ( 'cat' | 'postgres':* )", as_key: false)
+    when 'pg_lsn'
+      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, '42/BEEFCAFE')
+    when 'uuid'
+      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
+    when 'bytea'
+      value = "\x01bottledwater\x01"
+      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{value.inspect})
     else
       iputs level,   %(pending('should have specs') { fail 'spec not yet implemented' })
     end

@@ -17,7 +17,7 @@ shared_examples 'type specs' do
   end
 
   describe 'aclitem' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'bigint' do
@@ -41,7 +41,7 @@ shared_examples 'type specs' do
   end
 
   describe 'bytea' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "bytea", "\u0001bottledwater\u0001"
   end
 
   describe '"char"' do
@@ -57,7 +57,7 @@ shared_examples 'type specs' do
   end
 
   describe 'cid' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'cidr' do
@@ -165,7 +165,7 @@ shared_examples 'type specs' do
   end
 
   describe 'pg_lsn' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "pg_lsn", '42/BEEFCAFE'
   end
 
   describe 'pg_node_tree' do
@@ -185,7 +185,7 @@ shared_examples 'type specs' do
   end
 
   describe 'refcursor' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'regclass' do
@@ -229,7 +229,7 @@ shared_examples 'type specs' do
   end
 
   describe 'smgr' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'text' do
@@ -237,7 +237,7 @@ shared_examples 'type specs' do
   end
 
   describe 'tid' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    example('internal type not supported') {}
   end
 
   describe 'timestamp without time zone' do
@@ -287,7 +287,7 @@ shared_examples 'type specs' do
   end
 
   describe 'uuid' do
-    pending('should have specs') { fail 'spec not yet implemented' }
+    include_examples 'roundtrip type', "uuid", 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
   end
 
   describe 'xid' do
