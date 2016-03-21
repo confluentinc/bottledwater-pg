@@ -30,9 +30,6 @@ class TestCluster
   end
 
   def reset
-    # TODO probably need to detect this
-    self.kafka_advertised_host_name = '172.17.0.1'
-
     self.kafka_auto_create_topics_enable = true
 
     self.bottledwater_format = :json
@@ -40,6 +37,8 @@ class TestCluster
 
   def start
     raise "cluster already #{@state}!" if started?
+
+    self.kafka_advertised_host_name = detect_docker_host_ip
 
     @compose.up(:kafka, :postgres, detached: true)
 
@@ -175,6 +174,17 @@ class TestCluster
   end
 
   private
+  def detect_docker_host_ip
+    ip_output = @docker.run!(:run, '--rm', 'debian:latest', 'ip', 'route').split("\n")
+
+    gateway_line = ip_output.detect {|line| line =~ /^default via (.*) dev / }
+    raise "Unexpected output from `ip route`: #{ip_output}" unless gateway_line
+
+    @docker_host_ip = $1
+    @logger.info "Detected Docker host IP as #{@docker_host_ip}"
+    @docker_host_ip
+  end
+
   def service_running?(service)
     container_for_service(service).to_h.fetch('State').fetch('Running')
   end
