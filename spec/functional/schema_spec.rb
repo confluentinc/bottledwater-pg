@@ -286,6 +286,16 @@ shared_examples 'database schema support' do |format|
   include_examples 'type specs'
 
 
+  describe 'array types' do
+    describe 'int[]' do
+      include_examples 'roundtrip type', 'int[]', '{1,2,3,4}'
+    end
+    describe 'text[]' do
+      include_examples 'roundtrip type', 'text[]', '{1,two,"three, four"}'
+    end
+  end
+
+
   describe 'table with no columns' do
     after(:example) do
       # this is known to crash Postgres

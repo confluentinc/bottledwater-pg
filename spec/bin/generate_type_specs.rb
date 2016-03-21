@@ -99,6 +99,7 @@ INTERNAL_TYPES = Set[*%w(
   aclitem
   "char"
   cid
+  ghstore
   gtsquery
   gtsvector
   int2vector
@@ -229,6 +230,8 @@ def print_examples(level, type)
     when 'bytea'
       value = "\x01bottledwater\x01"
       iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{value.inspect})
+    when 'hstore'
+      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, '"pid"=>"2634", "service"=>"bottledwater"')
     else
       iputs level,   %(pending('should have specs') { fail 'spec not yet implemented' })
     end

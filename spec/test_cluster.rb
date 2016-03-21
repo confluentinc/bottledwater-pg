@@ -7,7 +7,13 @@ require 'pg'
 require 'schema_registry'
 require 'socket'
 
+
 class TestCluster
+  POSTGRES_EXTENSIONS = %w(
+    bottledwater
+    hstore
+  ).freeze
+
   def initialize
     # override Docker::Compose's default interactive: true
     runner = Backticks::Runner.new(interactive: false)
@@ -41,7 +47,9 @@ class TestCluster
       PG::Connection.ping(host: @host, port: port, user: 'postgres') == PG::PQPING_OK
     end
     @postgres = PG::Connection.open(host: @host, port: pg_port, user: 'postgres')
-    @postgres.exec('CREATE EXTENSION IF NOT EXISTS bottledwater')
+    POSTGRES_EXTENSIONS.each do |extension|
+      @postgres.exec("CREATE EXTENSION IF NOT EXISTS #{extension}")
+    end
 
     @zookeeper_port = wait_for_tcp_port(:zookeeper, 2181)
     @kazoo = Kazoo::Cluster.new("#{@host}:#{@zookeeper_port}")

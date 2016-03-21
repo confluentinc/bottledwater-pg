@@ -80,8 +80,16 @@ shared_examples 'type specs' do
     include_examples 'numeric type', "double precision", 42
   end
 
+  describe 'ghstore' do
+    example('internal type not supported') {}
+  end
+
   describe 'gtsvector' do
     example('internal type not supported') {}
+  end
+
+  describe 'hstore' do
+    include_examples 'roundtrip type', "hstore", '"pid"=>"2634", "service"=>"bottledwater"'
   end
 
   describe 'inet' do
