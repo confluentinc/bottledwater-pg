@@ -315,7 +315,7 @@ shared_examples 'database schema support' do |format|
     end
 
     example 'sends empty messages' do
-      xbug 'seems to crash Postgres!'
+      known_bug 'crashes Postgres', 'https://github.com/confluentinc/bottledwater-pg/issues/61'
 
       table_name = 'zero_columns'
 

@@ -138,7 +138,7 @@ shared_examples 'type specs' do
 
   describe 'money' do
     before :example do
-      xbug "mysteriously gets multiplied by 100"
+      known_bug "multiplied by 100", "https://github.com/confluentinc/bottledwater-pg/issues/60"
     end
 
     include_examples 'numeric type', "money", 42

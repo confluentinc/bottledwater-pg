@@ -127,12 +127,12 @@ INTERNAL_TYPES = Set[*%w(
 # add types to this list when their lack of support is documented, preferably
 # in the form of a Github issue
 KNOWN_BUGS = {
+  'money' => ['multiplied by 100', 'https://github.com/confluentinc/bottledwater-pg/issues/60'],
   'numeric' => ['replaced by zero', 'https://github.com/confluentinc/bottledwater-pg/issues/4'],
 }
 
 # only use this list during development, otherwise file an issue!
 UNKNOWN_BUGS = {
-  'money' => 'mysteriously gets multiplied by 100',
 }
 
 def print_constants(level)
