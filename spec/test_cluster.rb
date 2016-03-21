@@ -71,6 +71,13 @@ class TestCluster
     @compose.up(bottledwater_service, detached: true)
     wait_for_container(bottledwater_service)
 
+    @logger << 'Letting things settle'
+    5.times do
+      @logger << '.'
+      sleep 1
+    end
+    @logger << " OK\n"
+
     @state = :started
   end
 

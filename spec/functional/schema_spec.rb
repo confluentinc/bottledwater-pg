@@ -53,23 +53,25 @@ shared_examples 'database schema support' do |format|
   end
 
   let(:postgres) { TEST_CLUSTER.postgres }
+  let(:kazoo) { TEST_CLUSTER.kazoo }
 
-  # After Bottled Water publishes a message, there's a short delay while Kafka
-  # autocreates the topic; we get errors if we try consuming from the topic
-  # before then.
-  def wait_for_topic(topic)
-    # simplest thing that appears to usually work...
-    sleep 1
+  # We could just rely on topic autocreate, but then we have to wait an unknown
+  # amount of time after inserting the row for Kafka to create the topic before
+  # we can try consuming from it, which is slow and unreliable.  Instead we
+  # explicitly create the topic beforehand.
+  def create_topic(name)
+    kazoo.create_topic(name, partitions: 1, replication_factor: 1)
   end
 
   def retrieve_roundtrip_message(type, value_str, as_key: false, length: nil)
     table_name = "test_#{as_key ? 'key' : 'value'}_#{type.gsub(/\W/, '_')}"
 
+    create_topic(table_name)
+
     lengthspec = "(#{length})" unless length.nil?
     keyspec = 'PRIMARY KEY' if as_key
     postgres.exec(%{CREATE TABLE "#{table_name}" (value #{type}#{lengthspec} NOT NULL #{keyspec})})
     postgres.exec_params(%{INSERT INTO "#{table_name}" (value) VALUES ($1)}, [value_str])
-    wait_for_topic(table_name)
 
     kafka_take_messages(table_name, 1).first
   end
@@ -317,9 +319,10 @@ shared_examples 'database schema support' do |format|
 
       table_name = 'zero_columns'
 
+      create_topic(table_name)
+
       postgres.exec(%{CREATE TABLE "#{table_name}" ()})
       postgres.exec(%{INSERT INTO "#{table_name}" DEFAULT VALUES})
-      wait_for_topic(table_name)
 
       message = kafka_take_messages(table_name, 1).first
 
