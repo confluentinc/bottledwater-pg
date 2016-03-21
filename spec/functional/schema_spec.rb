@@ -54,6 +54,14 @@ shared_examples 'database schema support' do |format|
 
   let(:postgres) { TEST_CLUSTER.postgres }
 
+  # After Bottled Water publishes a message, there's a short delay while Kafka
+  # autocreates the topic; we get errors if we try consuming from the topic
+  # before then.
+  def wait_for_topic(topic)
+    # simplest thing that appears to usually work...
+    sleep 1
+  end
+
   def retrieve_roundtrip_message(type, value_str, as_key: false, length: nil)
     table_name = "test_#{as_key ? 'key' : 'value'}_#{type.gsub(/\W/, '_')}"
 
@@ -61,7 +69,7 @@ shared_examples 'database schema support' do |format|
     keyspec = 'PRIMARY KEY' if as_key
     postgres.exec(%{CREATE TABLE "#{table_name}" (value #{type}#{lengthspec} NOT NULL #{keyspec})})
     postgres.exec_params(%{INSERT INTO "#{table_name}" (value) VALUES ($1)}, [value_str])
-    sleep 1 # for topic to be created
+    wait_for_topic(table_name)
 
     kafka_take_messages(table_name, 1).first
   end
@@ -311,7 +319,7 @@ shared_examples 'database schema support' do |format|
 
       postgres.exec(%{CREATE TABLE "#{table_name}" ()})
       postgres.exec(%{INSERT INTO "#{table_name}" DEFAULT VALUES})
-      sleep 1 # for topic to be created
+      wait_for_topic(table_name)
 
       message = kafka_take_messages(table_name, 1).first
 
