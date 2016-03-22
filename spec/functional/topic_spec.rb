@@ -33,14 +33,20 @@ describe 'topics', functional: true do
   end
 
   describe 'with topic autocreate disabled' do
-    # start and stop cluster after each example, since we're testing crashes
-    before(:example) do
+    before(:context) do
       require 'test_cluster'
       TEST_CLUSTER.kafka_auto_create_topics_enable = false
       TEST_CLUSTER.start
     end
 
     after(:example) do
+      # since we're testing crashes...
+      unless TEST_CLUSTER.healthy?
+        TEST_CLUSTER.restart(dump_logs: false)
+      end
+    end
+
+    after(:context) do
       TEST_CLUSTER.stop
     end
 
@@ -55,11 +61,10 @@ describe 'topics', functional: true do
     end
 
     example 'inserting rows in a new table after creating the topic does not crash Bottled Water' do
-      kazoo.create_topic('things', partitions: 1, replication_factor: 1)
-      sleep 5
+      kazoo.create_topic('items', partitions: 1, replication_factor: 1)
 
-      postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
-      postgres.exec('INSERT INTO things (thing) VALUES (42)')
+      postgres.exec('CREATE TABLE items (id SERIAL PRIMARY KEY, item INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO items (item) VALUES (42)')
       sleep 5
 
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
