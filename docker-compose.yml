@@ -2,9 +2,9 @@
 # KAFKA_ADVERTISED_HOST_NAME, in the environment of the host where you are
 # running docker-compose, to the IP address of the Docker host.
 #
-# You can determine the Docker host IP with a command like (on Linux):
+# You can determine the Docker host IP with a command like:
 #
-#   ip -o -4 addr show dev docker0 | awk '{sub(/\/[0-9]+$/, "", $4); print $4}'
+#   docker run --rm debian:latest ip route | awk '/^default via / { print $3 }'
 
 zookeeper:
   image: confluent/zookeeper
