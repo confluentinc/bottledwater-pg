@@ -53,11 +53,11 @@ shared_examples 'type specs' do
   end
 
   describe 'character' do
-    include_examples 'string type', "character", "Hello", length: 5
+    include_examples 'string type', "character", "We can handle unicode: ☃", length: 24
   end
 
   describe 'character varying' do
-    include_examples 'string type', "character varying", "Hello, world!"
+    include_examples 'string type', "character varying", "We can handle unicode: ☃"
   end
 
   describe 'cid' do
@@ -245,7 +245,7 @@ shared_examples 'type specs' do
   end
 
   describe 'text' do
-    include_examples 'string type', "text", "Hello, world!"
+    include_examples 'string type', "text", "We can handle unicode: ☃"
   end
 
   describe 'tid' do

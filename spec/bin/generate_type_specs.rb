@@ -182,12 +182,11 @@ def print_examples(level, type)
     value = 42 if value.nil?
     iputs level,     %(include_examples 'numeric type', #{name.inspect}, #{genvalue(value)})
   when 'S' # string
+    value = 'We can handle unicode: ☃' if value.nil?
     if BOUNDED_LENGTH_TYPES.include?(name)
-      value = 'Hello' if value.nil?
       length = value.size
       iputs level,   %(include_examples 'string type', #{name.inspect}, #{genvalue(value)}, length: #{length})
     else
-      value = 'Hello, world!' if value.nil?
       iputs level,   %(include_examples 'string type', #{name.inspect}, #{genvalue(value)})
     end
   when 'D' # date/time
