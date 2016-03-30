@@ -4,6 +4,14 @@ describe 'topics', functional: true do
   let(:postgres) { TEST_CLUSTER.postgres }
   let(:kazoo) { TEST_CLUSTER.kazoo }
 
+  after(:example) do
+    # since we're testing crashes...
+    unless TEST_CLUSTER.healthy?
+      TEST_CLUSTER.restart(dump_logs: false)
+    end
+  end
+
+
   describe 'with topic autocreate enabled' do
     before(:context) do
       require 'test_cluster'
@@ -30,6 +38,18 @@ describe 'topics', functional: true do
 
       expect(kazoo.topics).to have_key('things')
     end
+
+    example 'creating a table with a silly name creates a topic based on the sanitised name' do
+      known_bug 'crashes Postgres', 'https://github.com/confluentinc/bottledwater-pg/issues/64'
+
+      silly_name = 'flobble-biscuits?whatisthetime/hahahaha'
+
+      postgres.exec %(CREATE TABLE "#{silly_name}" (thing SERIAL NOT NULL PRIMARY KEY))
+      postgres.exec %(INSERT INTO "#{silly_name}" DEFAULT VALUES)
+      sleep 1
+
+      expect(kazoo.topics).to include(match(/flobble/))
+    end
   end
 
   describe 'with topic autocreate disabled' do
@@ -37,13 +57,6 @@ describe 'topics', functional: true do
       require 'test_cluster'
       TEST_CLUSTER.kafka_auto_create_topics_enable = false
       TEST_CLUSTER.start
-    end
-
-    after(:example) do
-      # since we're testing crashes...
-      unless TEST_CLUSTER.healthy?
-        TEST_CLUSTER.restart(dump_logs: false)
-      end
     end
 
     after(:context) do
