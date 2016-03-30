@@ -1,4 +1,4 @@
-SOURCES=bottledwater.c json.c registry.c table_mapper.c
+SOURCES=bottledwater.c json.c registry.c table_mapper.c logger.c
 EXECUTABLE=bottledwater
 STATICLIB=../client/libbottledwater.a
 

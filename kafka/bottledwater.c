@@ -1,5 +1,6 @@
 #include "connect.h"
 #include "json.h"
+#include "logger.h"
 #include "registry.h"
 
 #include <librdkafka/rdkafka.h>
@@ -19,14 +20,18 @@
 #define DEFAULT_BROKER_LIST "localhost:9092"
 #define DEFAULT_SCHEMA_REGISTRY "http://localhost:8081"
 
+
 #define check(err, call) { err = call; if (err) return err; }
 
 #define ensure(context, call) { \
     if (call) { \
-        fprintf(stderr, "%s: %s\n", progname, (context)->client->error); \
+        log_error("%s: %s", progname, (context)->client->error); \
         exit_nicely(context, 1); \
     } \
 }
+
+#define config_error(fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
+
 
 #define PRODUCER_CONTEXT_ERROR_LEN 512
 #define MAX_IN_FLIGHT_TRANSACTIONS 1000
@@ -236,9 +241,8 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     if (context->output_format == OUTPUT_FORMAT_AVRO && !context->registry) {
         init_schema_registry(context, DEFAULT_SCHEMA_REGISTRY);
     } else if (context->output_format == OUTPUT_FORMAT_JSON && context->registry) {
-        fprintf(stderr,
-                "Specifying --schema-registry doesn't make sense for "
-                "--output-format=json\n");
+        config_error("Specifying --schema-registry doesn't make sense for "
+                     "--output-format=json");
         usage();
     }
 }
@@ -249,8 +253,8 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 char *parse_config_option(char *option) {
     char *equals = strchr(option, '=');
     if (!equals) {
-        fprintf(stderr, "%s: Expected configuration in the form property=value, not \"%s\"\n",
-                progname, option);
+        log_error("%s: Expected configuration in the form property=value, not \"%s\"",
+                  progname, option);
         exit(1);
     }
 
@@ -263,7 +267,7 @@ void init_schema_registry(producer_context_t context, char *url) {
     context->registry = schema_registry_new(url);
 
     if (!context->registry) {
-        fprintf(stderr, "Failed to initialise schema registry!\n");
+        log_error("Failed to initialise schema registry!");
         exit(1);
     }
 }
@@ -274,8 +278,7 @@ void set_output_format(producer_context_t context, char *format) {
     } else if (!strcmp("json", format)) {
         context->output_format = OUTPUT_FORMAT_JSON;
     } else {
-        fprintf(stderr,
-                "invalid output format (expected avro or json): %s\n", format);
+        config_error("invalid output format (expected avro or json): %s", format);
         exit(1);
     }
 }
@@ -292,7 +295,7 @@ const char* output_format_name(format_t format) {
 void set_kafka_config(producer_context_t context, char *property, char *value) {
     if (rd_kafka_conf_set(context->kafka_conf, property, value,
                 context->error, PRODUCER_CONTEXT_ERROR_LEN) != RD_KAFKA_CONF_OK) {
-        fprintf(stderr, "%s: %s\n", progname, context->error);
+        config_error("%s: %s", progname, context->error);
         exit(1);
     }
 }
@@ -300,7 +303,7 @@ void set_kafka_config(producer_context_t context, char *property, char *value) {
 void set_topic_config(producer_context_t context, char *property, char *value) {
     if (rd_kafka_topic_conf_set(context->topic_conf, property, value,
                 context->error, PRODUCER_CONTEXT_ERROR_LEN) != RD_KAFKA_CONF_OK) {
-        fprintf(stderr, "%s: %s\n", progname, context->error);
+        config_error("%s: %s", progname, context->error);
         exit(1);
     }
 }
@@ -312,19 +315,19 @@ static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
 
     if (xid == 0) {
         if (!(context->xact_tail == 0 && xact_list_empty(context))) {
-            fprintf(stderr, "%s: Expected snapshot to be the first transaction.\n", progname);
+            log_error("%s: Expected snapshot to be the first transaction.", progname);
             exit_nicely(context, 1);
         }
 
-        fprintf(stderr, "Created replication slot \"%s\", capturing consistent snapshot \"%s\".\n",
-                stream->slot_name, stream->snapshot_name);
+        log_info("Created replication slot \"%s\", capturing consistent snapshot \"%s\".",
+                 stream->slot_name, stream->snapshot_name);
     }
 
     // If the circular buffer is full, we have to block and wait for some transactions
     // to be delivered to Kafka and acknowledged for the broker.
     while (xact_list_full(context)) {
 #ifdef DEBUG
-        fprintf(stderr, "Too many transactions in flight, applying backpressure\n");
+        log_warn("Too many transactions in flight, applying backpressure");
 #endif
         backpressure(context);
     }
@@ -344,13 +347,13 @@ static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     transaction_info *xact = &context->xact_list[context->xact_head];
 
     if (xid == 0) {
-        fprintf(stderr, "Snapshot complete, streaming changes from %X/%X.\n",
-                (uint32) (wal_pos >> 32), (uint32) wal_pos);
+        log_info("Snapshot complete, streaming changes from %X/%X.",
+                 (uint32) (wal_pos >> 32), (uint32) wal_pos);
     }
 
     if (xid != xact->xid) {
-        fprintf(stderr, "%s: Mismatched begin/commit events (xid %u in flight, "
-                "xid %u committed)\n", progname, xact->xid, xid);
+        log_error("%s: Mismatched begin/commit events (xid %u in flight, xid %u committed)",
+                  progname, xact->xid, xid);
         exit_nicely(context, 1);
     }
 
@@ -370,7 +373,7 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
             key_schema_json, key_schema_len, row_schema_json, row_schema_len);
 
     if (!table) {
-        fprintf(stderr, "%s: %s\n", progname, context->mapper->error);
+        log_error("%s: %s", progname, context->mapper->error);
         exit_nicely(context, 1);
     }
 
@@ -433,7 +436,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     size_t key_encoded_len, val_encoded_len;
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
-        fprintf(stderr, "relid %" PRIu32 " has no registered schema", relid);
+        log_error("relid %" PRIu32 " has no registered schema", relid);
         exit_nicely(context, 1);
     }
 
@@ -446,9 +449,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
                 val_bin, val_len, (char **) &val, &val_encoded_len);
 
         if (err) {
-            fprintf(stderr,
-                    "%s: error %s encoding JSON for topic %s\n",
-                    progname, strerror(err), rd_kafka_topic_name(table->topic));
+            log_error("%s: error %s encoding JSON for topic %s",
+                      progname, strerror(err), rd_kafka_topic_name(table->topic));
             exit_nicely(context, 1);
         }
         break;
@@ -458,16 +460,14 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
                 val_bin, val_len, &val, &val_encoded_len);
 
         if (err) {
-            fprintf(stderr,
-                    "%s: error %s encoding Avro for topic %s\n",
-                    progname, strerror(err), rd_kafka_topic_name(table->topic));
+            log_error("%s: error %s encoding Avro for topic %s",
+                      progname, strerror(err), rd_kafka_topic_name(table->topic));
             exit_nicely(context, 1);
         }
         break;
     default:
-        fprintf(stderr,
-                "%s: invalid output format %s\n",
-                progname, output_format_name(context->output_format));
+        log_error("%s: invalid output format %s",
+                  progname, output_format_name(context->output_format));
         exit_nicely(context, 1);
     }
 
@@ -484,13 +484,13 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         // create backpressure by blocking until the producer's queue has drained a bit.
         if (rd_kafka_errno2err(errno) == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
 #ifdef DEBUG
-            fprintf(stderr, "Kafka producer queue is full, applying backpressure\n");
+            log_warn("Kafka producer queue is full, applying backpressure");
 #endif
             backpressure(context);
 
         } else if (err != 0) {
-            fprintf(stderr, "%s: Failed to produce to Kafka: %s\n",
-                progname, rd_kafka_err2str(rd_kafka_errno2err(errno)));
+            log_error("%s: Failed to produce to Kafka: %s",
+                      progname, rd_kafka_err2str(rd_kafka_errno2err(errno)));
             exit_nicely(context, 1);
         }
     }
@@ -508,7 +508,7 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
     msg_envelope_t envelope = (msg_envelope_t) msg->_private;
 
     if (msg->err) {
-        fprintf(stderr, "%s: Message delivery failed: %s\n", progname, rd_kafka_err2str(msg->err));
+        log_error("%s: Message delivery failed: %s", progname, rd_kafka_err2str(msg->err));
         exit_nicely(envelope->context, 1);
     } else {
         // Message successfully delivered to Kafka
@@ -535,19 +535,17 @@ void maybe_checkpoint(producer_context_t context) {
         replication_stream_t stream = &context->client->repl;
 
         if (stream->fsync_lsn > xact->commit_lsn) {
-            fprintf(stderr, "%s: WARNING: Commits not in WAL order! "
-                    "Checkpoint LSN is %X/%X, commit LSN is %X/%X.\n", progname,
-                    (uint32) (stream->fsync_lsn >> 32), (uint32) stream->fsync_lsn,
-                    (uint32) (xact->commit_lsn  >> 32), (uint32) xact->commit_lsn);
+            log_warn("%s: Commits not in WAL order! "
+                     "Checkpoint LSN is %X/%X, commit LSN is %X/%X.", progname,
+                     (uint32) (stream->fsync_lsn >> 32), (uint32) stream->fsync_lsn,
+                     (uint32) (xact->commit_lsn  >> 32), (uint32) xact->commit_lsn);
         }
 
-#ifdef DEBUG
         if (stream->fsync_lsn < xact->commit_lsn) {
-            fprintf(stderr, "Checkpointing %d events for xid %u, WAL position %X/%X.\n",
-                    xact->recvd_events, xact->xid,
-                    (uint32) (xact->commit_lsn >> 32), (uint32) xact->commit_lsn);
+            log_debug("Checkpointing %d events for xid %u, WAL position %X/%X.",
+                      xact->recvd_events, xact->xid,
+                      (uint32) (xact->commit_lsn >> 32), (uint32) xact->commit_lsn);
         }
-#endif
 
         stream->fsync_lsn = xact->commit_lsn;
 
@@ -574,15 +572,15 @@ void backpressure(producer_context_t context) {
     rd_kafka_poll(context->kafka, 200);
 
     if (received_shutdown_signal) {
-        fprintf(stderr, "%s during backpressure. Shutting down...\n", strsignal(received_shutdown_signal));
+        log_info("%s during backpressure. Shutting down...", strsignal(received_shutdown_signal));
         exit_nicely(context, 0);
     }
 
     // Keep the replication connection alive, even if we're not consuming data from it.
     int err = replication_stream_keepalive(&context->client->repl);
     if (err) {
-        fprintf(stderr, "%s: While sending standby status update for keepalive: %s\n",
-                progname, context->client->repl.error);
+        log_error("%s: While sending standby status update for keepalive: %s",
+                  progname, context->client->repl.error);
         exit_nicely(context, 1);
     }
 }
@@ -647,12 +645,12 @@ void start_producer(producer_context_t context) {
     context->kafka = rd_kafka_new(RD_KAFKA_PRODUCER, context->kafka_conf,
             context->error, PRODUCER_CONTEXT_ERROR_LEN);
     if (!context->kafka) {
-        fprintf(stderr, "%s: Could not create Kafka producer: %s\n", progname, context->error);
+        log_error("%s: Could not create Kafka producer: %s", progname, context->error);
         exit(1);
     }
 
     if (rd_kafka_brokers_add(context->kafka, context->brokers) == 0) {
-        fprintf(stderr, "%s: No valid Kafka brokers specified\n", progname);
+        log_error("%s: No valid Kafka brokers specified", progname);
         exit(1);
     }
 
@@ -662,9 +660,8 @@ void start_producer(producer_context_t context) {
             context->registry,
             context->topic_prefix);
 
-    fprintf(stderr,
-            "Writing messages to Kafka in %s format\n",
-            output_format_name(context->output_format));
+    log_info("Writing messages to Kafka in %s format",
+             output_format_name(context->output_format));
 }
 
 /* Shuts everything down and exits the process. */
@@ -672,9 +669,9 @@ void exit_nicely(producer_context_t context, int status) {
     // If a snapshot was in progress and not yet complete, and an error occurred, try to
     // drop the replication slot, so that the snapshot is retried when the user tries again.
     if (context->client->taking_snapshot && status != 0) {
-        fprintf(stderr, "Dropping replication slot since the snapshot did not complete successfully.\n");
+        log_info("Dropping replication slot since the snapshot did not complete successfully.");
         if (replication_slot_drop(&context->client->repl) != 0) {
-            fprintf(stderr, "%s: %s\n", progname, context->client->repl.error);
+            log_error("%s: %s", progname, context->client->repl.error);
         }
     }
 
@@ -707,9 +704,9 @@ int main(int argc, char **argv) {
     replication_stream_t stream = &context->client->repl;
 
     if (!context->client->taking_snapshot) {
-        fprintf(stderr, "Replication slot \"%s\" exists, streaming changes from %X/%X.\n",
-                stream->slot_name,
-                (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
+        log_info("Replication slot \"%s\" exists, streaming changes from %X/%X.",
+                 stream->slot_name,
+                 (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
     }
 
     while (context->client->status >= 0 && !received_shutdown_signal) {
@@ -723,7 +720,7 @@ int main(int argc, char **argv) {
     }
 
     if (received_shutdown_signal) {
-        fprintf(stderr, "%s, shutting down...\n", strsignal(received_shutdown_signal));
+        log_info("%s, shutting down...", strsignal(received_shutdown_signal));
     }
 
     exit_nicely(context, 0);

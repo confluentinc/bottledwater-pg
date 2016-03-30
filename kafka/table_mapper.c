@@ -6,6 +6,7 @@
  *   * the Avro schemas for keys and rows (needed to convert the Avro-binary-
  *     encoded values received from the Postgres extension into JSON output) */
 
+#include "logger.h"
 #include "table_mapper.h"
 
 #include <stdarg.h>
@@ -20,8 +21,6 @@ void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t
 void table_metadata_free(table_metadata_t table);
 
 void mapper_error(table_mapper_t mapper, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
-
-#define logf(...) fprintf(stderr, __VA_ARGS__)
 
 
 /* Creates a new table_mapper.  Takes references to (but does not adopt
@@ -80,9 +79,9 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
         const char* row_schema_json, size_t row_schema_len) {
     table_metadata_t table = table_mapper_lookup(mapper, relid);
     if (table) {
-        logf("Updating metadata for table %s (relid %" PRIu32 ")\n", table_name, relid);
+        log_info("Updating metadata for table %s (relid %" PRIu32 ")", table_name, relid);
     } else {
-        logf("Registering metadata for table %s (relid %" PRIu32 ")\n", table_name, relid);
+        log_info("Registering metadata for table %s (relid %" PRIu32 ")", table_name, relid);
         table = table_metadata_new(mapper, relid);
     }
 
@@ -141,7 +140,7 @@ int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, c
 
     if (table->topic) {
         if (strcmp(table_name, prev_table_name)) {
-            logf("Registering new table (was \"%s\", now \"%s\") for relid %" PRIu32 "\n", prev_table_name, table_name, table->relid);
+            log_info("Registering new table (was \"%s\", now \"%s\") for relid %" PRIu32, prev_table_name, table_name, table->relid);
 
             free(table->table_name);
             rd_kafka_topic_destroy(table->topic);
@@ -172,7 +171,7 @@ int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, c
         /* needn't free topic_name because it aliases table_name which we don't own */
     }
 
-    logf("Opening Kafka topic \"%s\" for table \"%s\"\n", topic_name, table_name);
+    log_info("Opening Kafka topic \"%s\" for table \"%s\"", topic_name, table_name);
 
     table->topic = rd_kafka_topic_new(mapper->kafka, topic_name,
             rd_kafka_topic_conf_dup(mapper->topic_conf));
@@ -262,16 +261,16 @@ void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t
     if (*schema == new_schema) {
         /* identical schema, nothing to do */
     } else if (!*schema) {
-        logf("Storing %s schema for table %" PRIu32 "\n", what, table->relid);
+        log_info("Storing %s schema for table %" PRIu32, what, table->relid);
 
         *schema = avro_schema_incref(new_schema);
     } else if (!new_schema) {
-        logf("Forgetting stored %s schema for table %" PRIu32 "\n", what, table->relid);
+        log_info("Forgetting stored %s schema for table %" PRIu32, what, table->relid);
 
         avro_schema_decref(*schema);
         *schema = NULL;
     } else {
-        logf("Updating stored %s schema for table %" PRIu32 "\n", what, table->relid);
+        log_info("Updating stored %s schema for table %" PRIu32, what, table->relid);
 
         avro_schema_decref(*schema);
         *schema = avro_schema_incref(new_schema);
