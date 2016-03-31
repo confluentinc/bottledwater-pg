@@ -25,9 +25,13 @@
 
 #define ensure(context, call) { \
     if (call) { \
-        log_error("%s: %s", progname, (context)->client->error); \
-        exit_nicely(context, 1); \
+        fatal_error((context), "%s", (context)->client->error); \
     } \
+}
+
+#define fatal_error(context, fmt, ...) { \
+    log_error("%s: FATAL: " fmt, progname, ##__VA_ARGS__); \
+    exit_nicely((context), 1); \
 }
 
 #define config_error(fmt, ...) fprintf(stderr, fmt "\n", ##__VA_ARGS__)
@@ -315,8 +319,7 @@ static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
 
     if (xid == 0) {
         if (!(context->xact_tail == 0 && xact_list_empty(context))) {
-            log_error("%s: Expected snapshot to be the first transaction.", progname);
-            exit_nicely(context, 1);
+            fatal_error(context, "Expected snapshot to be the first transaction.");
         }
 
         log_info("Created replication slot \"%s\", capturing consistent snapshot \"%s\".",
@@ -352,9 +355,9 @@ static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     }
 
     if (xid != xact->xid) {
-        log_error("%s: Mismatched begin/commit events (xid %u in flight, xid %u committed)",
-                  progname, xact->xid, xid);
-        exit_nicely(context, 1);
+        fatal_error(context,
+                    "Mismatched begin/commit events (xid %u in flight, xid %u committed)",
+                    xact->xid, xid);
     }
 
     xact->commit_lsn = wal_pos;
@@ -373,8 +376,7 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
             key_schema_json, key_schema_len, row_schema_json, row_schema_len);
 
     if (!table) {
-        log_error("%s: %s", progname, context->mapper->error);
-        exit_nicely(context, 1);
+        fatal_error(context, "%s", context->mapper->error);
     }
 
     return 0;
@@ -436,8 +438,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     size_t key_encoded_len, val_encoded_len;
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
-        log_error("relid %" PRIu32 " has no registered schema", relid);
-        exit_nicely(context, 1);
+        fatal_error(context, "relid %" PRIu32 " has no registered schema", relid);
     }
 
     int err;
@@ -449,9 +450,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
                 val_bin, val_len, (char **) &val, &val_encoded_len);
 
         if (err) {
-            log_error("%s: error %s encoding JSON for topic %s",
-                      progname, strerror(err), rd_kafka_topic_name(table->topic));
-            exit_nicely(context, 1);
+            fatal_error(context, "error %s encoding JSON for topic %s",
+                        strerror(err), rd_kafka_topic_name(table->topic));
         }
         break;
     case OUTPUT_FORMAT_AVRO:
@@ -460,15 +460,13 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
                 val_bin, val_len, &val, &val_encoded_len);
 
         if (err) {
-            log_error("%s: error %s encoding Avro for topic %s",
-                      progname, strerror(err), rd_kafka_topic_name(table->topic));
-            exit_nicely(context, 1);
+            fatal_error(context, "error %s encoding Avro for topic %s",
+                        strerror(err), rd_kafka_topic_name(table->topic));
         }
         break;
     default:
-        log_error("%s: invalid output format %s",
-                  progname, output_format_name(context->output_format));
-        exit_nicely(context, 1);
+        fatal_error(context, "invalid output format %s",
+                    output_format_name(context->output_format));
     }
 
     bool enqueued = false;
@@ -489,9 +487,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
             backpressure(context);
 
         } else if (err != 0) {
-            log_error("%s: Failed to produce to Kafka: %s",
-                      progname, rd_kafka_err2str(rd_kafka_errno2err(errno)));
-            exit_nicely(context, 1);
+            fatal_error(context, "Failed to produce to Kafka: %s",
+                        rd_kafka_err2str(rd_kafka_errno2err(errno)));
         }
     }
 
@@ -508,8 +505,7 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
     msg_envelope_t envelope = (msg_envelope_t) msg->_private;
 
     if (msg->err) {
-        log_error("%s: Message delivery failed: %s", progname, rd_kafka_err2str(msg->err));
-        exit_nicely(envelope->context, 1);
+        fatal_error(envelope->context, "Message delivery failed: %s", rd_kafka_err2str(msg->err));
     } else {
         // Message successfully delivered to Kafka
         envelope->xact->pending_events--;
@@ -579,9 +575,8 @@ void backpressure(producer_context_t context) {
     // Keep the replication connection alive, even if we're not consuming data from it.
     int err = replication_stream_keepalive(&context->client->repl);
     if (err) {
-        log_error("%s: While sending standby status update for keepalive: %s",
-                  progname, context->client->repl.error);
-        exit_nicely(context, 1);
+        fatal_error(context, "While sending standby status update for keepalive: %s",
+                    context->client->repl.error);
     }
 }
 
