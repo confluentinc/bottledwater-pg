@@ -18,8 +18,9 @@ RUN apt-get update && \
     # Docker image includes libpq5 version 9.5.x, which we are not yet
     # compatible with, even though the Postgres version (and $PG_VERSION) are
     # 9.4.x.
-    apt-get install -y --force-yes \
+    apt-get install -y --no-install-recommends --force-yes \
         build-essential \
+        ca-certificates \
         cmake \
         curl \
         libcurl4-openssl-dev \
