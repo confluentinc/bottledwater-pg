@@ -32,7 +32,7 @@ module KafkaHelpers
     problem = messages.empty? ? "didn't see any" : "only saw #{messages.size}"
     raise "expected #{expected} messages, but #{problem} after #{wait} seconds"
   ensure
-    consumer.interrupt
+    consumer.interrupt if consumer
   end
 end
 
