@@ -39,6 +39,8 @@ class TestCluster
   end
 
   def start
+    @state = :starting
+
     raise "cluster already #{@state}!" if started?
 
     self.kafka_advertised_host_name = detect_docker_host_ip
@@ -67,8 +69,6 @@ class TestCluster
       end
       @schema_registry = schema_registry
     end
-
-    @state = :starting
 
     @compose.up(bottledwater_service, detached: true)
     wait_for_container(bottledwater_service)
@@ -156,7 +156,7 @@ class TestCluster
   end
 
   def stop(should_reset: true, dump_logs: true)
-    return unless started?
+    return if stopped?
 
     kazoo.close rescue nil
     postgres.close rescue nil
