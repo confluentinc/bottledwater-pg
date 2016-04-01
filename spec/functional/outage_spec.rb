@@ -21,8 +21,6 @@ describe 'outages', functional: true do
   end
 
   example 'BW in Avro mode should not crash if the schema registry is down' do
-    pending 'make table mapping errors non-fatal'
-
     TEST_CLUSTER.bottledwater_format = :avro
     TEST_CLUSTER.start(without: [:'schema-registry'])
 

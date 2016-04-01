@@ -85,6 +85,39 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
         table = table_metadata_new(mapper, relid);
     }
 
+    /* N.B. even if we hit an error and return early, that will still leave the
+     * relid registered!  i.e. subsequent calls to table_mapper_lookup with the
+     * same relid *will* receive a valid (albeit incomplete) table_metadata_t.
+     * This is because table_metadata_new is side-effecting.
+     *
+     * This should still result in well-defined behaviour.  e.g. if the schema
+     * registry call failed, we'll still be able to publish prefixed-Avro
+     * messages to Kafka, just with TABLE_MAPPER_SCHEMA_ID_MISSING as the
+     * schema id.  A sufficiently motivated consumer would be able to detect
+     * this and conclude that there was a problem with the schema registry.
+     *
+     * It's a tricky question what the *right* behaviour should be:
+     *
+     *  * the current behaviour keeps data flowing, but results in the Kafka
+     *    replica of the database containing these less-helpful schema-missing
+     *    records.  Repair would currently require dropping the BW replication
+     *    slot to reset the replication state, and restarting BW to re-publish
+     *    the topics (relying on compaction and key identity to avoid duplicate
+     *    records).
+     *  * BW could drop updates without publishing them to Kafka.  This doesn't
+     *    seem ideal as it means data loss (the Kafka replica will be missing
+     *    some updates).  Repair looks similar to above.
+     *  * BW could stop consuming the logical replication stream until the error
+     *    is resolved.  This avoids data loss, but creates other problems:
+     *      - we don't currently have any mechanism to retry registering
+     *        the table schema, so we won't actually notice when the error is
+     *        resolved.
+     *      - we'd need some work to make sure we actually replay any updates.
+     *      - Postgres will keep buffering WAL until we start consuming again,
+     *        so we threaten the stability of Postgres if the error persists.
+     *
+     * This might need to end up being a configuration choice.
+     */
     int err;
 
     err = table_metadata_update_topic(mapper, table, table_name);

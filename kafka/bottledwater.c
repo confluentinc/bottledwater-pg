@@ -376,7 +376,12 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
             key_schema_json, key_schema_len, row_schema_json, row_schema_len);
 
     if (!table) {
-        fatal_error(context, "%s", context->mapper->error);
+        log_error("%s", context->mapper->error);
+        /*
+         * Can't really handle the error since we're in a callback.
+         * See comment in body of table_mapper_update() in table_mapper.c for
+         * discussion of the implications of an error registering the table.
+         */
     }
 
     return 0;
