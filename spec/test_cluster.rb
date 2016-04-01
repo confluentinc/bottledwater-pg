@@ -294,7 +294,7 @@ class TestCluster
       @logger << ('-' * 80 + "\n")
     end
     unless stderr.strip.empty?
-      @logger << "Stdout from container #{container.name} (exit code #{container.exit_code})\n"
+      @logger << "Stderr from container #{container.name} (exit code #{container.exit_code})\n"
       @logger << ('-' * 80 + "\n")
       @logger << stderr
       @logger << "\n"
