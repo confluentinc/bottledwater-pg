@@ -5,6 +5,7 @@ require 'kazoo'
 require 'logger'
 require 'pg'
 require 'schema_registry'
+require 'set'
 require 'socket'
 
 require 'retrying_proxy'
@@ -39,14 +40,16 @@ class TestCluster
     self.bottledwater_format = :json
   end
 
-  def start
+  def start(without: [])
     @state = :starting
 
     raise "cluster already #{@state}!" if started?
 
+    @started_without = Set.new(without)
+
     self.kafka_advertised_host_name = detect_docker_host_ip
 
-    @compose.up(:kafka, :postgres, detached: true)
+    start_service(:zookeeper, :kafka, :postgres)
 
     pg_port = wait_for_port(:postgres, 5432, max_tries: 10) do |port|
       PG::Connection.ping(host: @host, port: port, user: 'postgres') == PG::PQPING_OK
@@ -56,22 +59,24 @@ class TestCluster
       @postgres.exec("CREATE EXTENSION IF NOT EXISTS #{extension}")
     end
 
-    @zookeeper_port = wait_for_tcp_port(:zookeeper, 2181)
-    @kazoo = Kazoo::Cluster.new("#{@host}:#{@zookeeper_port}")
+    unless @started_without.include?(:kafka)
+      @zookeeper_port = wait_for_tcp_port(:zookeeper, 2181)
+      @kazoo = Kazoo::Cluster.new("#{@host}:#{@zookeeper_port}")
 
-    @kafka_port = wait_for_tcp_port(:kafka, 9092)
+      @kafka_port = wait_for_tcp_port(:kafka, 9092)
+    end
 
     if schema_registry_needed?
-      @compose.up('schema-registry', detached: true)
+      start_service(:'schema-registry')
       schema_registry = nil
-      @schema_registry_port = wait_for_port('schema-registry', 8081, max_tries: 10) do |port|
+      @schema_registry_port = wait_for_port(:'schema-registry', 8081, max_tries: 10) do |port|
         schema_registry = SchemaRegistry::Client.new("http://#{@host}:#{port}")
         schema_registry.subjects rescue nil
       end
       @schema_registry = schema_registry
     end
 
-    @compose.up(bottledwater_service, detached: true)
+    start_service(bottledwater_service)
     wait_for_container(bottledwater_service)
 
     @logger << 'Letting things settle'
@@ -111,7 +116,7 @@ class TestCluster
   end
 
   def schema_registry_needed?
-    bottledwater_format == :avro
+    bottledwater_format == :avro && !@started_without.include?(:'schema-registry')
   end
 
   def postgres
@@ -193,6 +198,12 @@ class TestCluster
     @docker_host_ip
   end
 
+  def start_service(*services)
+    services_to_start = services.reject {|service| @started_without.include?(service) }
+    return if services_to_start.empty?
+    @compose.up(*services_to_start, detached: true, no_deps: true)
+  end
+
   def service_running?(service)
     container_for_service(service).to_h.fetch('State').fetch('Running')
   end
@@ -205,6 +216,10 @@ class TestCluster
   end
 
   def wait_for_port(service, port, max_tries: 5)
+    if starting? && @started_without.include?(service)
+      raise "Waiting for #{service} when we deliberately started without it!"
+    end
+
     mapped_hostport = @compose.port(service, port)
     _, mapped_port = mapped_hostport.split(':', 2)
     mapped_port = Integer(mapped_port)
@@ -230,6 +245,10 @@ class TestCluster
   end
 
   def wait_for(service, message: service, max_tries:)
+    if starting? && @started_without.include?(service)
+      raise "Waiting for #{service} when we deliberately started without it!"
+    end
+
     @logger << "Waiting for #{message}..."
     tries = 0
     result = nil

@@ -38,23 +38,27 @@ postgres:
   hostname: postgres
   ports:
     - '45432:5432'
-bottledwater-json:
+bottledwater:
   build: ./tmp
   dockerfile: Dockerfile.client
   hostname: bottledwater
+  entrypoint:
+    - /usr/local/bin/bottledwater-docker-wrapper.sh
+    - --allow-unkeyed
+    - --topic-config=message.timeout.ms=2000
+bottledwater-json:
+  extends: {service: bottledwater}
   links:
     - postgres
     - kafka
-  command: --output-format=json --allow-unkeyed
+  command: --output-format=json
 bottledwater-avro:
-  build: ./tmp
-  dockerfile: Dockerfile.client
-  hostname: bottledwater
+  extends: {service: bottledwater}
   links:
     - postgres
     - kafka
     - schema-registry
-  command: --output-format=avro --allow-unkeyed
+  command: --output-format=avro
 psql:
   image: postgres:9.5
   links:
