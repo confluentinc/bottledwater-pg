@@ -63,14 +63,16 @@ describe 'topics', functional: true do
       TEST_CLUSTER.stop
     end
 
-    example 'inserting rows in a new table crashes Bottled Water' do
+    example 'inserting rows in a new table does not crash Bottled Water' do
+      pending 'make publish errors non-fatal'
+
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
 
       postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
       postgres.exec('INSERT INTO things (thing) VALUES (42)')
       sleep 5
 
-      expect(TEST_CLUSTER.bottledwater_running?).to be_falsey
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
     end
 
     example 'inserting rows in a new table after creating the topic does not crash Bottled Water' do
@@ -79,6 +81,63 @@ describe 'topics', functional: true do
 
       postgres.exec('CREATE TABLE items (id SERIAL PRIMARY KEY, item INTEGER NOT NULL)')
       postgres.exec('INSERT INTO items (item) VALUES (42)')
+      sleep 5
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+    end
+
+    example 'renaming a table, creating the new topic, then inserting does not crash Bottled Water' do
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+
+      kazoo.create_topic('users', partitions: 1, replication_factor: 1)
+      kazoo.create_topic('members', partitions: 1, replication_factor: 1)
+      sleep 1
+
+      postgres.exec('CREATE TABLE users (id SERIAL PRIMARY KEY, age INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO users (age) VALUES (31)')
+      sleep 1
+      postgres.exec('ALTER TABLE users RENAME TO members')
+      postgres.exec('INSERT INTO members (age) VALUES (42)')
+
+      sleep 5
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+    end
+
+    example 'altering table schema then inserting does not crash Bottled Water' do
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+
+      kazoo.create_topic('customers', partitions: 1, replication_factor: 1)
+      sleep 1
+
+      postgres.exec('CREATE TABLE customers (age INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO customers (age) VALUES (31)')
+      sleep 1
+      postgres.exec('ALTER TABLE customers ADD COLUMN name TEXT NULL')
+      postgres.exec("INSERT INTO customers (age, name) VALUES (42, 'Ron Swanson')")
+
+      sleep 5
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+    end
+
+    example 'adding a primary key to a table then inserting does not crash Bottled Water' do
+      # We test this separately from the previous ALTER TABLE ... ADD COLUMN
+      # because when adding a new primary key, Postgres first creates a
+      # temporary table, which Bottled Water picks up as a new table to stream.
+      pending 'make publish errors non-fatal'
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+
+      kazoo.create_topic('products', partitions: 1, replication_factor: 1)
+      sleep 1
+
+      postgres.exec('CREATE TABLE products (sku INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO products (sku) VALUES (31)')
+      sleep 1
+      postgres.exec('ALTER TABLE products ADD COLUMN id SERIAL PRIMARY KEY')
+      postgres.exec('INSERT INTO products (sku) VALUES (42)')
+
       sleep 5
 
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
