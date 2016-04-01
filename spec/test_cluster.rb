@@ -7,6 +7,8 @@ require 'pg'
 require 'schema_registry'
 require 'socket'
 
+require 'retrying_proxy'
+
 
 class TestCluster
   POSTGRES_EXTENSIONS = %w(
@@ -15,16 +17,17 @@ class TestCluster
   ).freeze
 
   def initialize
+    @logger = Logger.new($stderr)
+
     # override Docker::Compose's default interactive: true
     runner = Backticks::Runner.new(interactive: false)
-    @compose = Docker::Compose::Session.new(runner)
+    compose = Docker::Compose::Session.new(runner)
+    @compose = RetryingProxy.new(compose, retries: 4, logger: @logger)
 
-    @docker = Docker.new
+    @docker = RetryingProxy.new(Docker.new, retries: 4, logger: @logger)
 
     # TODO this probably needs to change for boot2docker
     @host = 'localhost'
-
-    @logger = Logger.new($stderr)
 
     reset
   end
