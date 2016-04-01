@@ -487,7 +487,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
             backpressure(context);
 
         } else if (err != 0) {
-            fatal_error(context, "Failed to produce to Kafka: %s",
+            fatal_error(context, "Failed to produce to Kafka (topic %s): %s",
+                        rd_kafka_topic_name(table->topic),
                         rd_kafka_err2str(rd_kafka_errno2err(errno)));
         }
     }
@@ -505,7 +506,9 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
     msg_envelope_t envelope = (msg_envelope_t) msg->_private;
 
     if (msg->err) {
-        fatal_error(envelope->context, "Message delivery failed: %s", rd_kafka_err2str(msg->err));
+        fatal_error(envelope->context, "Message delivery to topic %s failed: %s",
+                    rd_kafka_topic_name(msg->rkt),
+                    rd_kafka_err2str(msg->err));
     } else {
         // Message successfully delivered to Kafka
         envelope->xact->pending_events--;
