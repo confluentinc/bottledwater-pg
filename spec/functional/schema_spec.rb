@@ -61,6 +61,9 @@ shared_examples 'database schema support' do |format|
   # explicitly create the topic beforehand.
   def create_topic(name)
     kazoo.create_topic(name, partitions: 1, replication_factor: 1)
+
+    # ... except that Kafka seems to take a while to notice the change in Zookeeper...
+    sleep 0.1
   end
 
   def retrieve_roundtrip_message(type, value_str, as_key: false, length: nil)

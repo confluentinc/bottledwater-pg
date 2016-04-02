@@ -75,6 +75,7 @@ describe 'topics', functional: true do
 
     example 'inserting rows in a new table after creating the topic does not crash Bottled Water' do
       kazoo.create_topic('items', partitions: 1, replication_factor: 1)
+      sleep 1
 
       postgres.exec('CREATE TABLE items (id SERIAL PRIMARY KEY, item INTEGER NOT NULL)')
       postgres.exec('INSERT INTO items (item) VALUES (42)')
