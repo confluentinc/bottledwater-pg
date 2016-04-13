@@ -24,6 +24,6 @@ RUN apt-get update && \
     apt-get install -y libjansson4
 
 ADD bottledwater-ext.tar.gz /
-ADD avro-1.8.0.tar.gz /
-RUN cp /usr/local/lib/libavro.so.23.0.0 /usr/lib/x86_64-linux-gnu/libavro.so.23.0.0
+ADD avro.tar.gz /
+RUN cp /usr/local/lib/libavro.so.* /usr/lib/x86_64-linux-gnu/
 COPY replication-config.sh /docker-entrypoint-initdb.d/replication-config.sh
