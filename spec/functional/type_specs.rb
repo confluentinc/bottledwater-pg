@@ -45,7 +45,7 @@ shared_examples 'type specs' do
   end
 
   describe 'bytea' do
-    include_examples 'roundtrip type', "bytea", "\u0001bottledwater\u0001"
+    include_examples 'binary type', "bytea"
   end
 
   describe '"char"' do

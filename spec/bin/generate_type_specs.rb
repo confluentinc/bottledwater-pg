@@ -227,8 +227,7 @@ def print_examples(level, type)
     when 'uuid'
       iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
     when 'bytea'
-      value = "\x01bottledwater\x01"
-      iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, #{value.inspect})
+      iputs level,   %(include_examples 'binary type', #{name.inspect})
     when 'hstore'
       iputs level,   %(include_examples 'roundtrip type', #{name.inspect}, '"pid"=>"2634", "service"=>"bottledwater"')
     else

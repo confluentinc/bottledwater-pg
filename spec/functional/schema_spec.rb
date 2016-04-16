@@ -295,6 +295,44 @@ shared_examples 'database schema support' do |format|
     end
   end
 
+  shared_examples 'binary type' do |type|
+    let(:bytes) { [0xbe, 0xef, 0x00, 0xca, 0xfe] }
+    let(:bytestring) { bytes.pack('c*') }
+
+    # e.g. [0xbe, 0xef] -> '\xbeef'
+    def encode_postgres_literal(bytes)
+      '\x' + bytes.map {|b| '%02x' % b }.join('')
+    end
+
+    example 'retrieve same bytes from Kafka as were stored in Postgres' do
+      literal = encode_postgres_literal(bytes)
+      message = retrieve_roundtrip_message(type, literal)
+
+      row = decode_value(message.value)
+      roundtrip_bytestring = fetch_bytes(row, 'value')
+
+      if :json == format
+        known_bug 'truncates at null byte', 'https://github.com/confluentinc/bottledwater-pg/issues/70'
+      end
+
+      expect(roundtrip_bytestring).to eq(bytestring)
+    end
+
+    example 'retrieve same bytes from Kafka message key as were stored in Postgres' do
+      literal = encode_postgres_literal(bytes)
+      message = retrieve_roundtrip_message(type, literal, as_key: true)
+
+      key = decode_key(message.key)
+      roundtrip_bytestring = fetch_bytes(key, 'value')
+
+      if :json == format
+        known_bug 'truncates at null byte', 'https://github.com/confluentinc/bottledwater-pg/issues/70'
+      end
+
+      expect(roundtrip_bytestring).to eq(bytestring)
+    end
+  end
+
 
   include_examples 'type specs'
 

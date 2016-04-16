@@ -14,6 +14,14 @@ shared_context 'JSON format', format: :json do
     object.fetch(name).fetch('string')
   end
 
+  def fetch_bytes(object, name)
+    unicode_encoded = object.fetch(name).fetch('bytes')
+    # BW encodes e.g. 0xbeef as the JSON string "\u00be\u00ef"
+    # i.e. each codepoint is actually a byte, and we just want to create the
+    # binary byte array of those bytes.  This Array#pack incantation does it:
+    unicode_encoded.codepoints.pack('C*')
+  end
+
   def fetch_any(object, name)
     object.fetch(name).values.first
   end
@@ -39,5 +47,6 @@ shared_context 'Avro format', format: :avro do
   end
   alias fetch_int fetch_entry
   alias fetch_string fetch_entry
+  alias fetch_bytes fetch_entry
   alias fetch_any fetch_entry
 end
