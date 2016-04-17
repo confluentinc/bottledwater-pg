@@ -68,7 +68,7 @@ First, install:
 * [docker-compose](https://docs.docker.com/compose/install/), which is used to
   orchestrate the interaction between services.
 
-After the prequisite applications are installed, you need to build the required Docker containters by running `make docker`.
+After the prequisite applications are installed, you need to build the Docker containers for Bottled Water and Postgres by running `make docker-compose`.
 As soon as the build process finishes, start up Postgres, Kafka, Zookeeper (required by Kafka) and the [Confluent schema registry](http://confluent.io/docs/current/schema-registry/docs/intro.html)
 by running `docker-compose` as follows:
 
