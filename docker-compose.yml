@@ -44,21 +44,24 @@ bottledwater:
   hostname: bottledwater
   entrypoint:
     - /usr/local/bin/bottledwater-docker-wrapper.sh
-    - --allow-unkeyed
     - --topic-config=message.timeout.ms=2000
+  environment:
+    BOTTLED_WATER_ALLOW_UNKEYED: true
 bottledwater-json:
   extends: {service: bottledwater}
   links:
     - postgres
     - kafka
-  command: --output-format=json
+  environment:
+    BOTTLED_WATER_OUTPUT_FORMAT: json
 bottledwater-avro:
   extends: {service: bottledwater}
   links:
     - postgres
     - kafka
     - schema-registry
-  command: --output-format=avro
+  environment:
+    BOTTLED_WATER_OUTPUT_FORMAT: avro
 psql:
   image: postgres:9.5
   links:
