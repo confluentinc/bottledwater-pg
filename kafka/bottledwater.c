@@ -58,6 +58,7 @@ typedef struct {
     rd_kafka_t *kafka;
     table_mapper_t mapper;              /* Remembers topics and schemas for tables we've seen */
     format_t output_format;             /* How to encode messages for writing to Kafka */
+    char *topic_prefix;                 /* String to be prepended to all topic names */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
 } producer_context;
 
@@ -133,6 +134,10 @@ void usage() {
             "  -u, --allow-unkeyed     Allow export of tables that don't have a primary key.\n"
             "                          This is disallowed by default, because updates and\n"
             "                          deletes need a primary key to identify their row.\n"
+            "  -p, --topic-prefix=prefix\n"
+            "                          String to prepend to all topic names.\n"
+            "                          e.g. with --topic-prefix=postgres, updates from table\n"
+            "                          'users' will be written to topic 'postgres-users'.\n"
             "  -C, --kafka-config property=value\n"
             "                          Set global configuration property for Kafka producer\n"
             "                          (see --config-help for list of properties).\n"
@@ -159,6 +164,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"schema-registry", required_argument, NULL, 'r'},
         {"output-format",   required_argument, NULL, 'f'},
         {"allow-unkeyed",   no_argument,       NULL, 'u'},
+        {"topic-prefix",    required_argument, NULL, 'p'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
         {"config-help",     no_argument,       NULL,  1 },
@@ -169,7 +175,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
     int option_index;
     while (true) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:uC:T:", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:C:T:", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -190,6 +196,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'u':
                 context->client->allow_unkeyed = true;
+                break;
+            case 'p':
+                context->topic_prefix = strdup(optarg);
                 break;
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
@@ -611,7 +620,8 @@ void start_producer(producer_context_t context) {
     context->mapper = table_mapper_new(
             context->kafka,
             context->topic_conf,
-            context->registry);
+            context->registry,
+            context->topic_prefix);
 
     fprintf(stderr,
             "Writing messages to Kafka in %s format\n",
@@ -629,6 +639,7 @@ void exit_nicely(producer_context_t context, int status) {
         }
     }
 
+    if (context->topic_prefix) free(context->topic_prefix);
     table_mapper_free(context->mapper);
     if (context->registry) schema_registry_free(context->registry);
     frame_reader_free(context->client->repl.frame_reader);
