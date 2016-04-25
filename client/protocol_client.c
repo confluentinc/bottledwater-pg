@@ -377,3 +377,16 @@ int read_entirely(avro_value_t *value, avro_reader_t reader, const void *buf, si
 
     return err;
 }
+
+
+/* Return: 0 if we should acknowledge wal_pos as flushed;
+ *         FRAME_READER_SYNC_PENDING if we should not because we have
+ *         transactions pending sync;
+ *         anything else to signify an error. */
+int handle_keepalive(frame_reader_t reader, uint64_t wal_pos) {
+    if (reader->on_keepalive) {
+        int err = 0;
+        check(err, reader->on_keepalive(reader->cb_context, wal_pos));
+    }
+    return 0;
+}
