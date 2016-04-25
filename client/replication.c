@@ -272,10 +272,27 @@ int parse_keepalive_message(replication_stream_t stream, char *buf, int buflen) 
             (uint32) (wal_pos >> 32), (uint32) wal_pos, reply_requested);
 #endif
 
+    int err = handle_keepalive(stream->frame_reader, wal_pos);
+    if (err == FRAME_READER_SYNC_PENDING) {
+#ifdef DEBUG
+        fprintf(stderr, "Keepalive: transactions pending sync, ignoring wal_pos %X/%X\n",
+                (uint32) (wal_pos >> 32), (uint32) wal_pos);
+#endif
+        err = 0;
+    } else if (err) {
+        /* Not much we can do about this, but don't acknowledge bytes as flushed */
+    } else {
+#ifdef DEBUG
+        fprintf(stderr, "Keepalive: no transactions pending sync, acknowledging %X/%X as flushed\n",
+                (uint32) (stream->recvd_lsn >> 32), (uint32) stream->recvd_lsn);
+#endif
+        stream->fsync_lsn = Max(wal_pos, stream->recvd_lsn);
+    }
+
     if (reply_requested) {
         return send_checkpoint(stream, current_time());
     }
-    return 0;
+    return err;
 }
 
 
