@@ -20,7 +20,7 @@ a data warehouse, calculate analytics, monitor it for fraud, and so on.
 How it works
 ------------
 
-Bottled Water uses the [logical decoding](http://www.postgresql.org/docs/9.4/static/logicaldecoding.html)
+Bottled Water uses the [logical decoding](http://www.postgresql.org/docs/9.5/static/logicaldecoding.html)
 feature (introduced in PostgreSQL 9.4) to extract a consistent snapshot and a continuous stream
 of change events from a database. The data is extracted at a row level, and encoded using
 [Avro](http://avro.apache.org/). A client program connects to your database, extracts this data,
@@ -121,9 +121,9 @@ To compile Bottled Water is just a matter of:
 
 For that to work, you need the following dependencies installed:
 
-* [PostgreSQL 9.4](http://www.postgresql.org/) development libraries (PGXS and libpq).
+* [PostgreSQL 9.5](http://www.postgresql.org/) development libraries (PGXS and libpq).
   (Homebrew: `brew install postgresql`;
-  Ubuntu: `sudo apt-get install postgresql-server-dev-9.4 libpq-dev`)
+  Ubuntu: `sudo apt-get install postgresql-server-dev-9.5 libpq-dev`)
 * [libsnappy](https://code.google.com/p/snappy/), a dependency of Avro.
   (Homebrew: `brew install snappy`; Ubuntu: `sudo apt-get install libsnappy-dev`)
 * [avro-c](http://avro.apache.org/), the C implementation of Avro.

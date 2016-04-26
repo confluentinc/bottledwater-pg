@@ -8,7 +8,7 @@
 #   docker build -f build/Dockerfile.client -t confluent/bottledwater:0.1 build
 #   docker run -d --name bottledwater --link postgres:postgres --link kafka:kafka --link schema-registry:schema-registry confluent/bottledwater:0.1
 
-FROM postgres:9.4
+FROM postgres:9.5
 
 RUN apt-get update && \
     apt-get upgrade -y && \
