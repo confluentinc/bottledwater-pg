@@ -110,10 +110,12 @@ INTERNAL_TYPES = Set[*%w(
   regclass
   regconfig
   regdictionary
+  regnamespace
   regoper
   regoperator
   regproc
   regprocedure
+  regrole
   regtype
   reltime
   smgr

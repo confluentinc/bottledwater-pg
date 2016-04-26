@@ -212,6 +212,10 @@ shared_examples 'type specs' do
     example('internal type not supported') {}
   end
 
+  describe 'regnamespace' do
+    example('internal type not supported') {}
+  end
+
   describe 'regoper' do
     example('internal type not supported') {}
   end
@@ -225,6 +229,10 @@ shared_examples 'type specs' do
   end
 
   describe 'regprocedure' do
+    example('internal type not supported') {}
+  end
+
+  describe 'regrole' do
     example('internal type not supported') {}
   end
 
