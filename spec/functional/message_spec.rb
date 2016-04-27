@@ -1,5 +1,6 @@
 require 'spec_helper'
 require 'format_contexts'
+require 'test_cluster'
 
 shared_examples 'publishing messages' do |format|
   # We only stop the cluster after all examples in the context have run, so
@@ -7,19 +8,18 @@ shared_examples 'publishing messages' do |format|
   # therefore need to make sure examples look at different tables, so they
   # don't affect each other.
 
-  before(:context) do
-    require 'test_cluster'
-    TEST_CLUSTER.bottledwater_format = format
-    TEST_CLUSTER.start
-  end
-
-  after(:context) do
-    TEST_CLUSTER.stop
-  end
-
   let(:postgres) { TEST_CLUSTER.postgres }
 
   describe 'table with a primary key' do
+    before(:context) do
+      TEST_CLUSTER.bottledwater_format = format
+      TEST_CLUSTER.start
+    end
+
+    after(:context) do
+      TEST_CLUSTER.stop
+    end
+
     example 'inserting rows in Postgres should publish the rows to Kafka in order' do
       postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
       postgres.exec('INSERT INTO things (thing) SELECT * FROM generate_series(1, 10) AS thing')
@@ -69,6 +69,21 @@ shared_examples 'publishing messages' do |format|
   end
 
   describe 'unkeyed table' do
+    before(:context) do
+      TEST_CLUSTER.bottledwater_format = format
+
+      # Kafka 0.9 rejects unkeyed messages sent to a compacted table, but we
+      # set compaction as default in test_cluster.rb, so we need to explicitly
+      # disable it for these topics.
+      TEST_CLUSTER.kafka_log_cleanup_policy = :delete
+
+      TEST_CLUSTER.start
+    end
+
+    after(:context) do
+      TEST_CLUSTER.stop
+    end
+
     example 'inserting rows should publish unkeyed messages' do
       postgres.exec('CREATE TABLE logs (message TEXT NOT NULL)')
       postgres.exec_params('INSERT INTO logs (message) VALUES ($1)', ['Launching missiles'])

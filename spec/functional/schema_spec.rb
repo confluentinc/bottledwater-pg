@@ -72,7 +72,13 @@ shared_examples 'database schema support' do |format|
     create_topic(table_name)
 
     lengthspec = "(#{length})" unless length.nil?
-    keyspec = 'PRIMARY KEY' if as_key
+    if as_key
+      keyspec = 'PRIMARY KEY'
+    else
+      # have to make sure the table has a primary key, so Kafka 0.9 won't
+      # reject the message (unkeyed message to a compacted topic)
+      keyspec = ', id SERIAL PRIMARY KEY NOT NULL'
+    end
     postgres.exec(%{CREATE TABLE "#{table_name}" (value #{type}#{lengthspec} NOT NULL #{keyspec})})
     postgres.exec_params(%{INSERT INTO "#{table_name}" (value) VALUES ($1)}, [value_str])
 
