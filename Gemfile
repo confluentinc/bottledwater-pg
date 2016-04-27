@@ -7,7 +7,7 @@ group :development do
   gem 'docker-compose', '>= 0.4.2'
   gem 'rspec'
   gem 'kafka-consumer'
-  gem 'kazoo-ruby'
+  gem 'kazoo-ruby', '>= 0.5.1'
   gem 'pg'
   gem 'schema_registry'
 
