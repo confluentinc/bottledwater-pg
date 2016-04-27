@@ -33,6 +33,7 @@ class TestCluster
   end
 
   def reset
+    self.kafka_log_cleanup_policy = :compact
     self.kafka_auto_create_topics_enable = true
 
     self.bottledwater_format = :json
@@ -93,6 +94,10 @@ class TestCluster
 
   def kafka_advertised_host_name=(hostname)
     ENV['KAFKA_ADVERTISED_HOST_NAME'] = hostname
+  end
+
+  def kafka_log_cleanup_policy=(policy)
+    ENV['KAFKA_LOG_CLEANUP_POLICY'] = policy.to_s
   end
 
   def kafka_auto_create_topics_enable=(enabled)

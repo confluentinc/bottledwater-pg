@@ -17,7 +17,7 @@ kafka:
   links:
     - zookeeper
   environment:
-    KAFKA_LOG_CLEANUP_POLICY: compact
+    KAFKA_LOG_CLEANUP_POLICY:
     KAFKA_ADVERTISED_HOST_NAME:
     KAFKA_AUTO_CREATE_TOPICS_ENABLE:
   ports:
