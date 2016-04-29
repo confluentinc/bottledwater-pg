@@ -30,6 +30,9 @@
 
 #define PRODUCER_CONTEXT_ERROR_LEN 512
 #define MAX_IN_FLIGHT_TRANSACTIONS 1000
+/* leave room for one extra empty element so the circular buffer can
+ * distinguish between empty and full */
+#define XACT_LIST_LEN (MAX_IN_FLIGHT_TRANSACTIONS + 1)
 
 typedef int format_t; /* should always be one of the following constants: */
 #define OUTPUT_FORMAT_UNDEFINED 0
@@ -50,7 +53,7 @@ typedef struct {
     client_context_t client;            /* The connection to Postgres */
     schema_registry_t registry;         /* Submits Avro schemas to schema registry */
     char *brokers;                      /* Comma-separated list of host:port for Kafka brokers */
-    transaction_info xact_list[MAX_IN_FLIGHT_TRANSACTIONS]; /* Circular buffer */
+    transaction_info xact_list[XACT_LIST_LEN]; /* Circular buffer */
     int xact_head;                      /* Index into xact_list currently being received from PG */
     int xact_tail;                      /* Oldest index in xact_list not yet acknowledged by Kafka */
     rd_kafka_conf_t *kafka_conf;
@@ -64,8 +67,20 @@ typedef struct {
 
 typedef producer_context *producer_context_t;
 
-#define xact_list_full(context) \
-    (((context)->xact_head + 1) % MAX_IN_FLIGHT_TRANSACTIONS == (context)->xact_tail)
+static inline int xact_list_length(producer_context_t context) {
+    return (XACT_LIST_LEN + /* normalise negative length in case of wraparound */
+            context->xact_head + 1 - context->xact_tail)
+        % XACT_LIST_LEN;
+}
+
+static inline bool xact_list_full(producer_context_t context) {
+    return xact_list_length(context) == XACT_LIST_LEN - 1;
+}
+
+static inline bool xact_list_empty(producer_context_t context) {
+    return xact_list_length(context) == 0;
+}
+
 
 typedef struct {
     producer_context_t context;
@@ -309,7 +324,7 @@ static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     // to be delivered to Kafka and acknowledged for the broker.
     while (xact_list_full(context)) backpressure(context);
 
-    context->xact_head = (context->xact_head + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
+    context->xact_head = (context->xact_head + 1) % XACT_LIST_LEN;
     transaction_info *xact = &context->xact_list[context->xact_head];
     xact->xid = xid;
     xact->recvd_events = 0;
@@ -523,9 +538,10 @@ void maybe_checkpoint(producer_context_t context) {
             context->client->taking_snapshot = false;
         }
 
-        if (context->xact_tail == context->xact_head) break;
+        context->xact_tail = (context->xact_tail + 1) % XACT_LIST_LEN;
 
-        context->xact_tail = (context->xact_tail + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
+        if (xact_list_empty(context)) break;
+
         xact = &context->xact_list[context->xact_tail];
     }
 }
