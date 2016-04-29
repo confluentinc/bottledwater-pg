@@ -310,14 +310,13 @@ static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     replication_stream_t stream = &context->client->repl;
 
     if (xid == 0) {
-        if (context->xact_head != 0 || context->xact_tail != 0) {
+        if (!(context->xact_tail == 0 && xact_list_empty(context))) {
             fprintf(stderr, "%s: Expected snapshot to be the first transaction.\n", progname);
             exit_nicely(context, 1);
         }
 
         fprintf(stderr, "Created replication slot \"%s\", capturing consistent snapshot \"%s\".\n",
                 stream->slot_name, stream->snapshot_name);
-        return 0;
     }
 
     // If the circular buffer is full, we have to block and wait for some transactions
@@ -612,7 +611,11 @@ producer_context_t init_producer(client_context_t client) {
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
-    // xact_head, xact_tail and xact_list are set to zero by memset() above
+
+    context->xact_head = XACT_LIST_LEN - 1;
+    /* xact_tail and xact_list are set to zero by memset() above; this results
+     * in the circular buffer starting out empty, since the tail is one ahead
+     * of the head. */
 
 #if RD_KAFKA_VERSION >= 0x00090000
     // librdkafka 0.9.0 includes an implementation of a "consistent hashing
