@@ -60,6 +60,7 @@ typedef struct {
     format_t output_format;             /* How to encode messages for writing to Kafka */
     char *topic_prefix;                 /* String to be prepended to all topic names */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
+    char *tables;                      /* Comma-separated list of tables */
 } producer_context;
 
 typedef producer_context *producer_context_t;
@@ -143,6 +144,8 @@ void usage() {
             "                          (see --config-help for list of properties).\n"
             "  -T, --topic-config property=value\n"
             "                          Set topic configuration property for Kafka producer.\n"
+            "  -o, --table             Select tables to subscribed to.\n"
+            "                          Separated by comma \n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -167,6 +170,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"topic-prefix",    required_argument, NULL, 'p'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
+        {"table",           required_argument, NULL, 'o'},
         {"config-help",     no_argument,       NULL,  1 },
         {NULL,              0,                 NULL,  0 }
     };
@@ -202,6 +206,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
+                break;
+            case 'o':
+                context->tables = strdup(optarg);
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
@@ -630,6 +637,7 @@ void start_producer(producer_context_t context) {
 
 /* Shuts everything down and exits the process. */
 void exit_nicely(producer_context_t context, int status) {
+    fprintf(stderr, "Exit nicely. Bye bye !\n");
     // If a snapshot was in progress and not yet complete, and an error occurred, try to
     // drop the replication slot, so that the snapshot is retried when the user tries again.
     if (context->client->taking_snapshot && status != 0) {
