@@ -48,6 +48,15 @@ typedef struct {
     uint64_t commit_lsn;  /* WAL position of the transaction's commit event */
 } transaction_info;
 
+typedef struct bw_pattern_s {
+        TAILQ_ENTRY(bw_pattern_s)  bwpat_link;
+        regex_t      bwpat_re;   /* Compiled regex */
+} bw_pattern_t;
+
+typedef struct bw_pattern_list_s {
+        TAILQ_HEAD(,bw_pattern_s) bwpl_head;
+} bw_pattern_list_t;
+
 typedef struct {
     client_context_t client;            /* The connection to Postgres */
     schema_registry_t registry;         /* Submits Avro schemas to schema registry */
@@ -78,15 +87,6 @@ typedef struct {
     transaction_info *xact;
 } msg_envelope;
 
-typedef struct bw_pattern_s {
-        TAILQ_ENTRY(bw_pattern_s)  bwpat_link;
-        regex_t      bwpat_re;   /* Compiled regex */
-} bw_pattern_t;
-
-typedef struct bw_pattern_list_s {
-        TAILQ_HEAD(,bw_pattern_s) bwpl_head;
-} bw_pattern_list_t;
-
 typedef msg_envelope *msg_envelope_t;
 
 static char *progname;
@@ -103,7 +103,7 @@ void set_topic_config(producer_context_t context, char *property, char *value);
 void set_list_ignored_topics(producer_context_t context, char *value);
 static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value);
 static int append_list_ignored_topics(bw_pattern_list_t *list, char *value);
-static int list_ignored_topics_match(bw_pattern_list_t *plist, const char *str)
+static int list_ignored_topics_match(bw_pattern_list_t *plist, const char *str);
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
@@ -323,10 +323,11 @@ void set_list_ignored_topics(producer_context_t context, char *value) {
         fprintf(stderr, "%s: %s\n", progname, "list of ignored topics is null");
         return;
     }
-    bw_pattern_list_t *blacklist_topics = zmalloc(sizeof(*bw_pattern_list_t));
-    TAILQ_INIT(&blacklist_topics->bwl_head);
+    bw_pattern_list_t *blacklist_topics = malloc(sizeof(*blacklist_topics));
+    TAILQ_INIT(&blacklist_topics->bwpl_head);
     if (parse_list_ignored_topics(blacklist_topics, value)) {
     	fprintf(stderr, "%s: %s\n", progname, "parse error");
+	free(blacklist_topics);
     	return;
     }
     context->bw_topic_blacklist = blacklist_topics;
@@ -337,7 +338,6 @@ static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value) {
   	s = strdup(value);
     while (s && *s) {
         char *t = s;
-        char re_errstr[256];
 
         /* Find separator */
         while ((t = strchr(t, ','))) {
@@ -352,7 +352,7 @@ static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value) {
                         break;
                 }
         }
-        if (!append_list_ignored_topics(list, s)) {
+        if (append_list_ignored_topics(list, s)) {
         	fprintf(stderr, "%s: %s\n", progname, "parse error");
         	return 1;
         }
@@ -369,9 +369,9 @@ static int append_list_ignored_topics(bw_pattern_list_t *list, char *value) {
 
 	regex_t p_regex_t;
 	if (!regcomp(&p_regex_t, value, REG_EXTENDED|REG_NOSUB)) {
-		bw_pattern_t *p_bw_pattern_t = zmalloc(sizeof(*bw_pattern_t));
+		bw_pattern_t *p_bw_pattern_t = malloc(sizeof(*p_bw_pattern_t));
 		p_bw_pattern_t->bwpat_re = p_regex_t;
-		TAILQ_INSERT_TAIL(&list->bwl_head, p_bw_pattern_t, bwpat_link);
+		TAILQ_INSERT_TAIL(&list->bwpl_head, p_bw_pattern_t, bwpat_link);
 		return 0;
 	}
 	return 1;
@@ -380,7 +380,7 @@ static int append_list_ignored_topics(bw_pattern_list_t *list, char *value) {
 static int list_ignored_topics_match(bw_pattern_list_t *plist, const char *str) {
 	bw_pattern_t *pat;
 
-	TAILQ_FOREACH(pat, &plist->bwl_head, bwpat_link) {
+	TAILQ_FOREACH(pat, &plist->bwpl_head, bwpat_link) {
 
 		if (regexec(&pat->bwpat_re, str, 0, NULL, 0) != REG_NOMATCH)
 				return 1;
