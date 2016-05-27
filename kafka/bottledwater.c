@@ -129,7 +129,6 @@ client_context_t init_client(void);
 producer_context_t init_producer(client_context_t client);
 void start_producer(producer_context_t context);
 void exit_nicely(producer_context_t context, int status);
-static int bw_parse_list()
 
 
 void usage() {
