@@ -104,7 +104,7 @@ void create_list_ignored_topics(producer_context_t context, char *value);
 static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value);
 static int append_list_ignored_topics(bw_pattern_list_t *list, char *value);
 static int match_with_list_ignored_topics(bw_pattern_list_t *plist, const char *str);
-static * bw_pattern_t create_new_bw_pattern(char *value); 
+static bw_pattern_t * create_new_bw_pattern(char *value); 
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
@@ -376,7 +376,7 @@ static int append_list_ignored_topics(bw_pattern_list_t *list, char *value) {
 	return 1;
 }
 
-static * bw_pattern_t create_new_bw_pattern(char *value) {
+static bw_pattern_t * create_new_bw_pattern(char *value) {
   regex_t p_regex_t;
 	if (!regcomp(&p_regex_t, value, REG_EXTENDED|REG_NOSUB)) {
 		bw_pattern_t *p_bw_pattern_t = malloc(sizeof(*p_bw_pattern_t));
