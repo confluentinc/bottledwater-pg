@@ -100,10 +100,10 @@ const char* output_format_name(format_t format);
 void set_output_format(producer_context_t context, char *format);
 void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
-void set_list_ignored_topics(producer_context_t context, char *value);
+void create_list_ignored_topics(producer_context_t context, char *value);
 static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value);
 static int append_list_ignored_topics(bw_pattern_list_t *list, char *value);
-static int list_ignored_topics_match(bw_pattern_list_t *plist, const char *str);
+static int match_with_list_ignored_topics(bw_pattern_list_t *plist, const char *str);
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
@@ -233,7 +233,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_topic_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'i':
-                set_list_ignored_topics(context, optarg);
+                create_list_ignored_topics(context, optarg);
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
@@ -318,7 +318,7 @@ void set_topic_config(producer_context_t context, char *property, char *value) {
     }
 }
 
-void set_list_ignored_topics(producer_context_t context, char *value) {
+void create_list_ignored_topics(producer_context_t context, char *value) {
     if (!value) {
         fprintf(stderr, "%s: %s\n", progname, "list of ignored topics is null");
         return;
@@ -326,8 +326,8 @@ void set_list_ignored_topics(producer_context_t context, char *value) {
     bw_pattern_list_t *blacklist_topics = malloc(sizeof(*blacklist_topics));
     TAILQ_INIT(&blacklist_topics->bwpl_head);
     if (parse_list_ignored_topics(blacklist_topics, value)) {
-    	fprintf(stderr, "%s: %s\n", progname, "parse error");
-	free(blacklist_topics);
+    	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
+	    free(blacklist_topics);
     	return;
     }
     context->bw_topic_blacklist = blacklist_topics;
@@ -353,7 +353,7 @@ static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value) {
                 }
         }
         if (append_list_ignored_topics(list, s)) {
-        	fprintf(stderr, "%s: %s\n", progname, "parse error");
+        	fprintf(stderr, "%s: %s\n", progname, "cannot append new element to list");
         	return 1;
         }
         s = t;
@@ -367,17 +367,25 @@ static int append_list_ignored_topics(bw_pattern_list_t *list, char *value) {
 		return 1;
 	}
 
-	regex_t p_regex_t;
-	if (!regcomp(&p_regex_t, value, REG_EXTENDED|REG_NOSUB)) {
-		bw_pattern_t *p_bw_pattern_t = malloc(sizeof(*p_bw_pattern_t));
-		p_bw_pattern_t->bwpat_re = p_regex_t;
+  bw_pattern_t *p_bw_pattern_t;
+	if ((p_bw_pattern_t = create_new_bw_pattern(value))) {
 		TAILQ_INSERT_TAIL(&list->bwpl_head, p_bw_pattern_t, bwpat_link);
 		return 0;
 	}
 	return 1;
 }
 
-static int list_ignored_topics_match(bw_pattern_list_t *plist, const char *str) {
+static * bw_pattern_t create_new_bw_pattern(char *value) {
+  regex_t p_regex_t;
+	if (!regcomp(&p_regex_t, value, REG_EXTENDED|REG_NOSUB)) {
+		bw_pattern_t *p_bw_pattern_t = malloc(sizeof(*p_bw_pattern_t));
+		p_bw_pattern_t->bwpat_re = p_regex_t;
+    return p_bw_pattern_t;
+  }
+  return NULL;
+}
+
+static int match_with_list_ignored_topics(bw_pattern_list_t *plist, const char *str) {
 	bw_pattern_t *pat;
 
 	TAILQ_FOREACH(pat, &plist->bwpl_head, bwpat_link) {
@@ -497,8 +505,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         exit_nicely(context, 1);
     }
 
-    if (list_ignored_topics_match(context->bw_topic_blacklist, table->table_name)) {
-    	fprintf(stderr, "%s: %s\n", "don't send ignored topic", table->table_name);
+    if (match_with_list_ignored_topics(context->bw_topic_blacklist, table->table_name)) {
+    	fprintf(stderr, "%s %s: %s\n", progname, "don't send ignored topic", table->table_name);
     	return 0;
     }
 
