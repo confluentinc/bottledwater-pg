@@ -104,7 +104,8 @@ void create_list_ignored_topics(producer_context_t context, char *value);
 static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value);
 static int append_list_ignored_topics(bw_pattern_list_t *list, char *value);
 static int match_with_list_ignored_topics(bw_pattern_list_t *plist, const char *str);
-static * bw_pattern_t create_new_bw_pattern(char *value); 
+static * bw_pattern_t create_new_bw_pattern(char *value);
+static void free_blacklist_topics_list(bw_pattern_list_t *list);
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
@@ -324,14 +325,16 @@ void create_list_ignored_topics(producer_context_t context, char *value) {
         fprintf(stderr, "%s: %s\n", progname, "list of ignored topics is null");
         return;
     }
+
     bw_pattern_list_t *blacklist_topics = malloc(sizeof(*blacklist_topics));
     TAILQ_INIT(&blacklist_topics->bwpl_head);
     if (parse_list_ignored_topics(blacklist_topics, value)) {
     	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
 	    free(blacklist_topics);
+      blacklist_topics = NULL;
     	return;
     }
-    context->bw_topic_blacklist = blacklist_topics;
+    context->bw_topic_blacklist = blacklist_topics ? blacklist_topics : NULL;
 }
 
 static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value) {
@@ -387,6 +390,9 @@ static * bw_pattern_t create_new_bw_pattern(char *value) {
 }
 
 static int match_with_list_ignored_topics(bw_pattern_list_t *plist, const char *str) {
+  if (plist == NULL)
+      return 0;
+
 	bw_pattern_t *pat;
 
 	TAILQ_FOREACH(pat, &plist->bwpl_head, bwpat_link) {
@@ -754,15 +760,40 @@ void exit_nicely(producer_context_t context, int status) {
         }
     }
 
-    if (context->topic_prefix) free(context->topic_prefix);
+    if (context->topic_prefix)
+        free(context->topic_prefix);
+
+    if (context->bw_topic_blacklist)
+        free_blacklist_topics_list(context->bw_topic_blacklist);
+
     table_mapper_free(context->mapper);
-    if (context->registry) schema_registry_free(context->registry);
+
+    if (context->registry)
+        schema_registry_free(context->registry);
+
     frame_reader_free(context->client->repl.frame_reader);
+
     db_client_free(context->client);
-    if (context->kafka) rd_kafka_destroy(context->kafka);
+
+    if (context->kafka)
+        rd_kafka_destroy(context->kafka);
+
     curl_global_cleanup();
+
     rd_kafka_wait_destroyed(2000);
     exit(status);
+}
+
+static void free_blacklist_topics_list(bw_pattern_list_t *list) {
+    struct bw_pattern_t *tmp;
+    while ((ap = TAILQ_FIRST(&list->bwpl_head)) != NULL) {
+        TAILQ_REMOVE(&list->bwpl_head, tmp, bwpat_link);
+
+        regfree(&tmp->bwpat_re);
+        free(tmp);
+    }
+
+    free(list);
 }
 
 static void handle_shutdown_signal(int sig) {
