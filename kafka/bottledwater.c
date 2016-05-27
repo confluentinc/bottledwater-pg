@@ -785,8 +785,8 @@ void exit_nicely(producer_context_t context, int status) {
 }
 
 static void free_blacklist_topics_list(bw_pattern_list_t *list) {
-    struct bw_pattern_t *tmp;
-    while ((ap = TAILQ_FIRST(&list->bwpl_head)) != NULL) {
+    bw_pattern_t *tmp;
+    while ((tmp = TAILQ_FIRST(&list->bwpl_head)) != NULL) {
         TAILQ_REMOVE(&list->bwpl_head, tmp, bwpat_link);
 
         regfree(&tmp->bwpat_re);
