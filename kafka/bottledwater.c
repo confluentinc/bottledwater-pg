@@ -1,6 +1,7 @@
 #include "connect.h"
 #include "json.h"
 #include "registry.h"
+#include "queue.h"
 
 #include <librdkafka/rdkafka.h>
 #include <getopt.h>
