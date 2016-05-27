@@ -338,8 +338,7 @@ void create_list_ignored_topics(producer_context_t context, char *value) {
 }
 
 static int parse_list_ignored_topics(bw_pattern_list_t *list, char *value) {
-    char *s;
-  	s = strdup(value);
+    char *s = value;
     while (s && *s) {
         char *t = s;
 
