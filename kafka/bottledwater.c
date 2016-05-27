@@ -379,7 +379,7 @@ static int append_list_ignored_topics(bw_pattern_list_t *list, char *value) {
 	return 1;
 }
 
-static * bw_pattern_t create_new_bw_pattern(char *value) {
+static bw_pattern_t * create_new_bw_pattern(char *value) {
   regex_t p_regex_t;
 	if (!regcomp(&p_regex_t, value, REG_EXTENDED|REG_NOSUB)) {
 		bw_pattern_t *p_bw_pattern_t = malloc(sizeof(*p_bw_pattern_t));
