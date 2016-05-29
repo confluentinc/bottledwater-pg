@@ -388,12 +388,12 @@ static bw_pattern_t* create_new_ignored_topic_pattern(char *value) {
 }
 
 static int match_with_ignored_topic_list(bw_pattern_list_t *list, const char *str) {
-  if (plist == NULL)
+  if (list == NULL)
       return 0;
 
 	bw_pattern_t *pat;
 
-	TAILQ_FOREACH(pat, &plist->bwpl_head, bwpat_link) {
+	TAILQ_FOREACH(pat, &list->bwpl_head, bwpat_link) {
 
 		if (regexec(&pat->bwpat_re, str, 0, NULL, 0) != REG_NOMATCH)
 				return 1;
@@ -510,7 +510,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         exit_nicely(context, 1);
     }
 
-    if (match_with_ignored_topic_list(context->bw_topic_blacklist, table->table_name)) {
+    if (match_with_ignored_topic_list(context->bw_ignored_topic_list, table->table_name)) {
     	fprintf(stderr, "%s %s: %s\n", progname, "don't send ignored topic", table->table_name);
     	return 0;
     }
@@ -761,8 +761,8 @@ void exit_nicely(producer_context_t context, int status) {
     if (context->topic_prefix)
         free(context->topic_prefix);
 
-    if (context->bw_topic_blacklist)
-        free_blacklist_topics_list(context->bw_topic_blacklist);
+    if (context->bw_ignored_topic_list)
+        free_ignored_topic_list(context->bw_ignored_topic_list);
 
     table_mapper_free(context->mapper);
 
