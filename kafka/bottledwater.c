@@ -30,6 +30,9 @@
 
 #define PRODUCER_CONTEXT_ERROR_LEN 512
 #define MAX_IN_FLIGHT_TRANSACTIONS 1000
+/* leave room for one extra empty element so the circular buffer can
+ * distinguish between empty and full */
+#define XACT_LIST_LEN (MAX_IN_FLIGHT_TRANSACTIONS + 1)
 
 typedef int format_t; /* should always be one of the following constants: */
 #define OUTPUT_FORMAT_UNDEFINED 0
@@ -50,7 +53,7 @@ typedef struct {
     client_context_t client;            /* The connection to Postgres */
     schema_registry_t registry;         /* Submits Avro schemas to schema registry */
     char *brokers;                      /* Comma-separated list of host:port for Kafka brokers */
-    transaction_info xact_list[MAX_IN_FLIGHT_TRANSACTIONS]; /* Circular buffer */
+    transaction_info xact_list[XACT_LIST_LEN]; /* Circular buffer */
     int xact_head;                      /* Index into xact_list currently being received from PG */
     int xact_tail;                      /* Oldest index in xact_list not yet acknowledged by Kafka */
     rd_kafka_conf_t *kafka_conf;
@@ -64,8 +67,20 @@ typedef struct {
 
 typedef producer_context *producer_context_t;
 
-#define xact_list_full(context) \
-    (((context)->xact_head + 1) % MAX_IN_FLIGHT_TRANSACTIONS == (context)->xact_tail)
+static inline int xact_list_length(producer_context_t context) {
+    return (XACT_LIST_LEN + /* normalise negative length in case of wraparound */
+            context->xact_head + 1 - context->xact_tail)
+        % XACT_LIST_LEN;
+}
+
+static inline bool xact_list_full(producer_context_t context) {
+    return xact_list_length(context) == XACT_LIST_LEN - 1;
+}
+
+static inline bool xact_list_empty(producer_context_t context) {
+    return xact_list_length(context) == 0;
+}
+
 
 typedef struct {
     producer_context_t context;
@@ -102,6 +117,7 @@ static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
 static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len, avro_value_t *key_val,
         const void *old_bin, size_t old_len, avro_value_t *old_val);
+static int on_keepalive(void *_context, uint64_t wal_pos);
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
         const void *val_bin, size_t val_len);
@@ -295,21 +311,25 @@ static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     replication_stream_t stream = &context->client->repl;
 
     if (xid == 0) {
-        if (context->xact_head != 0 || context->xact_tail != 0) {
+        if (!(context->xact_tail == 0 && xact_list_empty(context))) {
             fprintf(stderr, "%s: Expected snapshot to be the first transaction.\n", progname);
             exit_nicely(context, 1);
         }
 
         fprintf(stderr, "Created replication slot \"%s\", capturing consistent snapshot \"%s\".\n",
                 stream->slot_name, stream->snapshot_name);
-        return 0;
     }
 
     // If the circular buffer is full, we have to block and wait for some transactions
     // to be delivered to Kafka and acknowledged for the broker.
-    while (xact_list_full(context)) backpressure(context);
+    while (xact_list_full(context)) {
+#ifdef DEBUG
+        fprintf(stderr, "Too many transactions in flight, applying backpressure\n");
+#endif
+        backpressure(context);
+    }
 
-    context->xact_head = (context->xact_head + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
+    context->xact_head = (context->xact_head + 1) % XACT_LIST_LEN;
     transaction_info *xact = &context->xact_list[context->xact_head];
     xact->xid = xid;
     xact->recvd_events = 0;
@@ -383,6 +403,16 @@ static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         return 0; // delete on unkeyed table --> can't do anything
 }
 
+static int on_keepalive(void *_context, uint64_t wal_pos) {
+    producer_context_t context = (producer_context_t) _context;
+
+    if (xact_list_empty(context)) {
+        return 0;
+    } else {
+        return FRAME_READER_SYNC_PENDING;
+    }
+}
+
 
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
@@ -453,6 +483,9 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         // If data from Postgres is coming in faster than we can send it on to Kafka, we
         // create backpressure by blocking until the producer's queue has drained a bit.
         if (rd_kafka_errno2err(errno) == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
+#ifdef DEBUG
+            fprintf(stderr, "Kafka producer queue is full, applying backpressure\n");
+#endif
             backpressure(context);
 
         } else if (err != 0) {
@@ -523,9 +556,10 @@ void maybe_checkpoint(producer_context_t context) {
             context->client->taking_snapshot = false;
         }
 
-        if (context->xact_tail == context->xact_head) break;
+        context->xact_tail = (context->xact_tail + 1) % XACT_LIST_LEN;
 
-        context->xact_tail = (context->xact_tail + 1) % MAX_IN_FLIGHT_TRANSACTIONS;
+        if (xact_list_empty(context)) break;
+
         xact = &context->xact_list[context->xact_tail];
     }
 }
@@ -564,6 +598,7 @@ client_context_t init_client() {
     frame_reader->on_insert_row   = on_insert_row;
     frame_reader->on_update_row   = on_update_row;
     frame_reader->on_delete_row   = on_delete_row;
+    frame_reader->on_keepalive    = on_keepalive;
 
     client_context_t client = db_client_new();
     client->app_name = APP_NAME;
@@ -588,7 +623,11 @@ producer_context_t init_producer(client_context_t client) {
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
-    // xact_head, xact_tail and xact_list are set to zero by memset() above
+
+    context->xact_head = XACT_LIST_LEN - 1;
+    /* xact_tail and xact_list are set to zero by memset() above; this results
+     * in the circular buffer starting out empty, since the tail is one ahead
+     * of the head. */
 
 #if RD_KAFKA_VERSION >= 0x00090000
     // librdkafka 0.9.0 includes an implementation of a "consistent hashing
