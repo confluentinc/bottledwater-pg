@@ -1,12 +1,11 @@
 #!/bin/sh
 
-POSTGRES_CONNECTION_STRING="hostaddr=$POSTGRES_PORT_5432_TCP_ADDR port=$POSTGRES_PORT_5432_TCP_PORT dbname=postgres user=postgres"
-KAFKA_BROKER="$KAFKA_PORT_9092_TCP_ADDR:$KAFKA_PORT_9092_TCP_PORT"
+POSTGRES_CONNECTION_STRING="host=postgres port=5432 dbname=postgres user=postgres"
+KAFKA_BROKER="kafka:9092"
 
-if [ -n "$SCHEMA_REGISTRY_PORT_8081_TCP_ADDR" ]; then
-  SCHEMA_REGISTRY_URL="http://${SCHEMA_REGISTRY_PORT_8081_TCP_ADDR}:${SCHEMA_REGISTRY_PORT_8081_TCP_PORT}"
-
-  schema_registry_opts="--schema-registry=$SCHEMA_REGISTRY_URL"
+# do we have a link to the schema-registry container?
+if getent hosts schema-registry >/dev/null; then
+  schema_registry_opts="--schema-registry=http://schema-registry:8081"
 else
   schema_registry_opts=
 fi
