@@ -322,7 +322,7 @@ int parse_xlogdata_message(replication_stream_t stream, char *buf, int buflen) {
 
     int err = parse_frame(stream->frame_reader, wal_pos, buf + hdrlen, buflen - hdrlen);
     if (err) {
-        repl_error(stream, "Error parsing frame data: %s", avro_strerror());
+        repl_error(stream, "Error parsing frame data: %s", stream->frame_reader->error);
     }
 
     stream->recvd_lsn = Max(wal_pos, stream->recvd_lsn);

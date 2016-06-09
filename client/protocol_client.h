@@ -50,6 +50,8 @@ typedef int (*delete_row_cb)(void *, uint64_t, Oid,
 typedef int (*keepalive_cb)(void *, uint64_t);
 
 
+#define FRAME_READER_ERROR_LEN 512
+
 typedef struct {
     Oid                 relid;       /* Uniquely identifies a table, even when it is renamed */
     avro_schema_t       key_schema;  /* Avro schema for the table's primary key or replica identity */
@@ -78,6 +80,7 @@ typedef struct {
     avro_value_iface_t *frame_iface; /* Avro generic interface for the frame schema */
     avro_value_t frame_value;        /* Avro value for a frame */
     avro_reader_t avro_reader;       /* In-memory buffer reader */
+    char error[FRAME_READER_ERROR_LEN]; /* Buffer for error messages */
 } frame_reader;
 
 typedef frame_reader *frame_reader_t;
