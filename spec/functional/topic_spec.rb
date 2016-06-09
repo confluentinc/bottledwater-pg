@@ -56,6 +56,13 @@ describe 'topics', functional: true do
     before(:context) do
       TEST_CLUSTER.kafka_auto_create_topics_enable = false
       TEST_CLUSTER.bottledwater_on_error = :exit
+
+      # Some of these tests create tables without a primary key.  Kafka 0.9
+      # rejects unkeyed messages sent to a compacted table, but we set
+      # compaction as default in test_cluster.rb, so we need to explicitly
+      # disable it for these tests.
+      TEST_CLUSTER.kafka_log_cleanup_policy = :delete
+
       TEST_CLUSTER.start
     end
 
@@ -145,6 +152,13 @@ describe 'topics', functional: true do
     before(:context) do
       TEST_CLUSTER.kafka_auto_create_topics_enable = false
       TEST_CLUSTER.bottledwater_on_error = :log
+
+      # Some of these tests create tables without a primary key.  Kafka 0.9
+      # rejects unkeyed messages sent to a compacted table, but we set
+      # compaction as default in test_cluster.rb, so we need to explicitly
+      # disable it for these tests.
+      TEST_CLUSTER.kafka_log_cleanup_policy = :delete
+
       TEST_CLUSTER.start
     end
 
