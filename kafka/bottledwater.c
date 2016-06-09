@@ -800,6 +800,9 @@ void exit_nicely(producer_context_t context, int status) {
     if (context->topic_prefix)
         free(context->topic_prefix);
 
+    if (context->tables)
+        free(context->tables);
+
     if (context->bw_ignored_topic_list)
         free_ignored_topic_list(context->bw_ignored_topic_list);
 
