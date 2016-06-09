@@ -1,0 +1,13 @@
+sudo: required
+services:
+  - docker
+before_install:
+  - gem install bundler
+install:
+  - make test-deps
+script:
+  - make docker-compose
+  - make test 2>make-test.err
+after_failure:
+  - "echo Tests failed, stderr was:"
+  - cat make-test.err

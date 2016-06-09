@@ -20,7 +20,7 @@ a data warehouse, calculate analytics, monitor it for fraud, and so on.
 How it works
 ------------
 
-Bottled Water uses the [logical decoding](http://www.postgresql.org/docs/9.4/static/logicaldecoding.html)
+Bottled Water uses the [logical decoding](http://www.postgresql.org/docs/9.5/static/logicaldecoding.html)
 feature (introduced in PostgreSQL 9.4) to extract a consistent snapshot and a continuous stream
 of change events from a database. The data is extracted at a row level, and encoded using
 [Avro](http://avro.apache.org/). A client program connects to your database, extracts this data,
@@ -121,9 +121,9 @@ To compile Bottled Water is just a matter of:
 
 For that to work, you need the following dependencies installed:
 
-* [PostgreSQL 9.4](http://www.postgresql.org/) development libraries (PGXS and libpq).
+* [PostgreSQL 9.5](http://www.postgresql.org/) development libraries (PGXS and libpq).
   (Homebrew: `brew install postgresql`;
-  Ubuntu: `sudo apt-get install postgresql-server-dev-9.4 libpq-dev`)
+  Ubuntu: `sudo apt-get install postgresql-server-dev-9.5 libpq-dev`)
 * [libsnappy](https://code.google.com/p/snappy/), a dependency of Avro.
   (Homebrew: `brew install snappy`; Ubuntu: `sudo apt-get install libsnappy-dev`)
 * [avro-c](http://avro.apache.org/), the C implementation of Avro.
@@ -286,6 +286,29 @@ to partition 0, then a subsequent delete for row 42 goes to partition 1, then
 log compaction will be unable to garbage-collect the insert).  It will also
 break any consumer relying on seeing all updates relating to a given key (e.g.
 for a stream-table join).
+
+
+Developing
+----------
+
+If you want to work on the Bottled Water codebase, the [Docker setup](#running-in-docker) is
+a good place to start.
+
+Bottled Water ships with a [test suite](spec) that [verifies basic
+functionality](spec/functional/smoke_spec.rb), [documents supported Postgres
+types](spec/functional/type_specs.rb) and [tests message publishing
+semantics](spec/functional/partitioning_spec.rb).  The test suite also relies on Docker and
+Docker Compose.  To run it:
+
+ 1. Install Docker and Docker Compose (see [Docker setup](#running-in-docker))
+ 2. Install Ruby 2.2.4 (see [ruby-lang.org](https://www.ruby-lang.org/en/downloads/))
+    (required to run the tests)
+ 3. Install Bundler: `gem install bundler`
+ 4. Build the Docker images: `make docker-compose`
+ 5. Run the tests: `make test`
+
+If submitting a pull request, particularly one that adds new functionality, it is highly
+encouraged to include tests that exercise the changed code!
 
 
 Status

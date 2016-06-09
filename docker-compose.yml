@@ -2,27 +2,28 @@
 # KAFKA_ADVERTISED_HOST_NAME, in the environment of the host where you are
 # running docker-compose, to the IP address of the Docker host.
 #
-# You can determine the Docker host IP with a command like (on Linux):
+# You can determine the Docker host IP with a command like:
 #
-#   ip -o -4 addr show dev docker0 | awk '{sub(/\/[0-9]+$/, "", $4); print $4}'
+#   docker run --rm debian:latest ip route | awk '/^default via / { print $3 }'
 
 zookeeper:
-  image: confluent/zookeeper
+  image: confluent/zookeeper:3.4.6-cp1
   hostname: zookeeper
   ports:
     - '2181:2181'
 kafka:
-  image: confluent/kafka
+  image: confluent/kafka:0.9.0.0-cp1
   hostname: kafka
   links:
     - zookeeper
   environment:
-    KAFKA_LOG_CLEANUP_POLICY: compact
+    KAFKA_LOG_CLEANUP_POLICY:
     KAFKA_ADVERTISED_HOST_NAME:
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE:
   ports:
     - '9092:9092'
 schema-registry:
-  image: confluent/schema-registry
+  image: confluent/schema-registry:2.0.1
   hostname: schema-registry
   links:
     - zookeeper
@@ -55,19 +56,19 @@ bottledwater-avro:
     - schema-registry
   command: --output-format=avro --allow-unkeyed
 psql:
-  image: postgres:9.4
+  image: postgres:9.5
   links:
     - postgres
   command: 'sh -c ''exec psql -h "$POSTGRES_PORT_5432_TCP_ADDR" -p "$POSTGRES_PORT_5432_TCP_PORT" -U postgres'''
 kafka-avro-console-consumer:
-  image: confluent/tools
+  image: confluent/tools:0.9.0.0-cp1
   links:
     - zookeeper
     - kafka
     - schema-registry
   entrypoint: ['/confluent-tools.sh', 'kafka-avro-console-consumer']
 kafka-tools:
-  image: confluent/tools
+  image: confluent/tools:0.9.0.0-cp1
   links:
     - zookeeper
     - kafka
