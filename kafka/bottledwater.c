@@ -48,22 +48,24 @@
 #define XACT_LIST_LEN (MAX_IN_FLIGHT_TRANSACTIONS + 1)
 
 
-typedef int format_t; /* should always be one of the following constants: */
-#define OUTPUT_FORMAT_UNDEFINED 0
-#define OUTPUT_FORMAT_AVRO 1
-#define OUTPUT_FORMAT_JSON 2
+typedef enum {
+    OUTPUT_FORMAT_UNDEFINED = 0,
+    OUTPUT_FORMAT_AVRO,
+    OUTPUT_FORMAT_JSON
+} format_t;
 
-#define DEFAULT_OUTPUT_FORMAT_NAME "avro"
-#define DEFAULT_OUTPUT_FORMAT OUTPUT_FORMAT_AVRO
+static const char* DEFAULT_OUTPUT_FORMAT_NAME = "avro";
+static const format_t DEFAULT_OUTPUT_FORMAT = OUTPUT_FORMAT_AVRO;
 
 
-typedef int error_policy_t; /* should always be one of the following constants: */
-#define ERROR_POLICY_UNDEFINED 0
-#define ERROR_POLICY_LOG 1
-#define ERROR_POLICY_EXIT 2
+typedef enum {
+    ERROR_POLICY_UNDEFINED = 0,
+    ERROR_POLICY_LOG,
+    ERROR_POLICY_EXIT
+} error_policy_t;
 
-#define DEFAULT_ERROR_POLICY_NAME "exit"
-#define DEFAULT_ERROR_POLICY ERROR_POLICY_EXIT
+static const char* DEFAULT_ERROR_POLICY_NAME = "exit";
+static const error_policy_t DEFAULT_ERROR_POLICY = ERROR_POLICY_EXIT;
 
 
 typedef struct {
