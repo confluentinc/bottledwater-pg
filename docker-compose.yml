@@ -47,6 +47,7 @@ bottledwater:
     - --topic-config=message.timeout.ms=2000
   environment:
     BOTTLED_WATER_ALLOW_UNKEYED: true
+    BOTTLED_WATER_ON_ERROR:
 bottledwater-json:
   extends: {service: bottledwater}
   links:

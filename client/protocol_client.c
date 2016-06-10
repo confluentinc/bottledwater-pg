@@ -387,7 +387,9 @@ int frame_reader_handle(frame_reader_t reader, int err, const char *fmt, ...) {
     vsnprintf(reader->error, FRAME_READER_ERROR_LEN, fmt, args);
     va_end(args);
 
-    return err;
+    if (reader->on_error) {
+        return reader->on_error(reader->cb_context, err, reader->error);
+    } else return err;
 }
 
 /* Parses the contents of a binary-encoded Avro buffer into an Avro value, ensuring

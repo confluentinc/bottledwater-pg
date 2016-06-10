@@ -30,7 +30,11 @@
 }
 
 #define fatal_error(context, fmt, ...) { \
-    log_error("%s: FATAL: " fmt, progname, ##__VA_ARGS__); \
+    log_fatal(fmt, ##__VA_ARGS__); \
+    exit_nicely((context), 1); \
+}
+#define vfatal_error(context, fmt, args) { \
+    vlog_fatal(fmt, args); \
     exit_nicely((context), 1); \
 }
 
@@ -43,6 +47,7 @@
  * distinguish between empty and full */
 #define XACT_LIST_LEN (MAX_IN_FLIGHT_TRANSACTIONS + 1)
 
+
 typedef int format_t; /* should always be one of the following constants: */
 #define OUTPUT_FORMAT_UNDEFINED 0
 #define OUTPUT_FORMAT_AVRO 1
@@ -50,6 +55,16 @@ typedef int format_t; /* should always be one of the following constants: */
 
 #define DEFAULT_OUTPUT_FORMAT_NAME "avro"
 #define DEFAULT_OUTPUT_FORMAT OUTPUT_FORMAT_AVRO
+
+
+typedef int error_policy_t; /* should always be one of the following constants: */
+#define ERROR_POLICY_UNDEFINED 0
+#define ERROR_POLICY_LOG 1
+#define ERROR_POLICY_EXIT 2
+
+#define DEFAULT_ERROR_POLICY_NAME "exit"
+#define DEFAULT_ERROR_POLICY ERROR_POLICY_EXIT
+
 
 typedef struct {
     uint32_t xid;         /* Postgres transaction identifier */
@@ -71,6 +86,7 @@ typedef struct {
     table_mapper_t mapper;              /* Remembers topics and schemas for tables we've seen */
     format_t output_format;             /* How to encode messages for writing to Kafka */
     char *topic_prefix;                 /* String to be prepended to all topic names */
+    error_policy_t error_policy;        /* What to do in case of a transient error */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
 } producer_context;
 
@@ -109,8 +125,13 @@ char *parse_config_option(char *option);
 void init_schema_registry(producer_context_t context, char *url);
 const char* output_format_name(format_t format);
 void set_output_format(producer_context_t context, char *format);
+void set_error_policy(producer_context_t context, char *policy);
+const char* error_policy_name(error_policy_t format);
 void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
+
+static int handle_error(producer_context_t context, int err, const char *fmt, ...) __attribute__ ((format (printf, 3, 4)));
+
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
@@ -127,6 +148,7 @@ static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len, avro_value_t *key_val,
         const void *old_bin, size_t old_len, avro_value_t *old_val);
 static int on_keepalive(void *_context, uint64_t wal_pos);
+static int on_client_error(void *_context, int err, const char *message);
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
         const void *val_bin, size_t val_len);
@@ -163,6 +185,9 @@ void usage() {
             "                          String to prepend to all topic names.\n"
             "                          e.g. with --topic-prefix=postgres, updates from table\n"
             "                          'users' will be written to topic 'postgres-users'.\n"
+            "  -e, --on-error=[log|exit]   (default: %s)\n"
+            "                          What to do in case of a transient error, such as\n"
+            "                          failure to publish to Kafka.\n"
             "  -C, --kafka-config property=value\n"
             "                          Set global configuration property for Kafka producer\n"
             "                          (see --config-help for list of properties).\n"
@@ -175,7 +200,8 @@ void usage() {
             DEFAULT_REPLICATION_SLOT,
             DEFAULT_BROKER_LIST,
             DEFAULT_SCHEMA_REGISTRY,
-            DEFAULT_OUTPUT_FORMAT_NAME);
+            DEFAULT_OUTPUT_FORMAT_NAME,
+            DEFAULT_ERROR_POLICY_NAME);
     exit(1);
 }
 
@@ -190,6 +216,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"output-format",   required_argument, NULL, 'f'},
         {"allow-unkeyed",   no_argument,       NULL, 'u'},
         {"topic-prefix",    required_argument, NULL, 'p'},
+        {"on-error",        required_argument, NULL, 'e'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
         {"config-help",     no_argument,       NULL,  1 },
@@ -200,7 +227,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
     int option_index;
     while (true) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:up:C:T:", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:C:T:", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -224,6 +251,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'p':
                 context->topic_prefix = strdup(optarg);
+                break;
+            case 'e':
+                set_error_policy(context, optarg);
                 break;
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
@@ -296,6 +326,26 @@ const char* output_format_name(format_t format) {
     }
 }
 
+void set_error_policy(producer_context_t context, char *policy) {
+    if (!strcmp("log", policy)) {
+        context->error_policy = ERROR_POLICY_LOG;
+    } else if (!strcmp("exit", policy)) {
+        context->error_policy = ERROR_POLICY_EXIT;
+    } else {
+        config_error("invalid error policy (expected log or exit): %s", policy);
+        exit(1);
+    }
+}
+
+const char* error_policy_name(error_policy_t policy) {
+    switch (policy) {
+        case ERROR_POLICY_LOG: return "log";
+        case ERROR_POLICY_EXIT: return "exit";
+        case OUTPUT_FORMAT_UNDEFINED: return "undefined (probably a bug)";
+        default: return "unknown (probably a bug)";
+    }
+}
+
 void set_kafka_config(producer_context_t context, char *property, char *value) {
     if (rd_kafka_conf_set(context->kafka_conf, property, value,
                 context->error, PRODUCER_CONTEXT_ERROR_LEN) != RD_KAFKA_CONF_OK) {
@@ -310,6 +360,28 @@ void set_topic_config(producer_context_t context, char *property, char *value) {
         config_error("%s: %s", progname, context->error);
         exit(1);
     }
+}
+
+
+static int handle_error(producer_context_t context, int err, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    switch (context->error_policy) {
+    case ERROR_POLICY_LOG:
+        vlog_error(fmt, args);
+        err = 0;
+        break;
+    case ERROR_POLICY_EXIT:
+        vfatal_error(context, fmt, args);
+    default:
+        fatal_error(context, "invalid error policy %s",
+                    error_policy_name(context->error_policy));
+    }
+
+    va_end(args);
+
+    return err;
 }
 
 
@@ -421,6 +493,11 @@ static int on_keepalive(void *_context, uint64_t wal_pos) {
     } else {
         return FRAME_READER_SYNC_PENDING;
     }
+}
+
+static int on_client_error(void *_context, int err, const char *message) {
+    producer_context_t context = (producer_context_t) _context;
+    return handle_error(context, err, "Client error: %s", message);
 }
 
 
@@ -600,6 +677,7 @@ client_context_t init_client() {
     frame_reader->on_update_row   = on_update_row;
     frame_reader->on_delete_row   = on_delete_row;
     frame_reader->on_keepalive    = on_keepalive;
+    frame_reader->on_error        = on_client_error;
 
     client_context_t client = db_client_new();
     client->app_name = APP_NAME;
@@ -620,6 +698,7 @@ producer_context_t init_producer(client_context_t client) {
     context->client = client;
 
     context->output_format = DEFAULT_OUTPUT_FORMAT;
+    context->error_policy = DEFAULT_ERROR_POLICY;
 
     context->brokers = DEFAULT_BROKER_LIST;
     context->kafka_conf = rd_kafka_conf_new();

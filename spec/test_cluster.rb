@@ -38,6 +38,7 @@ class TestCluster
     self.kafka_auto_create_topics_enable = true
 
     self.bottledwater_format = :json
+    self.bottledwater_on_error = :exit
   end
 
   def start(without: [])
@@ -113,6 +114,10 @@ class TestCluster
 
   def bottledwater_service
     :"bottledwater-#{bottledwater_format}"
+  end
+
+  def bottledwater_on_error=(policy)
+    ENV['BOTTLED_WATER_ON_ERROR'] = policy.to_s
   end
 
   def schema_registry_needed?
