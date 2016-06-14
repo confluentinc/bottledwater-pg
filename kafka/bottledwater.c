@@ -106,6 +106,7 @@ typedef msg_envelope *msg_envelope_t;
 
 static char *progname;
 static int received_shutdown_signal = 0;
+static int unfinished_snapshot = 1;
 
 void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
@@ -456,6 +457,7 @@ static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     transaction_info *xact = &context->xact_list[context->xact_head];
 
     if (xid == 0) {
+        unfinished_snapshot = 0;
         fprintf(stderr, "Snapshot complete, streaming changes from %X/%X.\n",
                 (uint32) (wal_pos >> 32), (uint32) wal_pos);
     }
@@ -873,6 +875,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "%s, shutting down...\n", strsignal(received_shutdown_signal));
     }
 
-    exit_nicely(context, 0);
+    exit_nicely(context, unfinished_snapshot);
     return 0;
 }
