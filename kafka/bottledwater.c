@@ -543,7 +543,6 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     }
 
     if (match_with_ignored_topic_list(context->bw_ignored_topic_list, table->table_name)) {
-    	fprintf(stderr, "%s %s: %s\n", progname, "don't send ignored topic", table->table_name);
     	return 0;
     }
 
