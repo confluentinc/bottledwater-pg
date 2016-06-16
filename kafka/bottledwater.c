@@ -825,7 +825,7 @@ void exit_nicely(producer_context_t context, int status) {
     exit(status);
 }
 
-static void free_ignored_topic_list(pattern_list_t *list) {
+static void free_allowed_topic_list(pattern_list_t *list) {
     pattern_t *tmp;
     while ((tmp = TAILQ_FIRST(&list->pl_head)) != NULL) {
         TAILQ_REMOVE(&list->pl_head, tmp, pat_link);
