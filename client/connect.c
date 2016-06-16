@@ -306,7 +306,7 @@ int snapshot_start(client_context_t context) {
     destroyPQExpBuffer(query);
 
     Oid argtypes[] = { 25, 16 }; // 25 == TEXTOID, 16 == BOOLOID
-    const char *args[] = { "%", context->allow_unkeyed ? "t" : "f" };
+    const char *args[] = { "ads", context->allow_unkeyed ? "t" : "f" };
 
     if (!PQsendQueryParams(context->sql_conn,
                 "SELECT bottledwater_export(table_pattern := $1, allow_unkeyed := $2)",
