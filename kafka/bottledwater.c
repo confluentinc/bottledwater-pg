@@ -51,14 +51,14 @@ typedef struct {
     uint64_t commit_lsn;  /* WAL position of the transaction's commit event */
 } transaction_info;
 
-typedef struct bw_pattern_s {
-        TAILQ_ENTRY(bw_pattern_s)  bwpat_link;
-        regex_t      bwpat_re;   /* Compiled regex */
-} bw_pattern_t;
+typedef struct pattern_s {
+        TAILQ_ENTRY(pattern_s)  pat_link;
+        regex_t      pat_reg;   /* Compiled regex */
+} pattern_t;
 
-typedef struct bw_pattern_list_s {
-        TAILQ_HEAD(,bw_pattern_s) bwpl_head;
-} bw_pattern_list_t;
+typedef struct pattern_list_s {
+        TAILQ_HEAD(,pattern_s) pl_head;
+} pattern_list_t;
 
 typedef struct {
     client_context_t client;            /* The connection to Postgres */
@@ -75,7 +75,7 @@ typedef struct {
     char *topic_prefix;                 /* String to be prepended to all topic names */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
     char *tables;                      /* Comma-separated list of tables */
-    bw_pattern_list_t *bw_ignored_topic_list; /* Bottledwater list of ignored topics*/
+    pattern_list_t *allowed_topic_list; /* Bottledwater list of ignored topics*/
 } producer_context;
 
 typedef producer_context *producer_context_t;
@@ -116,12 +116,12 @@ const char* output_format_name(format_t format);
 void set_output_format(producer_context_t context, char *format);
 void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
-void create_ignored_topic_list(producer_context_t context, char *value);
-static int parse_ignored_topic_list(bw_pattern_list_t *list, char *value);
-static int append_ignored_topic_list(bw_pattern_list_t *list, char *value);
-static int match_with_ignored_topic_list(bw_pattern_list_t *plist, const char *str);
-static bw_pattern_t* create_new_ignored_topic_pattern(char *value);
-static void free_ignored_topic_list(bw_pattern_list_t *list);
+void create_allowed_topic_list(producer_context_t context, char *value);
+static int parse_allowed_topic_list(pattern_list_t *list, char *value);
+static int append_allowed_topic_list(pattern_list_t *list, char *value);
+static int match_with_allowed_topic_list(pattern_list_t *plist, const char *str);
+static pattern_t* create_new_allowed_topic_pattern(char *value);
+static void free_allowed_topic_list(pattern_list_t *list);
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
@@ -181,8 +181,8 @@ void usage() {
             "                          Set topic configuration property for Kafka producer.\n"
             "  -o, --table             Select tables to subscribed to.\n"
             "                          Separated by comma \n"
-            "  -i, --ignored-topics=value\n"
-            "                          Comma-separated list of ignored topics\n"
+            "  -i, --allowed-topics=value\n"
+            "                          Comma-separated list of allowed topics\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -208,7 +208,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
         {"table",           required_argument, NULL, 'o'},
-        {"ignored-topics",  required_argument, NULL, 'i'},
+        {"allowed-topics",  required_argument, NULL, 'i'},
         {"config-help",     no_argument,       NULL,  1 },
         {NULL,              0,                 NULL,  0 }
     };
@@ -252,7 +252,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_topic_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'i':
-                create_ignored_topic_list(context, optarg);
+                create_allowed_topic_list(context, optarg);
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
@@ -337,23 +337,23 @@ void set_topic_config(producer_context_t context, char *property, char *value) {
     }
 }
 
-void create_ignored_topic_list(producer_context_t context, char *value) {
+void create_allowed_topic_list(producer_context_t context, char *value) {
     if (!value) {
         fprintf(stderr, "%s: %s\n", progname, "list of ignored topics is null");
         return;
     }
 
-    bw_pattern_list_t *ignored_topic_list = malloc(sizeof(*ignored_topic_list));
-    TAILQ_INIT(&ignored_topic_list->bwpl_head);
-    if (parse_ignored_topic_list(ignored_topic_list, value)) {
+    pattern_list_t *topic_list = malloc(sizeof(*topic_list));
+    TAILQ_INIT(&topic_list->pl_head);
+    if (parse_allowed_topic_list(topic_list, value)) {
     	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
-	    free(ignored_topic_list);
+	    free(topic_list);
       return;
     }
-    context->bw_ignored_topic_list = ignored_topic_list;
+    context->allowed_topic_list = topic_list;
 }
 
-static int parse_ignored_topic_list(bw_pattern_list_t *list, char *value) {
+static int parse_allowed_topic_list(pattern_list_t *list, char *value) {
     char *s = value;
     while (s && *s) {
         char *t = s;
@@ -371,7 +371,7 @@ static int parse_ignored_topic_list(bw_pattern_list_t *list, char *value) {
                         break;
                 }
         }
-        if (append_ignored_topic_list(list, s)) {
+        if (append_allowed_topic_list(list, s)) {
         	fprintf(stderr, "%s: %s\n", progname, "cannot append new element to list");
         	return 1;
         }
@@ -380,39 +380,39 @@ static int parse_ignored_topic_list(bw_pattern_list_t *list, char *value) {
     return 0;
 }
 
-static int append_ignored_topic_list(bw_pattern_list_t *list, char *value) {
+static int append_allowed_topic_list(pattern_list_t *list, char *value) {
 	if (!value) {
 		fprintf(stderr, "%s: %s\n", progname, "parse error");
 		return 1;
 	}
 
-  bw_pattern_t *p_bw_pattern_t;
-	if ((p_bw_pattern_t = create_new_ignored_topic_pattern(value))) {
-		TAILQ_INSERT_TAIL(&list->bwpl_head, p_bw_pattern_t, bwpat_link);
+  pattern_t *p_pattern_t;
+	if ((p_pattern_t = create_new_allowed_topic_pattern(value))) {
+		TAILQ_INSERT_TAIL(&list->pl_head, p_pattern_t, pat_link);
 		return 0;
 	}
 	return 1;
 }
 
-static bw_pattern_t* create_new_ignored_topic_pattern(char *value) {
+static pattern_t* create_new_allowed_topic_pattern(char *value) {
   regex_t p_regex_t;
 	if (!regcomp(&p_regex_t, value, REG_EXTENDED|REG_NOSUB)) {
-		bw_pattern_t *p_bw_pattern_t = malloc(sizeof(*p_bw_pattern_t));
-		p_bw_pattern_t->bwpat_re = p_regex_t;
-    return p_bw_pattern_t;
+		pattern_t *p_pattern_t = malloc(sizeof(*p_pattern_t));
+		p_pattern_t->pat_reg = p_regex_t;
+    return p_pattern_t;
   }
   return NULL;
 }
 
-static int match_with_ignored_topic_list(bw_pattern_list_t *list, const char *str) {
+static int match_with_allowed_topic_list(pattern_list_t *list, const char *str) {
   if (list == NULL)
       return 0;
 
-	bw_pattern_t *pat;
+	pattern_t *pat;
 
-	TAILQ_FOREACH(pat, &list->bwpl_head, bwpat_link) {
+	TAILQ_FOREACH(pat, &list->pl_head, pat_link) {
 
-		if (regexec(&pat->bwpat_re, str, 0, NULL, 0) != REG_NOMATCH)
+		if (regexec(&pat->pat_reg, str, 0, NULL, 0) != REG_NOMATCH)
 				return 1;
 	}
 
@@ -532,19 +532,19 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
         const void *val_bin, size_t val_len) {
 
-    transaction_info *xact = &context->xact_list[context->xact_head];
-    xact->recvd_events++;
-    xact->pending_events++;
-
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
         fprintf(stderr, "relid %" PRIu32 " has no registered schema", relid);
         exit_nicely(context, 1);
     }
 
-    if (match_with_ignored_topic_list(context->bw_ignored_topic_list, table->table_name)) {
+    if (!match_with_allowed_topic_list(context->allowed_topic_list, table->table_name)) {
     	return 0;
     }
+
+    transaction_info *xact = &context->xact_list[context->xact_head];
+    xact->recvd_events++;
+    xact->pending_events++;
 
     msg_envelope_t envelope = malloc(sizeof(msg_envelope));
     memset(envelope, 0, sizeof(msg_envelope));
@@ -804,8 +804,8 @@ void exit_nicely(producer_context_t context, int status) {
     if (context->tables)
         free(context->tables);
 
-    if (context->bw_ignored_topic_list)
-        free_ignored_topic_list(context->bw_ignored_topic_list);
+    if (context->allowed_topic_list)
+        free_allowed_topic_list(context->allowed_topic_list);
 
     table_mapper_free(context->mapper);
 
@@ -825,12 +825,12 @@ void exit_nicely(producer_context_t context, int status) {
     exit(status);
 }
 
-static void free_ignored_topic_list(bw_pattern_list_t *list) {
-    bw_pattern_t *tmp;
-    while ((tmp = TAILQ_FIRST(&list->bwpl_head)) != NULL) {
-        TAILQ_REMOVE(&list->bwpl_head, tmp, bwpat_link);
+static void free_ignored_topic_list(pattern_list_t *list) {
+    pattern_t *tmp;
+    while ((tmp = TAILQ_FIRST(&list->pl_head)) != NULL) {
+        TAILQ_REMOVE(&list->pl_head, tmp, pat_link);
 
-        regfree(&tmp->bwpat_re);
+        regfree(&tmp->pat_reg);
         free(tmp);
     }
 
