@@ -222,13 +222,13 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
         switch (c) {
             case 'd':
-                context->client->conninfo = strdup(optarg);
+                context->client->conninfo = optarg;
                 break;
             case 's':
-                context->client->repl.slot_name = strdup(optarg);
+                context->client->repl.slot_name = optarg;
                 break;
             case 'b':
-                context->brokers = strdup(optarg);
+                context->brokers = optarg;
                 break;
             case 'r':
                 init_schema_registry(context, optarg);
@@ -240,13 +240,13 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 context->client->allow_unkeyed = true;
                 break;
             case 'p':
-                context->topic_prefix = strdup(optarg);
+                context->topic_prefix = optarg;
                 break;
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'o':
-                context->tables = strdup(optarg);
+                context->tables = optarg;
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
@@ -593,7 +593,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     bool enqueued = false;
     while (!enqueued) {
         int err = rd_kafka_produce(table->topic,
-                RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
+                RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_COPY,
                 val, val == NULL ? 0 : val_encoded_len,
                 key, key == NULL ? 0 : key_encoded_len,
                 envelope);
@@ -613,6 +613,11 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
             exit_nicely(context, 1);
         }
     }
+
+    if(val)
+      free(val);
+    if(key)
+      free(key);
 
     return 0;
 }
