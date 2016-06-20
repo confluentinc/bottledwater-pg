@@ -135,7 +135,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         state->schema_cache = schema_cache_new(funcctx->multi_call_memory_ctx);
         funcctx->user_fctx = state;
 
-        get_table_list(state, PG_GETARG_TEXT_P(0), PG_GETARG_BOOL(1));
+        get_table_list(state, PG_GETARG_TEXT_P(0), PG_GETARG_TEXT_P(1), PG_GETARG_BOOL(2));
         if (state->num_tables > 0) open_next_table(state);
     }
 
@@ -186,9 +186,9 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
  * Also takes a shared lock on all the tables we're going to export, to make sure they
  * aren't dropped or schema-altered before we get around to reading them. (Ordinary
  * writes to the table, i.e. insert/update/delete, are not affected.) */
-void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed) {
-    Oid argtypes[] = { TEXTOID };
-    Datum args[] = { PointerGetDatum(table_pattern) };
+void get_table_list(export_state *state, text *table_pattern, text *schema, bool allow_unkeyed) {
+    Oid argtypes[] = { TEXTOID, TEXTOID };
+    Datum args[] = { PointerGetDatum(table_pattern), PointerGetDatum(schema) };
     StringInfoData errors;
 
     int ret = SPI_execute_with_args(
@@ -212,8 +212,8 @@ void get_table_list(export_state *state, text *table_pattern, bool allow_unkeyed
             "LEFT JOIN pg_catalog.pg_class ic ON i.indexrelid = ic.oid "
 
             // Select only ordinary tables ('r' == RELKIND_RELATION) matching the required name pattern
-            "WHERE c.relkind = 'r' AND c.relname LIKE $1 AND "
-            "n.nspname NOT LIKE 'pg_%' AND n.nspname != 'information_schema' AND " // not a system table
+            "WHERE c.relkind = 'r' AND c.relname SIMILAR TO $1 AND "
+            "n.nspname NOT LIKE 'pg_%' AND n.nspname != 'information_schema' AND n.nspname = $2 AND " // not a system table
             "c.relpersistence = 'p'", // 'p' == RELPERSISTENCE_PERMANENT (not unlogged or temporary)
 
             1, argtypes, args, NULL, true, 0);

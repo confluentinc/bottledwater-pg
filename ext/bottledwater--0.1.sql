@@ -12,6 +12,7 @@ CREATE OR REPLACE FUNCTION bottledwater_frame_schema() RETURNS text
 
 CREATE OR REPLACE FUNCTION bottledwater_export(
         table_pattern text    DEFAULT '%',
+        table_schema text     DEFAULT '%',
         allow_unkeyed boolean DEFAULT false
     ) RETURNS setof bytea
     AS 'bottledwater', 'bottledwater_export' LANGUAGE C VOLATILE STRICT;

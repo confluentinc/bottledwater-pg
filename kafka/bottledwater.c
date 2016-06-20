@@ -74,8 +74,9 @@ typedef struct {
     format_t output_format;             /* How to encode messages for writing to Kafka */
     char *topic_prefix;                 /* String to be prepended to all topic names */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
-    char *tables;                      /* Comma-separated list of tables */
+    char *schema;                      /* Comma-separated list of tables */
     pattern_list_t *allowed_topic_list; /* Bottledwater list of ignored topics*/
+    char *orig_string_allowed_tables;
 } producer_context;
 
 typedef producer_context *producer_context_t;
@@ -179,10 +180,9 @@ void usage() {
             "                          (see --config-help for list of properties).\n"
             "  -T, --topic-config property=value\n"
             "                          Set topic configuration property for Kafka producer.\n"
-            "  -o, --table             Select tables to subscribed to.\n"
-            "                          Separated by comma \n"
+            "  -o, --schema            Allowed schema\n"
             "  -i, --allowed-topics=value\n"
-            "                          Comma-separated list of allowed topics\n"
+            "                          Vertical line-separated list of allowed topics\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -207,7 +207,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"topic-prefix",    required_argument, NULL, 'p'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
-        {"table",           required_argument, NULL, 'o'},
+        {"allowed_schema",  required_argument, NULL, 'o'},
         {"allowed-topics",  required_argument, NULL, 'i'},
         {"config-help",     no_argument,       NULL,  1 },
         {NULL,              0,                 NULL,  0 }
@@ -217,7 +217,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
     int option_index;
     while (true) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:up:C:T:i:", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:C:T:i:o:", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -246,7 +246,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_kafka_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'o':
-                context->tables = optarg;
+                context->schema = optarg;
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
@@ -343,10 +343,12 @@ void create_allowed_topic_list(producer_context_t context, char *value) {
         return;
     }
 
+    context->orig_string_allowed_tables = strdup(value);
     pattern_list_t *topic_list = malloc(sizeof(*topic_list));
     TAILQ_INIT(&topic_list->pl_head);
     if (parse_allowed_topic_list(topic_list, value)) {
     	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
+      free(context->orig_string_allowed_tables);
 	    free(topic_list);
       return;
     }
@@ -535,12 +537,13 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
         fprintf(stderr, "relid %" PRIu32 " has no registered schema", relid);
-        exit_nicely(context, 1);
+        return 0;
+        // exit_nicely(context, 1);
     }
-
-    if (!match_with_allowed_topic_list(context->allowed_topic_list, table->table_name)) {
-    	return 0;
-    }
+    //
+    // if (!match_with_allowed_topic_list(context->allowed_topic_list, table->table_name)) {
+    // 	return 0;
+    // }
 
     transaction_info *xact = &context->xact_list[context->xact_head];
     xact->recvd_events++;
@@ -802,6 +805,9 @@ void exit_nicely(producer_context_t context, int status) {
             fprintf(stderr, "%s: %s\n", progname, context->client->repl.error);
         }
     }
+
+    if (context->orig_string_allowed_tables)
+        free(context->orig_string_allowed_tables);
 
     if (context->topic_prefix)
         free(context->topic_prefix);
