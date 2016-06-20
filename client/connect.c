@@ -46,7 +46,7 @@ void db_client_free(client_context_t context) {
     if (context->sql_conn) PQfinish(context->sql_conn);
     if (context->repl.conn) PQfinish(context->repl.conn);
     if (context->schema) free(context->schema);
-    if (context->tables) free(tables);
+    if (context->tables) free(context->tables);
     free(context);
 }
 
@@ -308,8 +308,8 @@ int snapshot_start(client_context_t context) {
     destroyPQExpBuffer(query);
 
     Oid argtypes[] = { 25, 25, 16 }; // 25 == TEXTOID, 16 == BOOLOID
-    const char *args[] = { context->orig_string_allowed_tables ? context->orig_string_allowed_tables : "%",
-                           context->allowed_schema ? context->allowed_schema : "%",
+    const char *args[] = { context->tables ? context->tables : "%",
+                           context->schema ? context->schema : "%",
                            context->allow_unkeyed ? "t" : "f" };
 
     if (!PQsendQueryParams(context->sql_conn,
