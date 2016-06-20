@@ -313,7 +313,7 @@ int snapshot_start(client_context_t context) {
                            context->allow_unkeyed ? "t" : "f" };
 
     if (!PQsendQueryParams(context->sql_conn,
-                "SELECT bottledwater_export(table_pattern := $1, schema := $2, allow_unkeyed := $3)",
+                "SELECT bottledwater_export(table_pattern := $1, table_schema := $2, allow_unkeyed := $3)",
                 3, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));
