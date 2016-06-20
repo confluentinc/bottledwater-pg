@@ -74,9 +74,7 @@ typedef struct {
     format_t output_format;             /* How to encode messages for writing to Kafka */
     char *topic_prefix;                 /* String to be prepended to all topic names */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
-    char *schema;                      /* Comma-separated list of tables */
     pattern_list_t *allowed_topic_list; /* Bottledwater list of ignored topics*/
-    char *orig_string_allowed_tables;
 } producer_context;
 
 typedef producer_context *producer_context_t;
@@ -246,7 +244,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_kafka_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'o':
-                context->schema = optarg;
+                context->client->schema = optarg;
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
@@ -343,16 +341,16 @@ void create_allowed_topic_list(producer_context_t context, char *value) {
         return;
     }
 
-    context->orig_string_allowed_tables = strdup(value);
-    pattern_list_t *topic_list = malloc(sizeof(*topic_list));
-    TAILQ_INIT(&topic_list->pl_head);
-    if (parse_allowed_topic_list(topic_list, value)) {
-    	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
-      free(context->orig_string_allowed_tables);
-	    free(topic_list);
-      return;
-    }
-    context->allowed_topic_list = topic_list;
+    context->client->tables = strdup(value);
+    // pattern_list_t *topic_list = malloc(sizeof(*topic_list));
+    // TAILQ_INIT(&topic_list->pl_head);
+    // if (parse_allowed_topic_list(topic_list, value)) {
+    // 	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
+    //   free(context->orig_string_allowed_tables);
+	  //   free(topic_list);
+    //   return;
+    // }
+    // context->allowed_topic_list = topic_list;
 }
 
 static int parse_allowed_topic_list(pattern_list_t *list, char *value) {
