@@ -804,14 +804,8 @@ void exit_nicely(producer_context_t context, int status) {
         }
     }
 
-    if (context->orig_string_allowed_tables)
-        free(context->orig_string_allowed_tables);
-
     if (context->topic_prefix)
         free(context->topic_prefix);
-
-    if (context->tables)
-        free(context->tables);
 
     if (context->allowed_topic_list)
         free_allowed_topic_list(context->allowed_topic_list);
