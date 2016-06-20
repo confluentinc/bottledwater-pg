@@ -58,7 +58,7 @@ table_mapper_t table_mapper_new(
 table_metadata_t table_mapper_lookup(table_mapper_t mapper, Oid relid) {
     for (int i = 0; i < mapper->num_tables; i++) {
         table_metadata_t table = mapper->tables[i];
-        if (table->relid == relid) return table;
+        if (!table->deleted && table->relid == relid) return table;
     }
     return NULL;
 }
@@ -85,29 +85,24 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
         table = table_metadata_new(mapper, relid);
     }
 
-    /* N.B. even if we hit an error and return early, that will still leave the
-     * relid registered!  i.e. subsequent calls to table_mapper_lookup with the
-     * same relid *will* receive a valid (albeit incomplete) table_metadata_t.
-     * This is because table_metadata_new is side-effecting.
+    /* It's a tricky question what the right error handling behaviour should be
+     * here, e.g. in the case of transient failure of the schema registry:
      *
-     * This should still result in well-defined behaviour.  e.g. if the schema
-     * registry call failed, we'll still be able to publish prefixed-Avro
-     * messages to Kafka, just with TABLE_MAPPER_SCHEMA_ID_MISSING as the
-     * schema id.  A sufficiently motivated consumer would be able to detect
-     * this and conclude that there was a problem with the schema registry.
-     *
-     * It's a tricky question what the *right* behaviour should be:
-     *
-     *  * the current behaviour keeps data flowing, but results in the Kafka
-     *    replica of the database containing these less-helpful schema-missing
-     *    records.  Repair would currently require dropping the BW replication
-     *    slot to reset the replication state, and restarting BW to re-publish
-     *    the topics (relying on compaction and key identity to avoid duplicate
-     *    records).
-     *  * BW could drop updates without publishing them to Kafka.  This doesn't
-     *    seem ideal as it means data loss (the Kafka replica will be missing
-     *    some updates).  Repair looks similar to above.
-     *  * BW could stop consuming the logical replication stream until the error
+     * a) we could register the table with a schema id of
+     *    TABLE_MAPPER_SCHEMA_ID_MISSING.  This would keep data flowing, but
+     *    mean we actually publich records to Kafka with that schema id,
+     *    resulting in the Kafka replica of the database containing these
+     *    less-helpful schema-missing records.  A sufficiently motivated
+     *    consumer would be able to detect this and conclude that there was a
+     *    problem with the schema registry.  Repair would currently require
+     *    dropping the BW replication slot to reset the replication state, and
+     *    restarting BW to re-publish the topics (relying on compaction and key
+     *    identity to avoid duplicate records).
+     * b) BW could drop updates without publishing them to Kafka.  This means
+     *    accepting data loss (the Kafka replica will be missing some updates),
+     *    but at least whenever we do publish records, they will be complete.
+     *    Repair looks similar to above.
+     * c) BW could stop consuming the logical replication stream until the error
      *    is resolved.  This avoids data loss, but creates other problems:
      *      - we don't currently have any mechanism to retry registering
      *        the table schema, so we won't actually notice when the error is
@@ -116,20 +111,39 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
      *      - Postgres will keep buffering WAL until we start consuming again,
      *        so we threaten the stability of Postgres if the error persists.
      *
-     * This might need to end up being a configuration choice.
+     * This might need to end up being a configuration choice.  For now, we
+     * choose option b) - we leave the table unregistered (by marking it as
+     * deleted), which means send_kafka_msg in bottledwater.c will fail to look
+     * up the schema and invoke its error handling policy.
      */
     int err;
 
     err = table_metadata_update_topic(mapper, table, table_name);
-    if (err) return NULL;
+    if (err) goto error;
 
     err = table_metadata_update_schema(mapper, table, 1, key_schema_json, key_schema_len);
-    if (err) return NULL;
+    if (err) goto error;
 
     err = table_metadata_update_schema(mapper, table, 0, row_schema_json, row_schema_len);
-    if (err) return NULL;
+    if (err) goto error;
 
     return table;
+
+error:
+    /* Mark the table as deleted so we don't try to proceed with incomplete
+     * information.
+     *
+     * It would be preferable to actually delete the table record (i.e. free
+     * the memory and avoid registering it in the mapper->tables array).
+     * However because we're using a plain array to register tables, doing so
+     * would be messy (especially if updating an existing record, in which case
+     * we'd have to shuffle records around).  So for now we just set this flag.
+     *
+     * N.B. this means the record will *never* be freed!  So we should revisit
+     * this if we anticipate having a large number of deleted records.
+     */
+    if (table) table->deleted = 1;
+    return NULL;
 }
 
 /* Destroys the table mapper along with all stored metadata.  Will close any
