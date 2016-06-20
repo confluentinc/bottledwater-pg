@@ -39,7 +39,7 @@ typedef struct {
 } export_state;
 
 void print_tupdesc(char *title, TupleDesc tupdesc);
-void get_table_list(export_state *state, text *table_pattern, text *table_pattern, bool allow_unkeyed);
+void get_table_list(export_state *state, text *table_pattern, text *schema, bool allow_unkeyed);
 void open_next_table(export_state *state);
 void close_current_table(export_state *state);
 bytea *format_snapshot_row(export_state *state);
