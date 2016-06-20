@@ -216,7 +216,7 @@ void get_table_list(export_state *state, text *table_pattern, text *schema, bool
             "n.nspname NOT LIKE 'pg_%' AND n.nspname != 'information_schema' AND n.nspname = $2 AND " // not a system table
             "c.relpersistence = 'p'", // 'p' == RELPERSISTENCE_PERMANENT (not unlogged or temporary)
 
-            1, argtypes, args, NULL, true, 0);
+            2, argtypes, args, NULL, true, 0);
 
     if (ret != SPI_OK_SELECT) {
         elog(ERROR, "Could not fetch table list: SPI_execute_with_args returned %d", ret);
