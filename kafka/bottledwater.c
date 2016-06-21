@@ -454,6 +454,7 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
          * See comment in body of table_mapper_update() in table_mapper.c for
          * discussion of the implications of an error registering the table.
          */
+        return 1;
     }
 
     return 0;
@@ -520,7 +521,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     size_t key_encoded_len, val_encoded_len;
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
-        fatal_error(context, "relid %" PRIu32 " has no registered schema", relid);
+        log_error("relid %" PRIu32 " has no registered schema", relid);
+        return 1;
     }
 
     int err;
