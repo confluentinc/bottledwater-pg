@@ -534,8 +534,9 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
                 val_bin, val_len, (char **) &val, &val_encoded_len);
 
         if (err) {
-            fatal_error(context, "error %s encoding JSON for topic %s",
-                        strerror(err), rd_kafka_topic_name(table->topic));
+            log_error("%s: error %s encoding JSON for topic %s",
+                      progname, strerror(err), rd_kafka_topic_name(table->topic));
+            return err;
         }
         break;
     case OUTPUT_FORMAT_AVRO:
@@ -544,8 +545,9 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
                 val_bin, val_len, &val, &val_encoded_len);
 
         if (err) {
-            fatal_error(context, "error %s encoding Avro for topic %s",
-                        strerror(err), rd_kafka_topic_name(table->topic));
+            log_error("%s: error %s encoding Avro for topic %s",
+                      progname, strerror(err), rd_kafka_topic_name(table->topic));
+            return err;
         }
         break;
     default:
