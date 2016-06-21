@@ -483,7 +483,7 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
     if (context->client->tables && !strstr(context->client->tables, topic_name))
         return 0;
 
-    const char *schema_name = avor_schema_namespace(row_schema);
+    const char *schema_name = avro_schema_namespace(row_schema);
     if (context->client->schema && !strstr(schema_name, context->client->schema))
         return 0;
 
