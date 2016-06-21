@@ -480,7 +480,7 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
     producer_context_t context = (producer_context_t) _context;
     const char *topic_name = avro_schema_name(row_schema);
 
-    if (!strstr(_context->client->tables, topic_name))
+    if (!strstr(((client_context_t)(_context->client))->tables, topic_name))
         return 0;
 
     table_metadata_t table = table_mapper_update(context->mapper, relid, topic_name,
@@ -809,7 +809,7 @@ void exit_nicely(producer_context_t context, int status) {
 
     if (context->topic_prefix)
         free(context->topic_prefix);
-    
+
     if (context->allowed_topic_list)
         free_allowed_topic_list(context->allowed_topic_list);
 
