@@ -341,7 +341,7 @@ void create_allowed_topic_list(producer_context_t context, char *value) {
         return;
     }
 
-    context->client->tables = strdup(value);
+    context->client->tables = value;
     // pattern_list_t *topic_list = malloc(sizeof(*topic_list));
     // TAILQ_INIT(&topic_list->pl_head);
     // if (parse_allowed_topic_list(topic_list, value)) {
@@ -478,9 +478,13 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
         const char *key_schema_json, size_t key_schema_len, avro_schema_t key_schema,
         const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema) {
     producer_context_t context = (producer_context_t) _context;
-    const char *topic_name = avro_schema_name(row_schema);
 
-    if (!strstr(context->client->tables, topic_name))
+    const char *topic_name = avro_schema_name(row_schema);
+    if (context->client->tables && !strstr(context->client->tables, topic_name))
+        return 0;
+
+    const char *schema_name = avro_value_get_schema(row_schema);
+    if (context->client->schema && !strstr(schema_name, context->client->schema))
         return 0;
 
     table_metadata_t table = table_mapper_update(context->mapper, relid, topic_name,
@@ -537,7 +541,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
-        fprintf(stderr, "relid %" PRIu32 " has no registered schema", relid);
+        fprintf(stderr, "relid %" PRIu32 " has no registered schema\n", relid);
         return 0;
         // exit_nicely(context, 1);
     }

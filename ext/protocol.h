@@ -13,7 +13,7 @@
 #include "avro.h"
 
 /* Namespace for Avro records of the frame protocol */
-#define PROTOCOL_SCHEMA_NAMESPACE "com.martinkl.bottledwater.protocol"
+#define PROTOCOL_SCHEMA_NAMESPACE "com.dattran.bottledwater.protocol"
 
 /* Each message in the wire protocol is of one of these types */
 #define PROTOCOL_MSG_BEGIN_TXN      0
