@@ -573,9 +573,13 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
             backpressure(context);
 
         } else if (err != 0) {
-            fatal_error(context, "Failed to produce to Kafka (topic %s): %s",
-                        rd_kafka_topic_name(table->topic),
-                        rd_kafka_err2str(rd_kafka_errno2err(errno)));
+            log_error("%s: Failed to produce to Kafka (topic %s): %s",
+                      progname,
+                      rd_kafka_topic_name(table->topic),
+                      rd_kafka_err2str(rd_kafka_errno2err(errno)));
+            if (val != NULL) free(val);
+            if (key != NULL) free(key);
+            return err;
         }
     }
 
@@ -591,12 +595,19 @@ static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, voi
     // a field called _private, but it seems to be the only way?
     msg_envelope_t envelope = (msg_envelope_t) msg->_private;
 
+    int err;
     if (msg->err) {
-        fatal_error(envelope->context, "Message delivery to topic %s failed: %s",
-                    rd_kafka_topic_name(msg->rkt),
-                    rd_kafka_err2str(msg->err));
+        err = handle_error(envelope->context, msg->err,
+                "Message delivery to topic %s failed: %s",
+                rd_kafka_topic_name(msg->rkt),
+                rd_kafka_err2str(msg->err));
+        // err == 0 if handled
     } else {
         // Message successfully delivered to Kafka
+        err = 0;
+    }
+
+    if (!err) {
         envelope->xact->pending_events--;
         maybe_checkpoint(envelope->context);
     }
