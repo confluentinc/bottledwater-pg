@@ -213,7 +213,7 @@ void get_table_list(export_state *state, text *table_pattern, text *schema, bool
 
             // Select only ordinary tables ('r' == RELKIND_RELATION) matching the required name pattern
             "WHERE c.relkind = 'r' AND c.relname SIMILAR TO $1 AND "
-            "n.nspname NOT LIKE 'pg_%' AND n.nspname != 'information_schema' AND n.nspname LIKE $2 AND " // not a system table
+            "n.nspname NOT LIKE 'pg_%' AND n.nspname != 'information_schema' AND n.nspname SIMILAR TO $2 AND " // not a system table
             "c.relpersistence = 'p'", // 'p' == RELPERSISTENCE_PERMANENT (not unlogged or temporary)
 
             2, argtypes, args, NULL, true, 0);
