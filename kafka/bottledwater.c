@@ -349,7 +349,7 @@ void create_allowed_topic_list(producer_context_t context, char *value) {
     TAILQ_INIT(&topic_list->pl_head);
     if (parse_allowed_topic_list(topic_list, value)) {
     	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
-      free(context->orig_string_allowed_tables);
+      free(context->client->tables);
 	    free(topic_list);
       return;
     }
