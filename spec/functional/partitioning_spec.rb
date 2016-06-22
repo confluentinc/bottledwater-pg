@@ -106,7 +106,7 @@ describe 'partitioning', functional: true, format: :json do
       expect(partitions.size).to eq(2)
       messages_0, messages_1 = partitions.values
 
-      expect(messages_0.size).to be_within(10).of(messages_1.size)
+      expect(messages_0.size).to be_within(20).of(messages_1.size)
     end
   end
 end
