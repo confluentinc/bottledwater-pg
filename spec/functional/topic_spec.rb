@@ -1,4 +1,5 @@
 require 'spec_helper'
+require 'test_cluster'
 
 describe 'topics', functional: true do
   let(:postgres) { TEST_CLUSTER.postgres }
@@ -14,7 +15,6 @@ describe 'topics', functional: true do
 
   describe 'with topic autocreate enabled' do
     before(:context) do
-      require 'test_cluster'
       TEST_CLUSTER.start
     end
 
@@ -52,10 +52,10 @@ describe 'topics', functional: true do
     end
   end
 
-  describe 'with topic autocreate disabled' do
+  describe "with topic autocreate disabled and --on-error=exit" do
     before(:context) do
-      require 'test_cluster'
       TEST_CLUSTER.kafka_auto_create_topics_enable = false
+      TEST_CLUSTER.bottledwater_on_error = :exit
       TEST_CLUSTER.start
     end
 
@@ -63,16 +63,14 @@ describe 'topics', functional: true do
       TEST_CLUSTER.stop
     end
 
-    example 'inserting rows in a new table does not crash Bottled Water' do
-      pending 'make publish errors non-fatal'
-
+    example 'inserting rows in a new table crashes Bottled Water' do
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
 
       postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
       postgres.exec('INSERT INTO things (thing) VALUES (42)')
       sleep 5
 
-      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+      expect(TEST_CLUSTER.bottledwater_running?).to be_falsy
     end
 
     example 'inserting rows in a new table after creating the topic does not crash Bottled Water' do
@@ -121,11 +119,70 @@ describe 'topics', functional: true do
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
     end
 
+    example 'adding a primary key to a table then inserting crashes Bottled Water' do
+      # We test this separately from the previous ALTER TABLE ... ADD COLUMN
+      # because when adding a new primary key, Postgres first creates a
+      # temporary table, which Bottled Water picks up as a new table to stream.
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+
+      kazoo.create_topic('products', partitions: 1, replication_factor: 1)
+      sleep 1
+
+      postgres.exec('CREATE TABLE products (sku INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO products (sku) VALUES (31)')
+      sleep 1
+      postgres.exec('ALTER TABLE products ADD COLUMN id SERIAL PRIMARY KEY')
+      postgres.exec('INSERT INTO products (sku) VALUES (42)')
+
+      sleep 5
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_falsy
+    end
+  end
+
+  describe "with topic autocreate disabled and --on-error=log" do
+    before(:context) do
+      TEST_CLUSTER.kafka_auto_create_topics_enable = false
+      TEST_CLUSTER.bottledwater_on_error = :log
+      TEST_CLUSTER.start
+    end
+
+    after(:context) do
+      TEST_CLUSTER.stop
+    end
+
+    example 'inserting rows in a new table does not crash Bottled Water' do
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+
+      postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO things (thing) VALUES (42)')
+      sleep 5
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+    end
+
+    example 'altering table schema then inserting does not crash Bottled Water' do
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+
+      kazoo.create_topic('customers', partitions: 1, replication_factor: 1)
+      sleep 1
+
+      postgres.exec('CREATE TABLE customers (age INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO customers (age) VALUES (31)')
+      sleep 1
+      postgres.exec('ALTER TABLE customers ADD COLUMN name TEXT NULL')
+      postgres.exec("INSERT INTO customers (age, name) VALUES (42, 'Ron Swanson')")
+
+      sleep 5
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+    end
+
     example 'adding a primary key to a table then inserting does not crash Bottled Water' do
       # We test this separately from the previous ALTER TABLE ... ADD COLUMN
       # because when adding a new primary key, Postgres first creates a
       # temporary table, which Bottled Water picks up as a new table to stream.
-      pending 'make publish errors non-fatal'
 
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
 

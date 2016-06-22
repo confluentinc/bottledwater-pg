@@ -8,26 +8,77 @@ describe 'outages', functional: true do
 
   let(:postgres) { TEST_CLUSTER.postgres }
 
-  example 'BW should not crash if Kafka is down' do
-    pending 'make publish errors non-fatal'
+  describe 'with --on-error=exit' do
+    before(:example) do
+      TEST_CLUSTER.bottledwater_on_error = :exit
+    end
 
-    TEST_CLUSTER.start(without: [:kafka])
+    example 'BW crashes after publishing a message if Kafka is down' do
+      TEST_CLUSTER.start(without: [:kafka])
 
-    postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
-    postgres.exec('INSERT INTO things (thing) VALUES (42)')
-    sleep 5
+      postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO things (thing) VALUES (42)')
+      sleep 5
 
-    expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+      expect(TEST_CLUSTER.bottledwater_running?).to be_falsy
+    end
+
+    describe 'in Avro mode if the schema registry is down' do
+      before(:example) do
+        TEST_CLUSTER.bottledwater_format = :avro
+        TEST_CLUSTER.start(without: [:'schema-registry'])
+
+        postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+      end
+
+      example 'initial message crashes Bottled Water' do
+        postgres.exec('INSERT INTO things (thing) VALUES (42)')
+        sleep 5
+
+        expect(TEST_CLUSTER.bottledwater_running?).to be_falsy
+      end
+    end
   end
 
-  example 'BW in Avro mode should not crash if the schema registry is down' do
-    TEST_CLUSTER.bottledwater_format = :avro
-    TEST_CLUSTER.start(without: [:'schema-registry'])
+  describe 'with --on-error=log' do
+    before(:example) do
+      TEST_CLUSTER.bottledwater_on_error = :log
+    end
 
-    postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
-    postgres.exec('INSERT INTO things (thing) VALUES (42)')
-    sleep 5
+    example 'BW does not crash if Kafka is down' do
+      TEST_CLUSTER.start(without: [:kafka])
 
-    expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+      postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO things (thing) VALUES (42)')
+      sleep 5
+
+      expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+    end
+
+    describe 'in Avro mode if the schema registry is down' do
+      before(:example) do
+        TEST_CLUSTER.bottledwater_format = :avro
+        TEST_CLUSTER.start(without: [:'schema-registry'])
+
+        postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+      end
+
+      example 'initial message does not crash Bottled Water' do
+        postgres.exec('INSERT INTO things (thing) VALUES (42)')
+        sleep 5
+
+        expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+      end
+
+      example 'subsequent messages do not crash Bottled Water' do
+        postgres.exec('INSERT INTO things (thing) VALUES (42)')
+        sleep 1
+
+        postgres.exec('INSERT INTO things (thing) VALUES (43)')
+        sleep 5
+
+        expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
+      end
+    end
   end
 end
