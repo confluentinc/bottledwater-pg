@@ -68,7 +68,7 @@ First, install:
 * [docker-compose](https://docs.docker.com/compose/install/), which is used to
   orchestrate the interaction between services.
 
-After the prequisite applications are installed, you need to build the Docker containers for Bottled Water and Postgres by running `make docker-compose`.
+After the prerequisite applications are installed, you need to build the Docker containers for Bottled Water and Postgres by running `make docker-compose`.
 As soon as the build process finishes, start up Postgres, Kafka, Zookeeper (required by Kafka) and the [Confluent schema registry](http://confluent.io/docs/current/schema-registry/docs/intro.html)
 by running `docker-compose` as follows:
 
@@ -79,7 +79,7 @@ The `postgres-bw` image extends the
 Bottled Water support. However, before Bottled Water can be used, it first needs to be
 enabled. To do this, start a `psql` shell for the Postgres database:
 
-    $ docker-compose run --rm postgres psql
+    $ docker-compose run --rm psql
 
 When the prompt appears, enable the `bottledwater` extension, and create a database with
 some test data, for example:
@@ -93,14 +93,15 @@ You can keep the psql terminal open, and run the following in a new terminal.
 The next step is to start the Bottled Water client, which relays data from Postgres to Kafka.
 You start it like this:
 
-    $ docker-compose up -d bottledwater-json
+    $ docker-compose up -d bottledwater-avro
 
-You can run `docker-compose logs bottledwater-json` to see what it's doing. Now Bottled
+You can run `docker-compose logs bottledwater-avro` to see what it's doing. Now Bottled
 Water has taken the snapshot, and continues to watch Postgres for any data changes. You can
 see the data that has been extracted from Postgres by consuming from Kafka (the topic name
 `test` must match up with the name of the table you created earlier):
 
-    $ docker-compose run --rm kafka-avro-console-consumer --from-beginning --topic test
+    $ docker-compose run --rm kafka-avro-console-consumer \
+        --from-beginning --property print.key=true --topic test
 
 This should print out the contents of the `test` table in JSON format (key/value separated
 by tab). Now go back to the `psql` terminal, and change some data — insert, update or delete
