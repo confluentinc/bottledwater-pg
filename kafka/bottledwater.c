@@ -178,10 +178,12 @@ void usage() {
             "                          (see --config-help for list of properties).\n"
             "  -T, --topic-config property=value\n"
             "                          Set topic configuration property for Kafka producer.\n"
-            "  -o, --allowed-schema=value\n"
-            "                          Vertical line-separated list of allowed schema"
-            "  -i, --allowed-topics=value\n"
-            "                          Vertical line-separated list of allowed topics\n"
+            "  -o, --schemas=value\n"
+            "                          Vertical line-separated list of schemas\n"
+            "                          If not set, default value is %\n"
+            "  -i, --topics=value\n"
+            "                          Vertical line-separated list of topics\n"
+            "                          If not set, default value is %\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -206,8 +208,8 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"topic-prefix",    required_argument, NULL, 'p'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
-        {"allowed_schema",  required_argument, NULL, 'o'},
-        {"allowed-topics",  required_argument, NULL, 'i'},
+        {"schemas",          required_argument, NULL, 'o'},
+        {"topics",          required_argument, NULL, 'i'},
         {"config-help",     no_argument,       NULL,  1 },
         {NULL,              0,                 NULL,  0 }
     };
@@ -251,7 +253,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_topic_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'i':
-                create_allowed_topic_list(context, optarg);
+                context->client->tables = optarg;
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
@@ -343,15 +345,15 @@ void create_allowed_topic_list(producer_context_t context, char *value) {
     }
 
     context->client->tables = value;
-    // pattern_list_t *topic_list = malloc(sizeof(*topic_list));
-    // TAILQ_INIT(&topic_list->pl_head);
-    // if (parse_allowed_topic_list(topic_list, value)) {
-    // 	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
-    //   free(context->orig_string_allowed_tables);
-	  //   free(topic_list);
-    //   return;
-    // }
-    // context->allowed_topic_list = topic_list;
+    pattern_list_t *topic_list = malloc(sizeof(*topic_list));
+    TAILQ_INIT(&topic_list->pl_head);
+    if (parse_allowed_topic_list(topic_list, value)) {
+    	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
+      free(context->orig_string_allowed_tables);
+	    free(topic_list);
+      return;
+    }
+    context->allowed_topic_list = topic_list;
 }
 
 static int parse_allowed_topic_list(pattern_list_t *list, char *value) {
@@ -544,12 +546,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     if (!table) {
         fprintf(stderr, "relid %" PRIu32 " has no registered schema\n", relid);
         return 0;
-        // exit_nicely(context, 1);
     }
-    //
-    // if (!match_with_allowed_topic_list(context->allowed_topic_list, table->table_name)) {
-    // 	return 0;
-    // }
 
     transaction_info *xact = &context->xact_list[context->xact_head];
     xact->recvd_events++;
