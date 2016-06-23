@@ -522,7 +522,7 @@ static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *old_bin, size_t old_len, avro_value_t *old_val) {
     producer_context_t context = (producer_context_t) _context;
     if (key_bin)
-        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, NULL, 0);
+        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, old_bin, old_len);
     else
         return 0; // delete on unkeyed table --> can't do anything
 }

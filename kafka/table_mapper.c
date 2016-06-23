@@ -259,7 +259,7 @@ void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t
         schema = &table->row_schema;
     }
 
-    if (*schema == new_schema) {
+    if (avro_schema_equal(*schema, new_schema)) {
         /* identical schema, nothing to do */
     } else if (!*schema) {
         logf("Storing %s schema for table %" PRIu32 "\n", what, table->relid);
