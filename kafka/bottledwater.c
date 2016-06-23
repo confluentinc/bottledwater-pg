@@ -180,10 +180,10 @@ void usage() {
             "                          Set topic configuration property for Kafka producer.\n"
             "  -o, --schemas=value\n"
             "                          Vertical line-separated list of schemas\n"
-            "                          If not set, default value is %\n"
+            "                          If not set, default value is %%\n"
             "  -i, --topics=value\n"
             "                          Vertical line-separated list of topics\n"
-            "                          If not set, default value is %\n"
+            "                          If not set, default value is %%\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
