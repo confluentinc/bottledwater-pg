@@ -37,6 +37,8 @@ class TestCluster
     self.kafka_log_cleanup_policy = :compact
     self.kafka_auto_create_topics_enable = true
 
+    self.postgres_version = '9.5'
+
     self.bottledwater_format = :json
     self.bottledwater_on_error = :exit
   end
@@ -50,9 +52,9 @@ class TestCluster
 
     self.kafka_advertised_host_name = detect_docker_host_ip
 
-    start_service(:zookeeper, :kafka, :postgres)
+    start_service(:zookeeper, :kafka, postgres_service)
 
-    pg_port = wait_for_port(:postgres, 5432, max_tries: 10) do |port|
+    pg_port = wait_for_port(postgres_service, 5432, max_tries: 10) do |port|
       PG::Connection.ping(host: @host, port: port, user: 'postgres') == PG::PQPING_OK
     end
     @postgres = PG::Connection.open(host: @host, port: pg_port, user: 'postgres')
@@ -110,6 +112,17 @@ class TestCluster
     ENV['KAFKA_AUTO_CREATE_TOPICS_ENABLE'] = enabled.to_s
   end
 
+  attr_accessor :postgres_version
+
+  def postgres_service
+    case postgres_version
+    when '9.5'; :postgres
+    when '9.4'; :'postgres-94'
+    else
+      raise "Unknown postgres_version #{postgres_version}"
+    end
+  end
+
   attr_accessor :bottledwater_format
 
   def bottledwater_service
@@ -163,7 +176,7 @@ class TestCluster
   end
 
   def postgres_running?
-    service_running?(:postgres)
+    service_running?(postgres_service)
   end
 
   def bottledwater_running?

@@ -1,9 +1,10 @@
 require 'spec_helper'
 
-shared_examples 'smoke test' do |format|
+shared_examples 'smoke test' do |format, postgres_version|
   before(:context) do
     require 'test_cluster'
     TEST_CLUSTER.bottledwater_format = format
+    TEST_CLUSTER.postgres_version = postgres_version
     TEST_CLUSTER.start
   end
 
@@ -24,10 +25,18 @@ shared_examples 'smoke test' do |format|
   end
 end
 
-describe 'smoke test (JSON)', functional: true, format: :json do
-  it_should_behave_like 'smoke test', :json
+describe 'smoke test (JSON, Postgres 9.4)', functional: true, format: :json, postgres: '9.4' do
+  it_should_behave_like 'smoke test', :json, '9.4'
 end
 
-describe 'smoke test (Avro)', functional: true, format: :avro do
-  it_should_behave_like 'smoke test', :avro
+describe 'smoke test (Avro, Postgres 9.4)', functional: true, format: :avro, postgres: '9.4' do
+  it_should_behave_like 'smoke test', :avro, '9.4'
+end
+
+describe 'smoke test (JSON, Postgres 9.5)', functional: true, format: :json, postgres: '9.5' do
+  it_should_behave_like 'smoke test', :json, '9.5'
+end
+
+describe 'smoke test (Avro, Postgres 9.5)', functional: true, format: :avro, postgres: '9.5' do
+  it_should_behave_like 'smoke test', :avro, '9.5'
 end
