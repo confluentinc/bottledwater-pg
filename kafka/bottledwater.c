@@ -629,7 +629,7 @@ producer_context_t init_producer(client_context_t client) {
      * in the circular buffer starting out empty, since the tail is one ahead
      * of the head. */
 
-#if RD_KAFKA_VERSION >= 0x00090100
+#if RD_KAFKA_VERSION >= 0x000901ff
     /* librdkafka 0.9.1 provides a "consistent_random" partitioner, which is
      * a good choice for us: "Uses consistent hashing to map identical keys
      * onto identical partitions, and messages without keys will be assigned
