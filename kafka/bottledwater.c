@@ -115,12 +115,6 @@ const char* output_format_name(format_t format);
 void set_output_format(producer_context_t context, char *format);
 void set_kafka_config(producer_context_t context, char *property, char *value);
 void set_topic_config(producer_context_t context, char *property, char *value);
-void create_allowed_topic_list(producer_context_t context, char *value);
-static int parse_allowed_topic_list(pattern_list_t *list, char *value);
-static int append_allowed_topic_list(pattern_list_t *list, char *value);
-static int match_with_allowed_topic_list(pattern_list_t *plist, const char *str);
-static pattern_t* create_new_allowed_topic_pattern(char *value);
-static void free_allowed_topic_list(pattern_list_t *list);
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid);
 static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
@@ -336,90 +330,6 @@ void set_topic_config(producer_context_t context, char *property, char *value) {
         fprintf(stderr, "%s: %s\n", progname, context->error);
         exit(1);
     }
-}
-
-void create_allowed_topic_list(producer_context_t context, char *value) {
-    if (!value) {
-        fprintf(stderr, "%s: %s\n", progname, "list of ignored topics is null");
-        return;
-    }
-
-    context->client->tables = value;
-    pattern_list_t *topic_list = malloc(sizeof(*topic_list));
-    TAILQ_INIT(&topic_list->pl_head);
-    if (parse_allowed_topic_list(topic_list, value)) {
-    	fprintf(stderr, "%s: %s\n", progname, "cannot parse list");
-      free(context->client->tables);
-	    free(topic_list);
-      return;
-    }
-    context->allowed_topic_list = topic_list;
-}
-
-static int parse_allowed_topic_list(pattern_list_t *list, char *value) {
-    char *s = value;
-    while (s && *s) {
-        char *t = s;
-
-        /* Find separator */
-        while ((t = strchr(t, ','))) {
-                if (t > s && *(t-1) == ',') {
-                        /* separator was escaped,
-                           remove escape and scan again. */
-                        memmove(t-1, t, strlen(t)+1);
-                        t++;
-                } else {
-                        *t = '\0';
-                        t++;
-                        break;
-                }
-        }
-        if (append_allowed_topic_list(list, s)) {
-        	fprintf(stderr, "%s: %s\n", progname, "cannot append new element to list");
-        	return 1;
-        }
-        s = t;
-    }
-    return 0;
-}
-
-static int append_allowed_topic_list(pattern_list_t *list, char *value) {
-	if (!value) {
-		fprintf(stderr, "%s: %s\n", progname, "parse error");
-		return 1;
-	}
-
-  pattern_t *p_pattern_t;
-	if ((p_pattern_t = create_new_allowed_topic_pattern(value))) {
-		TAILQ_INSERT_TAIL(&list->pl_head, p_pattern_t, pat_link);
-		return 0;
-	}
-	return 1;
-}
-
-static pattern_t* create_new_allowed_topic_pattern(char *value) {
-  regex_t p_regex_t;
-	if (!regcomp(&p_regex_t, value, REG_EXTENDED|REG_NOSUB)) {
-		pattern_t *p_pattern_t = malloc(sizeof(*p_pattern_t));
-		p_pattern_t->pat_reg = p_regex_t;
-    return p_pattern_t;
-  }
-  return NULL;
-}
-
-static int match_with_allowed_topic_list(pattern_list_t *list, const char *str) {
-  if (list == NULL)
-      return 0;
-
-	pattern_t *pat;
-
-	TAILQ_FOREACH(pat, &list->pl_head, pat_link) {
-
-		if (regexec(&pat->pat_reg, str, 0, NULL, 0) != REG_NOMATCH)
-				return 1;
-	}
-
-	return 0;
 }
 
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
@@ -812,9 +722,6 @@ void exit_nicely(producer_context_t context, int status) {
     if (context->topic_prefix)
         free(context->topic_prefix);
 
-    if (context->allowed_topic_list)
-        free_allowed_topic_list(context->allowed_topic_list);
-
     table_mapper_free(context->mapper);
 
     if (context->registry)
@@ -831,18 +738,6 @@ void exit_nicely(producer_context_t context, int status) {
 
     rd_kafka_wait_destroyed(2000);
     exit(status);
-}
-
-static void free_allowed_topic_list(pattern_list_t *list) {
-    pattern_t *tmp;
-    while ((tmp = TAILQ_FIRST(&list->pl_head)) != NULL) {
-        TAILQ_REMOVE(&list->pl_head, tmp, pat_link);
-
-        regfree(&tmp->pat_reg);
-        free(tmp);
-    }
-
-    free(list);
 }
 
 static void handle_shutdown_signal(int sig) {
