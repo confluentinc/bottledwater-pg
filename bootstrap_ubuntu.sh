@@ -27,7 +27,7 @@ tar -xzvf avro-c-1.8.1.tar.gz
 cd avro-c-1.8.1/
 mkdir build
 cd build
-cmake ..         -DCMAKE_INSTALL_PREFIX=$PREFIX         -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake ..  -DCMAKE_INSTALL_PREFIX=$PREFIX        -DCMAKE_BUILD_TYPE=RelWithDebInfo
 make
 make install
 cd ../../

@@ -1,0 +1,8 @@
+Package: bottledwater
+Version: 0.1
+Section: base
+Priority: optional
+Architecture: all
+Depends: cmake, libpqxx-4.0, libsnappy1, libjansson-dev, libcurl4-openssl-dev, librdkafka1
+Maintainer: Dat Tran <protrandat@gmail.com>
+Description: This is a bottle of water for a thristy Postgres
