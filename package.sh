@@ -7,20 +7,20 @@ echo "|Need a more delicated script|"
 echo "+----------------------------+"
 ###
 ###
+ORG_DIR = pwd
+PACK_DIR = "bottledwater-0.1"
 
 make clean && make
-cd ..
-rm -rf bottledwater-0.1
-mkdir bottledwater-0.1
-mkdir bottledwater-0.1/DEBIAN
-mkdir bottledwater-0.1/root
-mkdir bottledwater-0.1/root/bottledwater
-cp bottledwater/control bottledwater-0.1/DEBIAN/
-cp -avr bottledwater/client bottledwater-0.1/root/bottledwater/
-cp -avr bottledwater/ext bottledwater-0.1/root/bottledwater/
-cp -avr bottledwater/kafka bottledwater-0.1/root/bottledwater/
-dpkg --build bottledwater-0.1
-rm -rf bottlewater-0.1
+cd
+mkdir ${PACK_DIR}
+mkdir ${PACK_DIR}/DEBIAN
+mkdir ${PACK_DIR}/${ORG_DIR}
+cp ${ORG_DIR}/control ${PACK_DIR}/DEBIAN/
+cp -avr ${ORG_DIR}/client ${PACK_DIR}/${ORG_DIR}
+cp -avr ${ORG_DIR}/ext ${PACK_DIR}/${ORG_DIR}
+cp -avr ${ORG_DIR}/kafka ${PACK_DIR}/${ORG_DIR}
+dpkg --build ${PACK_DIR}
+rm -rf ${PACK_DIR}
 
 ###
 ###
