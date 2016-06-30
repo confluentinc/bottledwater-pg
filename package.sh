@@ -19,7 +19,7 @@ cp bottledwater/control bottledwater-0.1/DEBIAN/
 cp -avr bottledwater/client bottledwater-0.1/root/bottledwater/
 cp -avr bottledwater/ext bottledwater-0.1/root/bottledwater/
 cp -avr bottledwater/kafka bottledwater-0.1/root/bottledwater/
-dpkg --build bottlewater-0.1
+dpkg --build bottledwater-0.1
 rm -rf bottlewater-0.1
 
 ###
