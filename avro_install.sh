@@ -6,7 +6,7 @@ echo "|               |"
 echo "+---------------+"
 
 echo "Install dependencies"
-sudo apt-get isntall libsnappy1
+sudo apt-get install libsnappy1 cmake
 
 echo "Name: libsnappy" > /usr/share/pkgconfig/libsnappy.pc
 echo "Description: Snappy is a compression library" >> /usr/share/pkgconfig/libsnappy.pc
