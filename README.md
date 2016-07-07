@@ -133,7 +133,7 @@ For that to work, you need the following dependencies installed:
   (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
 * [libcurl](http://curl.haxx.se/libcurl/), a HTTP client.
   (Homebrew: `brew install curl`; Ubuntu: `sudo apt-get install libcurl4-openssl-dev`)
-* [librdkafka](https://github.com/edenhill/librdkafka) (0.9.0 or later), a Kafka client.
+* [librdkafka](https://github.com/edenhill/librdkafka) (0.9.1 or later), a Kafka client.
   (Ubuntu universe: `sudo apt-get install librdkafka-dev`, but see [known gotchas](#known-gotchas-with-older-librdkafka-versions); others: build from source)
 
 You can see the Dockerfile for
@@ -252,7 +252,7 @@ programming languages.  JSON output does not require a schema registry.
 Known gotchas with older librdkafka versions
 --------------------------------------------
 
-It is recommended to compile Bottled Water against librdkafka version 0.9.0 or
+It is recommended to compile Bottled Water against librdkafka version 0.9.1 or
 later.  However, Bottled Water will work with older librdkafka versions, with
 degraded functionality.
 

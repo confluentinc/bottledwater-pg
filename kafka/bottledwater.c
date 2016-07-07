@@ -629,11 +629,30 @@ producer_context_t init_producer(client_context_t client) {
      * in the circular buffer starting out empty, since the tail is one ahead
      * of the head. */
 
-#if RD_KAFKA_VERSION >= 0x00090000
-    // librdkafka 0.9.0 includes an implementation of a "consistent hashing
-    // partitioner", which we can use to ensure that all updates for a given
-    // key go to the same partition.
+#if RD_KAFKA_VERSION >= 0x000901ff
+    /* librdkafka 0.9.1 provides a "consistent_random" partitioner, which is
+     * a good choice for us: "Uses consistent hashing to map identical keys
+     * onto identical partitions, and messages without keys will be assigned
+     * via the random partitioner." */
+    rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &rd_kafka_msg_partitioner_consistent_random);
+#elif RD_KAFKA_VERSION >= 0x00090000
+#warning "rdkafka 0.9.0, using consistent partitioner - unkeyed messages will all get sent to a single partition!"
+    /* librdkafka 0.9.0 provides a "consistent hashing partitioner", which we
+     * can use to ensure that all updates for a given key go to the same
+     * partition.  However, for unkeyed messages (such as we send for tables
+     * with no primary key), it sends them all to the same partition, rather
+     * than randomly partitioning them as would be preferable for scalability.
+     */
     rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &rd_kafka_msg_partitioner_consistent);
+#else
+#warning "rdkafka older than 0.9.0, messages will be partitioned randomly!"
+    /* librdkafka prior to 0.9.0 does not provide a consistent partitioner, so
+     * each message will be assigned to a random partition.  This will lead to
+     * incorrect log compaction behaviour: e.g. if the initial insert for row
+     * 42 goes to partition 0, then a subsequent delete for row 42 goes to
+     * partition 1, then log compaction will be unable to garbage-collect the
+     * insert. It will also break any consumer relying on seeing all updates
+     * relating to a given key (e.g. for a stream-table join). */
 #endif
 
     set_topic_config(context, "produce.offset.report", "true");
