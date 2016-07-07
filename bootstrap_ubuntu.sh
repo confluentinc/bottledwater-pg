@@ -10,7 +10,7 @@ echo "+---------------+"
 ###
 
 echo "Installing packages"
-sudo apt-get install libpq-dev libsnappy-dev libjansson-dev libcurl4-openssl-dev librdkafka-dev cmake pkg-config
+sudo apt-get install postgresql-server-dev-9.5 libpq-dev libsnappy-dev libjansson-dev libcurl4-openssl-dev librdkafka-dev cmake pkg-config
 
 ###
 ###
