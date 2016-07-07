@@ -15,6 +15,7 @@ make clean && make && cd
 mkdir -p ${PACK_DIR}/DEBIAN
 mkdir -p ${PACK_DIR}${ORG_DIR}/kafka
 cp ${ORG_DIR}/DEBIAN/control ${PACK_DIR}/DEBIAN/
+cp ${ORG_DIR}/avro_install.sh ${PACK_DIR}${ORG_DIR}
 cp -avr ${ORG_DIR}/kafka/${EXECUTABLE} ${PACK_DIR}${ORG_DIR}/kafka
 dpkg --build ${PACK_DIR}
 rm -rf ${PACK_DIR}

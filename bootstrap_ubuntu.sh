@@ -10,7 +10,7 @@ echo "+---------------+"
 ###
 
 echo "Installing packages"
-sudo apt-get install libpqxx-4.0 libsnappy1 libjansson4 libcurl4-openssl-dev librdkafka1 cmake
+sudo apt-get install libpq-dev libsnappy-dev libjansson-dev libcurl4-openssl-dev librdkafka-dev cmake pkg-config
 
 ###
 ###
