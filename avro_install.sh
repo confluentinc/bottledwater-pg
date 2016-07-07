@@ -10,7 +10,7 @@ sudo apt-get install libjansson-dev cmake libsnappy1 pkg-config
 
 echo "Name: libsnappy" > /usr/share/pkgconfig/libsnappy.pc
 echo "Description: Snappy is a compression library" >> /usr/share/pkgconfig/libsnappy.pc
-echo "Version: 1.1.2" >> /usr/local/lib/pkgconfig/libsnappy.pc
+echo "Version: 1.1.2" >> /usr/share/pkgconfig/libsnappy.pc
 echo "URL: https://google.github.io/snappy/" >> /usr/share/pkgconfig/libsnappy.pc
 echo "Libs: -L/usr/local/lib -lsnappy" >> /usr/share/pkgconfig/libsnappy.pc
 echo "Cflags: -I/usr/local/include" >> /usr/share/pkgconfig/libsnappy.pc
