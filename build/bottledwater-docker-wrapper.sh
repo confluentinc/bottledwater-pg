@@ -4,8 +4,8 @@ log() { echo "$0: $@" >&2; }
 
 declare -a bw_opts
 
-POSTGRES_CONNECTION_STRING="hostaddr=$POSTGRES_PORT_5432_TCP_ADDR port=$POSTGRES_PORT_5432_TCP_PORT dbname=postgres user=postgres"
-KAFKA_BROKER="$KAFKA_PORT_9092_TCP_ADDR:$KAFKA_PORT_9092_TCP_PORT"
+POSTGRES_CONNECTION_STRING="host=postgres port=5432 dbname=postgres user=postgres"
+KAFKA_BROKER="kafka:9092"
 bw_opts+=(--postgres="$POSTGRES_CONNECTION_STRING" --broker="$KAFKA_BROKER")
 
 for var in "${!BOTTLED_WATER_@}"; do
@@ -30,8 +30,9 @@ for var in "${!BOTTLED_WATER_@}"; do
   esac
 done
 
-if [ -n "$SCHEMA_REGISTRY_PORT_8081_TCP_ADDR" ]; then
-  SCHEMA_REGISTRY_URL="http://${SCHEMA_REGISTRY_PORT_8081_TCP_ADDR}:${SCHEMA_REGISTRY_PORT_8081_TCP_PORT}"
+# do we have a link to the schema-registry container?
+if getent hosts schema-registry >/dev/null; then
+  SCHEMA_REGISTRY_URL="http://schema-registry:8081"
 
   log "Detected schema registry, setting --schema-registry=$SCHEMA_REGISTRY_URL"
   bw_opts+=(--schema-registry="$SCHEMA_REGISTRY_URL")
