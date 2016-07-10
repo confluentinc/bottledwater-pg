@@ -11,7 +11,7 @@
 FROM postgres:9.5
 
 RUN apt-get update && \
-    apt-get upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         libcurl3 libjansson4 libpq5
 
