@@ -207,6 +207,44 @@ again and running:
     select pg_drop_replication_slot('bottledwater');
 
 
+### Error handling
+
+If Bottled Water encounters an error - such as failure to communicate with Kafka or
+the Schema Registry - its default behaviour is for the client to exit, halting the
+flow of data into Kafka.  This may seem like an odd default, but since Postgres will
+retain and replay the logical replication stream until Bottled Water acknowledges it,
+it ensures that:
+
+ * it will never miss an update (every update made in Postgres will eventually be
+   written to Kafka) - _provided_ that whatever caused the error is resolved
+   externally (e.g.  restoring connectivity to Kafka) and the Bottled Water client is
+   then restarted;
+
+ * it will never write corrupted data to Kafka: e.g. if unable to obtain a schema id
+   from the Schema Registry for the current update, rather than writing to Kafka
+   without a schema id (which would leave consumers unable to parse the update), it
+   will wait until the problem is resolved.
+
+However, in some scenarios, exiting on the first error may not be desirable:
+
+ * if there is an error publishing for one table (e.g. if Kafka is configured not to
+   autocreate topics and the corresponding topic has not been explicitly created), you
+   may not want to halt updates for all other tables.
+
+ * if the reason for the error cannot be resolved quickly (e.g. Kafka misconfiguration
+   or prolonged outage), Bottled Water may threaten the stability of the Postgres
+   server.  This is because Postgres will store WAL on disk for all updates made since
+   Bottled Water last acknowledged (i.e. successfully published) an update.  If
+   Postgres has a high write throughput, Bottled Water being unavailable may cause the
+   disk on the Postgres server to fill up, likely causing Postgres to crash.
+
+To support these scenarios, Bottled Water supports an alternative error handling
+policy where it will simply log that the error occurred and drop the update it was
+attempting to process, acknowledging the update so that Postgres can stop retaining
+WAL.  This policy can be enabled via the `--on-error` command-line switch.  N.B. that
+in this mode Bottled Water can no longer guarantee to never miss an update.
+
+
 Consuming data
 --------------
 

@@ -49,6 +49,15 @@ typedef int (*delete_row_cb)(void *, uint64_t, Oid,
  *         anything else to signify an error. */
 typedef int (*keepalive_cb)(void *, uint64_t);
 
+/* Parameters: context, err, message
+ * Return: 0 if the error was handled and client should continue;
+ *         nonzero if the error could not be handled and the client should
+ *         report the error to the select loop.
+ */
+typedef int (*error_handler_cb)(void *, int err, const char *);
+
+
+#define FRAME_READER_ERROR_LEN 512
 
 typedef struct {
     Oid                 relid;       /* Uniquely identifies a table, even when it is renamed */
@@ -71,6 +80,7 @@ typedef struct {
     update_row_cb on_update_row;     /* Called when a row in a relation is updated */
     delete_row_cb on_delete_row;     /* Called when a row in a relation is deleted */
     keepalive_cb on_keepalive;       /* Called when server sends a keepalive message */
+    error_handler_cb on_error;       /* Called when a frame cannot be read or when a callback returns a nonzero error code */
     int num_schemas;                 /* Number of schemas in use */
     int capacity;                    /* Allocated size of schemas array */
     schema_list_entry **schemas;     /* Array of pointers to schema_list_entry structs */
@@ -78,6 +88,7 @@ typedef struct {
     avro_value_iface_t *frame_iface; /* Avro generic interface for the frame schema */
     avro_value_t frame_value;        /* Avro value for a frame */
     avro_reader_t avro_reader;       /* In-memory buffer reader */
+    char error[FRAME_READER_ERROR_LEN]; /* Buffer for error messages */
 } frame_reader;
 
 typedef frame_reader *frame_reader_t;

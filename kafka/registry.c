@@ -10,6 +10,7 @@
  * Anyone who wants to consume the messages can look up the schema ID in the
  * schema registry to obtain the schema, and thus decode the message. */
 
+#include "logger.h"
 #include "registry.h"
 
 #include <avro.h>
@@ -125,9 +126,9 @@ int schema_registry_request(schema_registry_t registry, const char *name, int is
 
     if (!err) {
         *schema_id_out = schema_id;
-        fprintf(stderr, "Registered %s schema for topic \"%s\" with ID %d\n",
-                is_key ? "key" : "value",
-                name, schema_id);
+        log_info("Registered %s schema for topic \"%s\" with ID %d",
+                 is_key ? "key" : "value",
+                 name, schema_id);
     }
 
     destroyPQExpBuffer(response);
@@ -144,7 +145,7 @@ static size_t registry_response_cb(void *data, size_t size, size_t nmemb, void *
     PQExpBuffer buffer = (PQExpBuffer) dest;
     appendBinaryPQExpBuffer(buffer, data, bytes);
     if (PQExpBufferBroken(buffer)) {
-        fprintf(stderr, "Out of memory: response from schema registry is too large\n");
+        log_error("Out of memory: response from schema registry is too large");
         return 0;
     }
     return bytes;

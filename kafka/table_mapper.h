@@ -22,6 +22,7 @@ typedef struct {
     avro_schema_t key_schema;   /* Schema to use for converting key values to JSON */
     int row_schema_id;          /* Identifier for the current row schema, assigned by the registry */
     avro_schema_t row_schema;   /* Schema to use for converting row values to JSON */
+    char deleted;               /* Whether this table record has been deleted */
 } table_metadata;
 
 typedef table_metadata *table_metadata_t;

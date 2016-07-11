@@ -11,9 +11,9 @@
  */
 
 #include "json.h"
+#include "logger.h"
 
 #include <avro.h>
-#include <stdio.h>
 
 int avro_bin_to_json(avro_schema_t schema,
         const void *val_bin, size_t val_len,
@@ -28,12 +28,12 @@ int json_encode_msg(table_metadata_t table,
     int err;
     err = avro_bin_to_json(table->key_schema, key_bin, key_len, key_out, key_len_out);
     if (err) {
-      fprintf(stderr, "json: error encoding key\n");
+      log_error("json: error encoding key");
       return err;
     }
     err = avro_bin_to_json(table->row_schema, row_bin, row_len, row_out, row_len_out);
     if (err) {
-      fprintf(stderr, "json: error encoding row\n");
+      log_error("json: error encoding row");
       return err;
     }
 
@@ -48,8 +48,7 @@ int avro_bin_to_json(avro_schema_t schema,
         *val_out = NULL;
         return 0;
     } else if (!schema) {
-        fprintf(stderr,
-            "json: got a value where we didn't expect one, and no schema to decode it\n");
+        log_error("json: got a value where we didn't expect one, and no schema to decode it");
         *val_out = NULL;
         return EINVAL;
     }
@@ -58,7 +57,7 @@ int avro_bin_to_json(avro_schema_t schema,
 
     avro_value_iface_t *iface = avro_generic_class_from_schema(schema);
     if (!iface) {
-        fprintf(stderr, "json: error in avro_generic_class_from_schema: %s\n", avro_strerror());
+        log_error("json: error in avro_generic_class_from_schema: %s", avro_strerror());
         avro_reader_free(reader);
         return EINVAL;
     }
@@ -68,7 +67,7 @@ int avro_bin_to_json(avro_schema_t schema,
     avro_value_t value;
     err = avro_generic_value_new(iface, &value);
     if (err) {
-        fprintf(stderr, "json: error in avro_generic_value_new: %s\n", avro_strerror());
+        log_error("json: error in avro_generic_value_new: %s", avro_strerror());
         avro_value_iface_decref(iface);
         avro_reader_free(reader);
         return err;
@@ -76,7 +75,7 @@ int avro_bin_to_json(avro_schema_t schema,
 
     err = avro_value_read(reader, &value);
     if (err) {
-        fprintf(stderr, "json: error decoding Avro value: %s\n", avro_strerror());
+        log_error("json: error decoding Avro value: %s", avro_strerror());
         avro_value_decref(&value);
         avro_value_iface_decref(iface);
         avro_reader_free(reader);
@@ -85,7 +84,7 @@ int avro_bin_to_json(avro_schema_t schema,
 
     err = avro_value_to_json(&value, 1, val_out);
     if (err) {
-        fprintf(stderr, "json: error converting Avro value to JSON: %s\n", avro_strerror());
+        log_error("json: error converting Avro value to JSON: %s", avro_strerror());
         avro_value_decref(&value);
         avro_value_iface_decref(iface);
         avro_reader_free(reader);

@@ -387,7 +387,7 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
     int err = parse_frame(context->repl.frame_reader, 0, PQgetvalue(res, row_number, 0),
             PQgetlength(res, row_number, 0));
     if (err) {
-        client_error(context, "Error parsing frame data: %s", avro_strerror());
+        client_error(context, "Error parsing frame data: %s", context->repl.frame_reader->error);
     }
     return err;
 }
