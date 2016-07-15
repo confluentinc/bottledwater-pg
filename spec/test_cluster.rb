@@ -44,9 +44,9 @@ class TestCluster
   end
 
   def start(without: [])
-    raise "cluster already #{@state}!" if started?
-
     @state = :starting
+
+    raise "cluster already #{@state}!" if started?
 
     @started_without = Set.new(without)
 
