@@ -15,8 +15,8 @@ mkdir -p ${PACK_DIR}/RPMBUILD
 mkdir -p ${PACK_DIR}/RPMBUILD/SPECS
 mkdir -p ${PACK_DIR}/RPMBUILD/RPMS
 mkdir -p ${PACK_DIR}/RPMBUILD/SRPMS
-mkdir -p ${PACK_DIR}/RPMBUILD${pg_config --libdir}
-mkdir -p ${PACK_DIR}/RPMBUILD${pg_config --sharedir}
+mkdir -p ${PACK_DIR}/%{_pgsqllibdir}
+mkdir -p ${PACK_DIR}/%{_pgsqlsharedir}
 
 cp -avr ${ORG_DIR}/ext/bottledwater.so ${PACK_DIR}/RPMBUILD${pg_config --sharedir}
 cp -avr ${ORG_DIR}/ext/bottledwater.control ${PACK_DIR}/RPMBUILD${pg_config --libdir}

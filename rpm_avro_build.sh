@@ -5,6 +5,8 @@ echo "+----------------------------+"
 ###
 ###
 
+BOTTLE_DIR=$(pwd)
+
 echo "Install dependencies"
 sudo apt-get install libjansson-dev cmake libsnappy1 pkg-config
 
@@ -46,8 +48,8 @@ cp -avr ${ORG_DIR}/src/avro/* %{_avroincludedir}
 
 cp -avr ${ORG_DIR}/src/avro.h %{_includedir}
 
-cp -avr ${ORG_DIR}/RPM/.rpmmacros ~/
-rpmbuild -bb ${ORG_DIR}/RPM/AVRO_RPM/avro.spec
+cp -avr ${BOTTLE_DIR}/RPM/.rpmmacros ~/
+rpmbuild -bb ${BOTTLE_DIR}/RPM/AVRO_RPM/avro.spec
 
 rm -rf ${PACK_DIR}
 
