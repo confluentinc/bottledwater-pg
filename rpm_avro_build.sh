@@ -34,19 +34,22 @@ mkdir -p ${PACK_DIR}/RPMBUILD
 mkdir -p ${PACK_DIR}/RPMBUILD/SPECS
 mkdir -p ${PACK_DIR}/RPMBUILD/RPMS
 mkdir -p ${PACK_DIR}/RPMBUILD/SRPMS
+mkdir -p ${PACK_DIR}/RPMBUILD/include/avro
+mkdir -p ${PACK_DIR}/RPMBUILD/bin/
+mkdir -p ${PACK_DIR}/RPMBUILD/lib/pkgconfig
 
-cp -avr ${ORG_DIR}/build/src/avrocat %{_bindir}
-cp -avr ${ORG_DIR}/build/src/avroappend %{_bindir}
-cp -avr ${ORG_DIR}/build/src/avropipe %{_bindir}
-cp -avr ${ORG_DIR}/build/src/avromod %{_bindir}
+cp -avr ${ORG_DIR}/build/src/avrocat ${PACK_DIR}/RPMBUILD/bin/
+cp -avr ${ORG_DIR}/build/src/avroappend ${PACK_DIR}/RPMBUILD/bin/
+cp -avr ${ORG_DIR}/build/src/avropipe ${PACK_DIR}/RPMBUILD/bin/
+cp -avr ${ORG_DIR}/build/src/avromod ${PACK_DIR}/RPMBUILD/bin/
 
-cp -avr ${ORG_DIR}/build/src/libavro* %{_libdir}
+cp -avr ${ORG_DIR}/build/src/libavro* ${PACK_DIR}/RPMBUILD/lib/
 
-cp -avr ${ORG_DIR}/build/src/avro-c.pc %{_pkgconfigdir}
+cp -avr ${ORG_DIR}/build/src/avro-c.pc ${PACK_DIR}/RPMBUILD/lib/pkgconfig/
 
-cp -avr ${ORG_DIR}/src/avro/* %{_avroincludedir}
+cp -avr ${ORG_DIR}/src/avro/* ${PACK_DIR}/RPMBUILD/include/avro/
 
-cp -avr ${ORG_DIR}/src/avro.h %{_includedir}
+cp -avr ${ORG_DIR}/src/avro.h ${PACK_DIR}/RPMBUILD/include/
 
 cp -avr ${BOTTLE_DIR}/RPM/.rpmmacros ~/
 rpmbuild -bb ${BOTTLE_DIR}/RPM/AVRO_RPM/avro.spec
