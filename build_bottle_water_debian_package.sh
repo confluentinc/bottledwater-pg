@@ -11,7 +11,7 @@ ORG_DIR=$(pwd)
 PACK_DIR=bottledwater-0.1
 EXECUTABLE=bottledwater
 
-make clean && make && cd
+make clean && make
 mkdir -p ${PACK_DIR}/DEBIAN
 mkdir -p ${PACK_DIR}${ORG_DIR}/kafka
 cp ${ORG_DIR}/DEBIAN/CLIENT_DEBIAN/control ${PACK_DIR}/DEBIAN/
