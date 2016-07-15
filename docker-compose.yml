@@ -32,6 +32,12 @@ schema-registry:
     - '48081:8081'
   environment:
     SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: none
+postgres-94:
+  build: ./tmp
+  dockerfile: Dockerfile.postgres94
+  hostname: postgres
+  ports:
+    - '45432:5432'
 postgres:
   build: ./tmp
   dockerfile: Dockerfile.postgres
@@ -52,6 +58,7 @@ bottledwater-json:
   extends: {service: bottledwater}
   links:
     - postgres
+    - postgres-94
     - kafka
   environment:
     BOTTLED_WATER_OUTPUT_FORMAT: json
@@ -59,6 +66,7 @@ bottledwater-avro:
   extends: {service: bottledwater}
   links:
     - postgres
+    - postgres-94
     - kafka
     - schema-registry
   environment:
