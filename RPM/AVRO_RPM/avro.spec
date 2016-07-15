@@ -1,10 +1,10 @@
-Summary: avro-c 1.8
+Summary: avro-c
 Name: avro-c
 Version: 1.8
-Release: ub1
+Release: 1
 Group: Applications/Extension
 Packager: Dat Tran
-BuildRoot: %_topdir/%{name}
+BuildRoot: %{_topdir}
 BuildArch: noarch
 License: NoLicense
 

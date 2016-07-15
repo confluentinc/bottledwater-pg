@@ -1,12 +1,12 @@
 Summary: Bottledwater Extension for PostgreSQL 9.4
 Name: bottledwater
 Version: 0.1
-Release: ub1
+Release: 1
 Group: Applications/Extension
 Packager: Dat Tran
-BuildRoot: %_topdir/%{name}
+BuildRoot: %{_topdir}
 BuildArch: noarch
-License: NoLicense
+License: No License
 
 %description
 This is an extension for PostgreSQL 9.4, it will stream all wal_log to bottledwater client
