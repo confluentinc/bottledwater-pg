@@ -1,0 +1,26 @@
+%packager               Dat Tran
+%distribution           UBLinux
+%vendor                 Dat Tran
+
+%_signature gpg
+%_gpg_path ~/.gnupg
+%_gpg_name CIT Linux Support
+%_gpgbin /usr/bin/gpg
+
+%_topdir                %($pwd)/RPMBUILD
+%_tmppath               %{_topdir}/tmp
+%_builddir              %{_tmppath}
+
+%_rpmtopdir             %{_topdir}/%{name}
+%_sourcedir             %{_rpmtopdir}
+%_specdir               %{_topdir}/SPECS
+%_rpmdir                %{_topdir}/RPMS
+%_srcrpmdir             %{_topdir}/SRPMS
+%_pgsqllibdir           %{_topdir}/(pg_config --libdir)
+%_pgsqlsharedir         %{_topdir}/(pg_config --sharedir)
+%_includedir            %{_topdir}/include
+%_avroincludedir        %{_topdir}/include/avro
+%_libdir                %{_topdir}/lib
+%_bindir                %{_topdir}/bin
+%_pkgconfigdir          %{_topdir}/lib/pkgconfig
+%_rpmfilename           %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm
