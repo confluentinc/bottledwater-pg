@@ -5,7 +5,7 @@ Release: ub1
 Group: Applications/Extension
 Packager: Dat Tran
 BuildRoot: %_topdir/%{name}
-BuildArch: all
+BuildArch: noarch
 
 %description
 avro-c 1.8

@@ -5,7 +5,7 @@ Release: ub1
 Group: Applications/Extension
 Packager: Dat Tran
 BuildRoot: %_topdir/%{name}
-BuildArch: all
+BuildArch: noarch
 
 %description
 This is an extension for PostgreSQL 9.4, it will stream all wal_log to bottledwater client
