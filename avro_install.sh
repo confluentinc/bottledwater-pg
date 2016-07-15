@@ -21,7 +21,7 @@ cd avro-c-1.8.1/
 mkdir build
 cd build
 cmake ..  -DCMAKE_INSTALL_PREFIX=$PREFIX        -DCMAKE_BUILD_TYPE=Release
-make
+make && make test
 make install
 cd ../../
 rm -rf avro-c-1.8.1/
