@@ -6,6 +6,7 @@ Group: Applications/Extension
 Packager: Dat Tran
 BuildRoot: %_topdir/%{name}
 BuildArch: noarch
+License: NoLicense
 
 %description
 avro-c 1.8
