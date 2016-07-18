@@ -4,48 +4,39 @@ Version: 1.8
 Release: 1
 Group: Applications/Extension
 Packager: Dat Tran
-BuildRoot: %{_topdir}
 BuildArch: noarch
+AutoReqProv: no
+Requires: jansson, snappy, pkgconfig
 License: NoLicense
 
 %description
 avro-c 1.8
 
-%prep
-
-%build
-
-%install
-
-%clean
-
 %files
 %defattr(-,root,root)
-%{_includedir}/avro.h
-%{_avroincludedir}/data.h
-%{_avroincludedir}/schema.h
-%{_avroincludedir}/value.h
-%{_avroincludedir}/legacy.h
-%{_avroincludedir}/platform.h
-%{_avroincludedir}/errors.h
-%{_avroincludedir}/msinttypes.h
-%{_avroincludedir}/allocation.h
-%{_avroincludedir}/resolver.h
-%{_avroincludedir}/refcount.h
-%{_avroincludedir}/basics.h
-%{_avroincludedir}/io.h
-%{_avroincludedir}/consumer.h
-%{_avroincludedir}/msstdint.h
-%{_avroincludedir}/generic.h
-%{_libdir}/libavro.a
-%{_libdir}/libavro.so.23.0.0
-%{_libdir}/libavro.so
-%{_pkgconfigdir}/avro-c.pc
-%{_bindir}/avrocat
-%{_bindir}/avroappend
-%{_bindir}/avropipe
-%{_bindir}/avromod
+/include/avro.h
+/include/avro/data.h
+/include/avro/schema.h
+/include/avro/value.h
+/include/avro/legacy.h
+/include/avro/platform.h
+/include/avro/errors.h
+/include/avro/msinttypes.h
+/include/avro/allocation.h
+/include/avro/resolver.h
+/include/avro/refcount.h
+/include/avro/basics.h
+/include/avro/io.h
+/include/avro/consumer.h
+/include/avro/msstdint.h
+/include/avro/generic.h
+/lib/libavro.a
+/lib/libavro.so.23.0.0
+/lib/libavro.so
+/lib/pkgconfig/avro-c.pc
+/bin/avrocat
+/bin/avroappend
+/bin/avropipe
+/bin/avromod
 
-%post
 
-%postun

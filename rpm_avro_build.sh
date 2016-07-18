@@ -8,7 +8,7 @@ echo "+----------------------------+"
 BOTTLE_DIR=$(pwd)
 
 echo "Install dependencies"
-sudo apt-get install libjansson-dev cmake libsnappy1 pkg-config
+yum install libc.so.6 libjansson.so.4 libsnappy.so.1 libz.so.1 pkgconfig
 
 echo "Name: libsnappy" > /usr/share/pkgconfig/libsnappy.pc
 echo "Description: Snappy is a compression library" >> /usr/share/pkgconfig/libsnappy.pc
@@ -23,7 +23,7 @@ cd avro-c-1.8.1/
 mkdir build
 cd build
 cmake ..  -DCMAKE_INSTALL_PREFIX=$PREFIX        -DCMAKE_BUILD_TYPE=Release
-make && make test
+make && make test 
 
 cd ..
 ORG_DIR=$(pwd)
@@ -51,8 +51,7 @@ cp -avr ${ORG_DIR}/src/avro/* ${PACK_DIR}/RPMBUILD/include/avro/
 
 cp -avr ${ORG_DIR}/src/avro.h ${PACK_DIR}/RPMBUILD/include/
 
-cp -avr ${BOTTLE_DIR}/RPM/.rpmmacros ~/
-rpmbuild -bb ${BOTTLE_DIR}/RPM/AVRO_RPM/avro.spec
+rpmbuild -ba --buildroot $(pwd)/${PACK_DIR}/RPMBUILD  ${BOTTLE_DIR}/RPM/AVRO_RPM/avro.spec
 
 rm -rf ${PACK_DIR}
 
