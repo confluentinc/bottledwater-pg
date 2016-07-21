@@ -2,7 +2,6 @@
 #include "json.h"
 #include "logger.h"
 #include "registry.h"
-#include "queue.h"
 
 #include <librdkafka/rdkafka.h>
 #include <getopt.h>
@@ -77,15 +76,6 @@ typedef struct {
     uint64_t commit_lsn;  /* WAL position of the transaction's commit event */
 } transaction_info;
 
-typedef struct pattern_s {
-        TAILQ_ENTRY(pattern_s)  pat_link;
-        regex_t      pat_reg;   /* Compiled regex */
-} pattern_t;
-
-typedef struct pattern_list_s {
-        TAILQ_HEAD(,pattern_s) pl_head;
-} pattern_list_t;
-
 typedef struct {
     client_context_t client;            /* The connection to Postgres */
     schema_registry_t registry;         /* Submits Avro schemas to schema registry */
@@ -101,7 +91,6 @@ typedef struct {
     char *topic_prefix;                 /* String to be prepended to all topic names */
     error_policy_t error_policy;        /* What to do in case of a transient error */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
-    pattern_list_t *allowed_topic_list; /* Bottledwater list of ignored topics*/
 } producer_context;
 
 typedef producer_context *producer_context_t;
@@ -283,12 +272,14 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'o':
                 context->client->schema = optarg;
+                context->client->repl.schema = optarg;
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'i':
                 context->client->tables = optarg;
+                context->client->repl.tables = optarg;
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);

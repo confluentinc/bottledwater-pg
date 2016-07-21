@@ -22,6 +22,8 @@ typedef struct {
     avro_value_iface_t *frame_iface;
     avro_value_t frame_value;
     schema_cache_t schema_cache;
+    char *tables;
+    char *schemas;
 } plugin_state;
 
 void reset_frame(plugin_state *state);
@@ -53,6 +55,50 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     state->frame_iface = avro_generic_class_from_schema(state->frame_schema);
     avro_generic_value_new(state->frame_iface, &state->frame_value);
     state->schema_cache = schema_cache_new(ctx->context);
+
+
+    // Parse option from LogicalDecodingContext
+    // Send by START_REPLICATION SLOT
+    state->tables = NULL;
+    state->schemas = NULL;
+    ListCell   *option;
+    foreach(option, ctx->output_plugin_options) {
+
+      DefElem *elem = lfirst(option);
+
+      Assert(elem->arg == NULL || IsA(elem->arg, String));
+
+      if (strcmp(elem->defname, "tables") == 0) {
+
+        if (elem->arg == NULL) {
+          ereport(ERROR, errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                          errmsg("No value specified for parameter \"%s\"",
+                          elem->defname));
+        } else {
+          state->tables = strVal(elem->arg);
+        }
+
+      } else if (strcmp(elem->defname, "schemas") == 0) {
+
+        if (elem->arg == NULL) {
+          ereport(ERROR, errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                          errmsg("No value specified for parameter \"%s\"",
+                          elem->defname));
+        } else {
+          state->schemas = strVal(elem->arg);
+        }
+
+      } else {
+
+        ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("option \"%s\" = \"%s\" is unknown",
+							elem->defname,
+							elem->arg ? strVal(elem->arg) : "(null)")));
+
+      }
+    }
+
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {
@@ -106,6 +152,17 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
     reset_frame(state);
 
+    // check if we need to read that table/schema
+    char *table_name = NameStr(RelationGetRelationName(rel));
+    if (state->tables && !strstr(state->tables, table_name)) {
+        goto context_reset;
+    }
+
+    char *schema_name = get_namespace_name(RelationGetNamespace(rel));
+    if (state->schemas && !strstr(state->schemas, schema_name)) {
+        goto context_reset;
+    }
+
     switch (change->action) {
         case REORDER_BUFFER_CHANGE_INSERT:
             if (!change->data.tp.newtuple) {
@@ -146,6 +203,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
     }
 
+context_reset:
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }
