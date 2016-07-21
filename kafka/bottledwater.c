@@ -441,7 +441,6 @@ static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
 
     if (xid == 0) {
         unfinished_snapshot = 0;
-                (uint32) (wal_pos >> 32), (uint32) wal_pos);
         log_info("Snapshot complete, streaming changes from %X/%X.",
                  (uint32) (wal_pos >> 32), (uint32) wal_pos);
     }
@@ -464,12 +463,6 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
     producer_context_t context = (producer_context_t) _context;
 
     const char *topic_name = avro_schema_name(row_schema);
-    if (context->client->tables && !strstr(context->client->tables, topic_name))
-        return 0;
-
-    const char *schema_name = avro_schema_namespace(row_schema);
-    if (context->client->schema && !strstr(schema_name, context->client->schema))
-        return 0;
 
     table_metadata_t table = table_mapper_update(context->mapper, relid, topic_name,
             key_schema_json, key_schema_len, row_schema_json, row_schema_len);
@@ -535,8 +528,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
-        fprintf(stderr, "relid %" PRIu32 " has no registered schema\n", relid);
-        return 0;
+        log_error("relid %d" PRIu32 " has no registered schema", relid);
+        return 1;
     }
 
     transaction_info *xact = &context->xact_list[context->xact_head];
@@ -552,12 +545,6 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
     void *key = NULL, *val = NULL;
     size_t key_encoded_len, val_encoded_len;
-    table_metadata_t table = table_mapper_lookup(context->mapper, relid);
-    if (!table) {
-        log_error("relid %" PRIu32 " has no registered schema", relid);
-        return 1;
-    }
-
     int err;
 
     switch (context->output_format) {

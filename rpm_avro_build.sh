@@ -23,7 +23,7 @@ cd avro-c-1.8.1/
 mkdir build
 cd build
 cmake ..  -DCMAKE_INSTALL_PREFIX=$PREFIX        -DCMAKE_BUILD_TYPE=Release
-make && make test 
+make && make test
 
 cd ..
 ORG_DIR=$(pwd)
@@ -51,7 +51,7 @@ cp -avr ${ORG_DIR}/src/avro/* ${PACK_DIR}/RPMBUILD/include/avro/
 
 cp -avr ${ORG_DIR}/src/avro.h ${PACK_DIR}/RPMBUILD/include/
 
-rpmbuild -ba --buildroot $(pwd)/${PACK_DIR}/RPMBUILD  ${BOTTLE_DIR}/RPM/AVRO_RPM/avro.spec
+rpmbuild -bb --buildroot $(pwd)/${PACK_DIR}/RPMBUILD  ${BOTTLE_DIR}/RPM/AVRO_RPM/avro.spec
 
 rm -rf ${PACK_DIR}
 

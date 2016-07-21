@@ -5,6 +5,8 @@
 #include "replication/logical.h"
 #include "replication/output_plugin.h"
 #include "utils/memutils.h"
+#include "nodes/parsenodes.h"
+#include "utils/lsyscache.h"
 
 /* Entry point when Postgres loads the plugin */
 extern void _PG_init(void);
@@ -44,6 +46,7 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
+    ListCell *option;
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
     opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
@@ -61,7 +64,6 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     // Send by START_REPLICATION SLOT
     state->tables = NULL;
     state->schemas = NULL;
-    ListCell   *option;
     foreach(option, ctx->output_plugin_options) {
 
       DefElem *elem = lfirst(option);
@@ -71,9 +73,9 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
       if (strcmp(elem->defname, "tables") == 0) {
 
         if (elem->arg == NULL) {
-          ereport(ERROR, errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+          ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                           errmsg("No value specified for parameter \"%s\"",
-                          elem->defname));
+                          elem->defname)));
         } else {
           state->tables = strVal(elem->arg);
         }
@@ -81,9 +83,9 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
       } else if (strcmp(elem->defname, "schemas") == 0) {
 
         if (elem->arg == NULL) {
-          ereport(ERROR, errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+          ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                           errmsg("No value specified for parameter \"%s\"",
-                          elem->defname));
+                          elem->defname)));
         } else {
           state->schemas = strVal(elem->arg);
         }
@@ -148,17 +150,19 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         Relation rel, ReorderBufferChange *change) {
     int err = 0;
     HeapTuple oldtuple = NULL, newtuple = NULL;
+    char *table_name = NULL;
+    char *schema_name = NULL;
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
     reset_frame(state);
 
     // check if we need to read that table/schema
-    char *table_name = NameStr(RelationGetRelationName(rel));
+    table_name = RelationGetRelationName(rel);
     if (state->tables && !strstr(state->tables, table_name)) {
         goto context_reset;
     }
 
-    char *schema_name = get_namespace_name(RelationGetNamespace(rel));
+    schema_name = get_namespace_name(RelationGetNamespace(rel));
     if (state->schemas && !strstr(state->schemas, schema_name)) {
         goto context_reset;
     }
