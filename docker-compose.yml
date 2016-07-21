@@ -32,29 +32,45 @@ schema-registry:
     - '48081:8081'
   environment:
     SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: none
+postgres-94:
+  build: ./tmp
+  dockerfile: Dockerfile.postgres94
+  hostname: postgres
+  ports:
+    - '45432:5432'
 postgres:
   build: ./tmp
   dockerfile: Dockerfile.postgres
   hostname: postgres
   ports:
     - '45432:5432'
+bottledwater:
+  build: ./tmp
+  dockerfile: Dockerfile.client
+  hostname: bottledwater
+  entrypoint:
+    - /usr/local/bin/bottledwater-docker-wrapper.sh
+    - --topic-config=message.timeout.ms=2000
+  environment:
+    BOTTLED_WATER_ALLOW_UNKEYED: true
+    BOTTLED_WATER_ON_ERROR:
 bottledwater-json:
-  build: ./tmp
-  dockerfile: Dockerfile.client
-  hostname: bottledwater
+  extends: {service: bottledwater}
   links:
     - postgres
+    - postgres-94
     - kafka
-  command: --output-format=json --allow-unkeyed
+  environment:
+    BOTTLED_WATER_OUTPUT_FORMAT: json
 bottledwater-avro:
-  build: ./tmp
-  dockerfile: Dockerfile.client
-  hostname: bottledwater
+  extends: {service: bottledwater}
   links:
     - postgres
+    - postgres-94
     - kafka
     - schema-registry
-  command: --output-format=avro --allow-unkeyed
+  environment:
+    BOTTLED_WATER_OUTPUT_FORMAT: avro
 psql:
   image: postgres:9.5
   links:

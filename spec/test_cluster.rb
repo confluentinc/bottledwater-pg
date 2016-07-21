@@ -5,6 +5,7 @@ require 'kazoo'
 require 'logger'
 require 'pg'
 require 'schema_registry'
+require 'set'
 require 'socket'
 
 require 'retrying_proxy'
@@ -36,19 +37,24 @@ class TestCluster
     self.kafka_log_cleanup_policy = :compact
     self.kafka_auto_create_topics_enable = true
 
+    self.postgres_version = '9.5'
+
     self.bottledwater_format = :json
+    self.bottledwater_on_error = :exit
   end
 
-  def start
+  def start(without: [])
     @state = :starting
 
     raise "cluster already #{@state}!" if started?
 
+    @started_without = Set.new(without)
+
     self.kafka_advertised_host_name = detect_docker_host_ip
 
-    @compose.up(:kafka, :postgres, detached: true)
+    start_service(:zookeeper, :kafka, postgres_service)
 
-    pg_port = wait_for_port(:postgres, 5432, max_tries: 10) do |port|
+    pg_port = wait_for_port(postgres_service, 5432, max_tries: 10) do |port|
       PG::Connection.ping(host: @host, port: port, user: 'postgres') == PG::PQPING_OK
     end
     @postgres = PG::Connection.open(host: @host, port: pg_port, user: 'postgres')
@@ -56,22 +62,24 @@ class TestCluster
       @postgres.exec("CREATE EXTENSION IF NOT EXISTS #{extension}")
     end
 
-    @zookeeper_port = wait_for_tcp_port(:zookeeper, 2181)
-    @kazoo = Kazoo::Cluster.new("#{@host}:#{@zookeeper_port}")
+    unless @started_without.include?(:kafka)
+      @zookeeper_port = wait_for_tcp_port(:zookeeper, 2181)
+      @kazoo = Kazoo::Cluster.new("#{@host}:#{@zookeeper_port}")
 
-    @kafka_port = wait_for_tcp_port(:kafka, 9092)
+      @kafka_port = wait_for_tcp_port(:kafka, 9092)
+    end
 
     if schema_registry_needed?
-      @compose.up('schema-registry', detached: true)
+      start_service(:'schema-registry')
       schema_registry = nil
-      @schema_registry_port = wait_for_port('schema-registry', 8081, max_tries: 10) do |port|
+      @schema_registry_port = wait_for_port(:'schema-registry', 8081, max_tries: 10) do |port|
         schema_registry = SchemaRegistry::Client.new("http://#{@host}:#{port}")
         schema_registry.subjects rescue nil
       end
       @schema_registry = schema_registry
     end
 
-    @compose.up(bottledwater_service, detached: true)
+    start_service(bottledwater_service)
     wait_for_container(bottledwater_service)
 
     @logger << 'Letting things settle'
@@ -104,14 +112,29 @@ class TestCluster
     ENV['KAFKA_AUTO_CREATE_TOPICS_ENABLE'] = enabled.to_s
   end
 
+  attr_accessor :postgres_version
+
+  def postgres_service
+    case postgres_version
+    when '9.5'; :postgres
+    when '9.4'; :'postgres-94'
+    else
+      raise "Unknown postgres_version #{postgres_version}"
+    end
+  end
+
   attr_accessor :bottledwater_format
 
   def bottledwater_service
     :"bottledwater-#{bottledwater_format}"
   end
 
+  def bottledwater_on_error=(policy)
+    ENV['BOTTLED_WATER_ON_ERROR'] = policy.to_s
+  end
+
   def schema_registry_needed?
-    bottledwater_format == :avro
+    bottledwater_format == :avro && !@started_without.include?(:'schema-registry')
   end
 
   def postgres
@@ -153,7 +176,7 @@ class TestCluster
   end
 
   def postgres_running?
-    service_running?(:postgres)
+    service_running?(postgres_service)
   end
 
   def bottledwater_running?
@@ -193,6 +216,12 @@ class TestCluster
     @docker_host_ip
   end
 
+  def start_service(*services)
+    services_to_start = services.reject {|service| @started_without.include?(service) }
+    return if services_to_start.empty?
+    @compose.up(*services_to_start, detached: true, no_deps: true)
+  end
+
   def service_running?(service)
     container_for_service(service).to_h.fetch('State').fetch('Running')
   end
@@ -205,6 +234,10 @@ class TestCluster
   end
 
   def wait_for_port(service, port, max_tries: 5)
+    if starting? && @started_without.include?(service)
+      raise "Waiting for #{service} when we deliberately started without it!"
+    end
+
     mapped_hostport = @compose.port(service, port)
     _, mapped_port = mapped_hostport.split(':', 2)
     mapped_port = Integer(mapped_port)
@@ -230,6 +263,10 @@ class TestCluster
   end
 
   def wait_for(service, message: service, max_tries:)
+    if starting? && @started_without.include?(service)
+      raise "Waiting for #{service} when we deliberately started without it!"
+    end
+
     @logger << "Waiting for #{message}..."
     tries = 0
     result = nil
