@@ -50,6 +50,16 @@ describe 'topics', functional: true do
 
       expect(kazoo.topics).to include(match(/flobble/))
     end
+
+    example 'supports table names up to Postgres max identifier length' do
+      long_name = 'z' * postgres_max_identifier_length
+
+      postgres.exec %(CREATE TABLE "#{long_name}" (thing SERIAL NOT NULL PRIMARY KEY))
+      postgres.exec %(INSERT INTO "#{long_name}" DEFAULT VALUES)
+      sleep 1
+
+      expect(kazoo.topics).to include(long_name)
+    end
   end
 
   describe "with topic autocreate disabled and --on-error=exit" do

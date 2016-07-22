@@ -353,6 +353,32 @@ shared_examples 'database schema support' do |format|
   end
 
 
+  describe 'column names' do
+    example 'supports column names up to Postgres max identifier length in row' do
+      long_name = 'z' * postgres_max_identifier_length
+
+      message = retrieve_roundtrip_message(
+          'int', 42,
+          table_name: :test_long_name_value, column_name: long_name)
+
+      value = decode_value(message.value)
+      expect(value).to have_key(long_name)
+    end
+
+    example 'supports column names up to Postgres max identifier length in key' do
+      long_name = 'z' * postgres_max_identifier_length
+
+      message = retrieve_roundtrip_message(
+          'int', 42,
+          as_key: true,
+          table_name: :test_long_name_key, column_name: long_name)
+
+      key = decode_key(message.key)
+      expect(key).to have_key(long_name)
+    end
+  end
+
+
   describe 'table with no columns' do
     after(:example) do
       # this is known to crash Postgres
