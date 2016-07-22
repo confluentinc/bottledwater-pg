@@ -13,7 +13,7 @@ yum install -y zlib-devel.x86_64 snappy-devel.x86_64 gcc g++ jansson-devel.x86_6
 ORG_DIR=$(pwd)
 PG_SHAREDIR=$(pg_config --sharedir)
 PG_LIBDIR=$(pg_config --libdir)
-PACK_DIR=bottledwater-0.1
+PACK_DIR=bottledwater-0.2
 
 make clean && make
 mkdir -p ${PACK_DIR}/RPMBUILD
