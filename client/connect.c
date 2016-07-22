@@ -306,8 +306,8 @@ int snapshot_start(client_context_t context) {
     destroyPQExpBuffer(query);
 
     Oid argtypes[] = { 25, 25, 16 }; // 25 == TEXTOID, 16 == BOOLOID
-    const char *args[] = { context->tables ? context->tables : CLIENT_DEFAULT_TABLE,
-                           context->schema ? context->schema : CLIENT_DEFAULT_SCHEMA,
+    const char *args[] = { context->repl.tables,
+                           context->repl.schema,
                            context->allow_unkeyed ? "t" : "f" };
 
     if (!PQsendQueryParams(context->sql_conn,

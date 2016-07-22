@@ -142,7 +142,8 @@ int replication_stream_check(replication_stream_t stream) {
 
 
 /* Starts streaming logical changes from replication slot stream->slot_name,
- * starting from position stream->start_lsn. */
+ * starting from position stream->start_lsn.
+ * add options similar to that pattern after () separated by comma */
 int replication_stream_start(replication_stream_t stream) {
     PQExpBuffer query = createPQExpBuffer();
     appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"tables\" \'%s\', \"schemas\" \'%s\')",

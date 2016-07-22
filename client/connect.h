@@ -15,8 +15,6 @@ typedef struct {
     bool taking_snapshot;
     int status; /* 1 = message was processed on last poll; 0 = no data available right now; -1 = stream ended */
     char error[CLIENT_CONTEXT_ERROR_LEN];
-    char *schema;
-    char *tables;
 } client_context;
 
 typedef client_context *client_context_t;

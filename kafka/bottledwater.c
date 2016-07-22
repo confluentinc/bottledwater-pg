@@ -271,14 +271,12 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_kafka_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'o':
-                context->client->schema = optarg;
                 context->client->repl.schema = optarg;
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'i':
-                context->client->tables = optarg;
                 context->client->repl.tables = optarg;
                 break;
             case 1:
@@ -725,6 +723,8 @@ client_context_t init_client() {
     client->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     client->repl.output_plugin = OUTPUT_PLUGIN;
     client->repl.frame_reader = frame_reader;
+    client->repl.schema = CLIENT_DEFAULT_SCHEMA;
+    client->repl.tables = CLIENT_DEFAULT_TABLE;
     return client;
 }
 

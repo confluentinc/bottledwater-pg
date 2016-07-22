@@ -77,7 +77,8 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                           errmsg("No value specified for parameter \"%s\"",
                           elem->defname)));
         } else {
-          state->tables = strVal(elem->arg);
+          char *val = strVal(elem->arg);
+          state->tables = strcmp(val, CLIENT_DEFAULT_TABLE) == 0 ? NULL : val;
         }
 
       } else if (strcmp(elem->defname, "schemas") == 0) {
@@ -87,7 +88,8 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                           errmsg("No value specified for parameter \"%s\"",
                           elem->defname)));
         } else {
-          state->schemas = strVal(elem->arg);
+          char *val = strVal(elem->arg);
+          state->schemas = strcmp(val, CLIENT_DEFAULT_SCHEMA) == 0 ? NULL : val;
         }
 
       } else {
@@ -158,12 +160,12 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
 
     // check if we need to read that table/schema
     table_name = RelationGetRelationName(rel);
-    if (state->tables && !strstr(state->tables, table_name)) {
+    if (state->tables && table_name && !strstr(state->tables, table_name)) {
         goto context_reset;
     }
 
     schema_name = get_namespace_name(RelationGetNamespace(rel));
-    if (state->schemas && !strstr(state->schemas, schema_name)) {
+    if (state->schemas && schema_name && !strstr(state->schemas, schema_name)) {
         goto context_reset;
     }
 
