@@ -696,7 +696,7 @@ void backpressure(producer_context_t context) {
 
     if (received_shutdown_signal) {
         log_info("%s during backpressure. Shutting down...", strsignal(received_shutdown_signal));
-        exit_nicely(context, 0);
+        exit_nicely(context, unfinished_snapshot);
     }
 
     // Keep the replication connection alive, even if we're not consuming data from it.
