@@ -21,6 +21,8 @@
 #define DEFAULT_BROKER_LIST "localhost:9092"
 #define DEFAULT_SCHEMA_REGISTRY "http://localhost:8081"
 
+#define DEFAULT_SCHEMA "%%"
+#define DEFAULT_TABLE "%%"
 
 #define check(err, call) { err = call; if (err) return err; }
 
@@ -199,10 +201,10 @@ void usage() {
             "                          Set topic configuration property for Kafka producer.\n"
             "  -o, --schemas=value\n"
             "                          Vertical line-separated list of schemas\n"
-            "                          If not set, default value is %%\n"
+            "                          If not set, default value is %s\n"
             "  -i, --topics=value\n"
             "                          Vertical line-separated list of topics\n"
-            "                          If not set, default value is %%\n"
+            "                          If not set, default value is %s\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -211,7 +213,9 @@ void usage() {
             DEFAULT_BROKER_LIST,
             DEFAULT_SCHEMA_REGISTRY,
             DEFAULT_OUTPUT_FORMAT_NAME,
-            DEFAULT_ERROR_POLICY_NAME);
+            DEFAULT_ERROR_POLICY_NAME,
+            DEFAULT_SCHEMA,
+            DEFAULT_TABLE);
     exit(1);
 }
 
@@ -723,8 +727,8 @@ client_context_t init_client() {
     client->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     client->repl.output_plugin = OUTPUT_PLUGIN;
     client->repl.frame_reader = frame_reader;
-    client->repl.schema = CLIENT_DEFAULT_SCHEMA;
-    client->repl.tables = CLIENT_DEFAULT_TABLE;
+    client->repl.schema = DEFAULT_SCHEMA;
+    client->repl.tables = DEFAULT_TABLE;
     return client;
 }
 

@@ -4,8 +4,6 @@
 #include "replication.h"
 
 #define CLIENT_CONTEXT_ERROR_LEN 512
-#define CLIENT_DEFAULT_SCHEMA "%%"
-#define CLIENT_DEFAULT_TABLE "%%"
 
 typedef struct {
     char *conninfo, *app_name;

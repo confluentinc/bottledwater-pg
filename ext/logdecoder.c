@@ -62,6 +62,9 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
 
     // Parse option from LogicalDecodingContext
     // Send by START_REPLICATION SLOT
+    // tables is a vertical-line separated list
+    // schema is a vertical-line separated list
+    // TODO find a better way to store these 2 variables
     state->tables = NULL;
     state->schemas = NULL;
     foreach(option, ctx->output_plugin_options) {
@@ -78,7 +81,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                           elem->defname)));
         } else {
           char *val = strVal(elem->arg);
-          state->tables = strcmp(val, CLIENT_DEFAULT_TABLE) == 0 ? NULL : val;
+          state->tables = strcmp(val, "%%") == 0 ? NULL : val;
         }
 
       } else if (strcmp(elem->defname, "schemas") == 0) {
@@ -89,7 +92,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                           elem->defname)));
         } else {
           char *val = strVal(elem->arg);
-          state->schemas = strcmp(val, CLIENT_DEFAULT_SCHEMA) == 0 ? NULL : val;
+          state->schemas = strcmp(val, "%%") == 0 ? NULL : val;
         }
 
       } else {
