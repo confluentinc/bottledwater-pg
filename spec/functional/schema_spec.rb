@@ -66,8 +66,11 @@ shared_examples 'database schema support' do |format|
     sleep 0.1
   end
 
-  def retrieve_roundtrip_message(type, value_str, as_key: false, length: nil)
-    table_name = "test_#{as_key ? 'key' : 'value'}_#{type.gsub(/\W/, '_')}"
+  def retrieve_roundtrip_message(
+      type, value_str,
+      as_key: false, length: nil,
+      table_name: "test_#{as_key ? 'key' : 'value'}_#{type.gsub(/\W/, '_')}",
+      column_name: :value)
 
     create_topic(table_name)
 
@@ -79,8 +82,8 @@ shared_examples 'database schema support' do |format|
       # reject the message (unkeyed message to a compacted topic)
       keyspec = ', id SERIAL PRIMARY KEY NOT NULL'
     end
-    postgres.exec(%{CREATE TABLE "#{table_name}" (value #{type}#{lengthspec} NOT NULL #{keyspec})})
-    postgres.exec_params(%{INSERT INTO "#{table_name}" (value) VALUES ($1)}, [value_str])
+    postgres.exec(%{CREATE TABLE "#{table_name}" ("#{column_name}" #{type}#{lengthspec} NOT NULL #{keyspec})})
+    postgres.exec_params(%{INSERT INTO "#{table_name}" ("#{column_name}") VALUES ($1)}, [value_str])
 
     kafka_take_messages(table_name, 1).first
   end
@@ -354,6 +357,13 @@ shared_examples 'database schema support' do |format|
 
 
   describe 'column names' do
+    after(:example) do
+      # this is known to crash Postgres
+      unless TEST_CLUSTER.healthy?
+        TEST_CLUSTER.restart(dump_logs: false)
+      end
+    end
+
     example 'supports column names up to Postgres max identifier length in row' do
       long_name = 'z' * postgres_max_identifier_length
 
@@ -375,6 +385,33 @@ shared_examples 'database schema support' do |format|
 
       key = decode_key(message.key)
       expect(key).to have_key(long_name)
+    end
+
+    example 'preserves non-alphanumeric characters in row' do
+      xbug 'crashes Postgres'
+
+      silly_name = 'person.name/surname'
+
+      message = retrieve_roundtrip_message(
+          'int', 42,
+          table_name: :test_silly_name_value, column_name: silly_name)
+
+      value = decode_value(message.value)
+      expect(value).to have_key(silly_name)
+    end
+
+    example 'preserves non-alphanumeric characters in key' do
+      xbug 'crashes Postgres'
+
+      silly_name = 'person.name/surname'
+
+      message = retrieve_roundtrip_message(
+          'int', 42,
+          as_key: true,
+          table_name: :test_silly_name_key, column_name: silly_name)
+
+      key = decode_key(message.key)
+      expect(key).to have_key(silly_name)
     end
   end
 
