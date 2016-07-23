@@ -40,8 +40,6 @@ describe 'topics', functional: true do
     end
 
     example 'table names with non-alphanumeric characters create a topic based on the sanitised name' do
-      known_bug 'crashes Postgres', 'https://github.com/confluentinc/bottledwater-pg/issues/64'
-
       silly_name = 'flobble-biscuits?whatisthetime/hahahaha'
 
       postgres.exec %(CREATE TABLE "#{silly_name}" (thing SERIAL NOT NULL PRIMARY KEY))

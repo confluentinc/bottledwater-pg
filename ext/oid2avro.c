@@ -49,6 +49,9 @@ int update_avro_with_char(avro_value_t *output_val, char c);
 int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum);
 
 
+static char *make_avro_safe(const char *raw);
+
+
 /* Returns the relation object for the index that we're going to use as key for a
  * particular table. (Indexes are relations too!) Returns null if the table is unkeyed.
  * The return value is opened with a shared lock; call relation_close() when finished. */
@@ -117,7 +120,7 @@ int schema_for_table_key(Relation rel, avro_schema_t *schema_out) {
  * Returns 0 if successful, nonzero if an error occurred generating the schema.
  * If the table is unkeyed, sets *schema_out to NULL and returns 0. */
 int schema_for_table_row(Relation rel, avro_schema_t *schema_out) {
-    char *rel_namespace, *relname;
+    char *rel_namespace, *relname, *relname_avro_safe, *rel_namespace_avro_safe;
     StringInfoData namespace;
     avro_schema_t record_schema, column_schema;
     TupleDesc tupdesc;
@@ -128,12 +131,17 @@ int schema_for_table_row(Relation rel, avro_schema_t *schema_out) {
     initStringInfo(&namespace);
     appendStringInfoString(&namespace, GENERATED_SCHEMA_NAMESPACE);
 
-    /* TODO ensure that names abide by Avro's requirements */
     rel_namespace = get_namespace_name(RelationGetNamespace(rel));
     if (rel_namespace) appendStringInfo(&namespace, ".%s", rel_namespace);
 
+    rel_namespace_avro_safe = make_avro_safe(namespace.data);
+
     relname = RelationGetRelationName(rel);
-    record_schema = avro_schema_record(relname, namespace.data);
+    relname_avro_safe = make_avro_safe(relname);
+
+    record_schema = avro_schema_record(relname_avro_safe, rel_namespace_avro_safe);
+    free(relname_avro_safe);
+    free(rel_namespace_avro_safe);
     if (record_schema == NULL) {
         *schema_out = NULL;
         return EINVAL;
@@ -739,4 +747,54 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
     pfree(str);
 
     return err;
+}
+
+
+/* Sanitises the `raw` string to be a valid Avro identifier using an encoding
+ * similar to the "percent encoding" used in URLs.  Unsupported characters are
+ * replaced by a hexadecimal representation:
+ *      e.g. "person.name" -> "person_2e_name"
+ *
+ * Valid Avro identifiers start with [A-Za-z_] and subsequently contain only
+ * [A-Za-z0-9_], as per https://avro.apache.org/docs/1.8.1/spec.html#names
+ *
+ * Returns a malloc'd string which the caller is responsible for freeing.
+ *
+ * N.B.:
+ *  * This encoding is not entirely unambiguous, since:
+ *           "person_2e_name" -> "person_2e_name"
+ *    This could be worked around by treating '_' as an invalid character and
+ *    encoding it too (e.g. "person_2e_name" -> "person_5f_2e_5f_name"), but
+ *    that seems ugly, especially since we ourselves generate names like
+ *    "<relname>_pkey".
+ *  * This function is not Unicode-aware!  Given a string containing (bytes
+ *    representing the encoded form of) non-ASCII characters, it should still
+ *    return a valid Avro identifier, but its behaviour is otherwise
+ *    unspecified.  TODO make it handle Unicode. */
+static char *make_avro_safe(const char *raw) {
+    /* Allocate enough space for the worst case, where we have to encode every
+     * character, requiring 4 bytes per character (_xx_).  This is rather
+     * wasteful in the common case, but we expect this will get freed soon, and
+     * anyway these are unlikely to be very large strings.
+     *
+     * (To be precise, we never need to encode the null terminator byte, and
+     * thus this always wastes at least three bytes.) */
+    char *encoded = malloc(4 * strlen(raw));
+
+    char *pe = encoded;
+    for (const char *p = raw; *p != '\0'; ++p) {
+        const char c = *p;
+        if (
+                (c >= 'A' && c <= 'Z') ||
+                (c >= 'a' && c <= 'z') ||
+                c == '_' ||
+                (c >= '0' && c <= '9' && p != raw)) {
+            *pe++ = c;
+        } else {
+            sprintf(pe, "_%2x_", c);
+            pe += 4;
+        }
+    }
+    *pe = '\0';
+    return encoded;
 }
