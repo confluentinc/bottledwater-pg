@@ -89,29 +89,40 @@ Relation table_key_index(Relation rel) {
 }
 
 
-/* Generates an Avro schema for the key (replica identity or primary key)
- * of a given table. Returns null if the table is unkeyed. */
-avro_schema_t schema_for_table_key(Relation rel) {
+/* Generates an Avro schema for the key (replica identity or primary key) of a
+ * given table and sets *schema_out to point to it.
+ *
+ * Returns 0 if successful, nonzero if an error occurred generating the schema.
+ * If the table is unkeyed, sets *schema_out to NULL and returns 0. */
+int schema_for_table_key(Relation rel, avro_schema_t *schema_out) {
     Relation index_rel;
-    avro_schema_t schema;
+    int err;
 
     index_rel = table_key_index(rel);
-    if (!index_rel) return NULL;
+    if (!index_rel) {
+        *schema_out = NULL;
+        return 0;
+    }
 
-    schema = schema_for_table_row(index_rel);
+    err = schema_for_table_row(index_rel, schema_out);
 
     relation_close(index_rel, AccessShareLock);
-    return schema;
+    return err;
 }
 
 
-/* Generates an Avro schema corresponding to a given table (relation). */
-avro_schema_t schema_for_table_row(Relation rel) {
+/* Generates an Avro schema corresponding to a given table (relation) and sets
+ * *schema_out to point to it.
+ *
+ * Returns 0 if successful, nonzero if an error occurred generating the schema.
+ * If the table is unkeyed, sets *schema_out to NULL and returns 0. */
+int schema_for_table_row(Relation rel, avro_schema_t *schema_out) {
     char *rel_namespace, *relname;
     StringInfoData namespace;
     avro_schema_t record_schema, column_schema;
     TupleDesc tupdesc;
     predef_schema predef;
+    int err = 0;
 
     memset(&predef, 0, sizeof(predef_schema));
     initStringInfo(&namespace);
@@ -123,6 +134,11 @@ avro_schema_t schema_for_table_row(Relation rel) {
 
     relname = RelationGetRelationName(rel);
     record_schema = avro_schema_record(relname, namespace.data);
+    if (record_schema == NULL) {
+        *schema_out = NULL;
+        return EINVAL;
+    }
+
     tupdesc = RelationGetDescr(rel);
 
     for (int i = 0; i < tupdesc->natts; i++) {
@@ -130,11 +146,14 @@ avro_schema_t schema_for_table_row(Relation rel) {
         if (attr->attisdropped) continue; /* skip dropped columns */
 
         column_schema = schema_for_oid(&predef, attr->atttypid);
-        avro_schema_record_field_append(record_schema, NameStr(attr->attname), column_schema);
+        err = avro_schema_record_field_append(record_schema, NameStr(attr->attname), column_schema);
         avro_schema_decref(column_schema);
+
+        if (err) break;
     }
 
-    return record_schema;
+    *schema_out = record_schema;
+    return err;
 }
 
 

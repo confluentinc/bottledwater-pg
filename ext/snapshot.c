@@ -351,12 +351,16 @@ bytea *schema_for_relname(char *relname, bool get_key) {
     Relation rel = relation_openrv(relvar, AccessShareLock);
 
     if (get_key) {
-        schema = schema_for_table_key(rel);
+        err = schema_for_table_key(rel, &schema);
     } else {
-        schema = schema_for_table_row(rel);
+        err = schema_for_table_row(rel, &schema);
     }
 
     relation_close(rel, AccessShareLock);
+    if (err) {
+        elog(ERROR, "bottledwater_table_schema: Could not get schema for relname %s: %s",
+                relname, avro_strerror());
+    }
     if (!schema) return NULL;
 
     err = try_writing(&json, &write_schema_json, schema);
