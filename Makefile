@@ -21,9 +21,7 @@ test-bundle: Gemfile.lock
 spec/functional/type_specs.rb: spec/bin/generate_type_specs.rb test-bundle docker-compose
 	bundle exec ruby -Ispec $< >$@
 
-test-deps: test-bundle spec/functional/type_specs.rb
-
-test: test-deps
+test: spec/functional/type_specs.rb
 	bundle exec rspec --order random
 
 docker: docker-client docker-postgres docker-postgres94
