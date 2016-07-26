@@ -150,6 +150,18 @@ int schema_for_table_row(Relation rel, avro_schema_t *schema_out) {
 
     tupdesc = RelationGetDescr(rel);
 
+    if (tupdesc->natts == 0) {
+        /* Special case for table schemas with no columns.  (You can create
+         * such a table via `CREATE TABLE no_columns ()`, but more likely you'd
+         * get there by dropping all the columns from an existing table.)
+         *
+         * We need to special-case this because avro-c doesn't seem to like
+         * record schemas with no fields. */
+        column_schema = avro_schema_boolean();
+        err = avro_schema_record_field_append(record_schema, "dummy", column_schema);
+        avro_schema_decref(column_schema);
+    }
+
     for (int i = 0; i < tupdesc->natts; i++) {
         Form_pg_attribute attr = tupdesc->attrs[i];
         if (attr->attisdropped) continue; /* skip dropped columns */

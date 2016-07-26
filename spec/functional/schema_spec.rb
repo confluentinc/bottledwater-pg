@@ -59,8 +59,8 @@ shared_examples 'database schema support' do |format|
   # amount of time after inserting the row for Kafka to create the topic before
   # we can try consuming from it, which is slow and unreliable.  Instead we
   # explicitly create the topic beforehand.
-  def create_topic(name)
-    kazoo.create_topic(name, partitions: 1, replication_factor: 1)
+  def create_topic(name, config: nil)
+    kazoo.create_topic(name, partitions: 1, replication_factor: 1, config: config)
 
     # ... except that Kafka seems to take a while to notice the change in Zookeeper...
     sleep 0.1
@@ -403,18 +403,17 @@ shared_examples 'database schema support' do |format|
 
   describe 'table with no columns' do
     after(:example) do
-      # this is known to crash Postgres
+      # some of these are known to terminate the replication connection,
+      # causing Bottled Water to exit
       unless TEST_CLUSTER.healthy?
         TEST_CLUSTER.restart(dump_logs: false)
       end
     end
 
-    example 'sends empty messages' do
-      known_bug 'crashes Postgres', 'https://github.com/confluentinc/bottledwater-pg/issues/61'
-
+    example 'publishes dummy messages' do
       table_name = 'zero_columns'
 
-      create_topic(table_name)
+      create_topic(table_name, config: {'cleanup.policy' => 'delete'})
 
       postgres.exec(%{CREATE TABLE "#{table_name}" ()})
       postgres.exec(%{INSERT INTO "#{table_name}" DEFAULT VALUES})
@@ -423,7 +422,47 @@ shared_examples 'database schema support' do |format|
 
       expect(message.value).to_not be_nil
       row = decode_value(message.value)
-      expect(row).to be_empty
+      expect(row).to be_a(Hash)
+    end
+
+    example 'if columns are added later, drops the dummy data' do
+      table_name = 'zero_columns_initially'
+
+      create_topic(table_name, config: {'cleanup.policy' => 'delete'})
+
+      postgres.exec(%{CREATE TABLE "#{table_name}" ()})
+      postgres.exec(%{INSERT INTO "#{table_name}" DEFAULT VALUES})
+
+      postgres.exec(%{ALTER TABLE "#{table_name}" ADD COLUMN stuff TEXT})
+      postgres.exec(%{INSERT INTO "#{table_name}" (stuff) VALUES ('have some data')})
+
+      message = kafka_take_messages(table_name, 2).last
+
+      expect(message.value).to_not be_nil
+      row = decode_value(message.value)
+      expect(row).to have_key('stuff')
+      expect(row.size).to be(1)
+    end
+
+    example 'if you remove all columns from a table, publishes dummy messages' do
+      xbug 'dropping columns seems to do weird stuff'
+
+      table_name = 'zero_columns_eventually'
+
+      create_topic(table_name, config: {'cleanup.policy' => 'delete'})
+
+      postgres.exec(%{CREATE TABLE "#{table_name}" (stuff TEXT NOT NULL)})
+      postgres.exec(%{INSERT INTO "#{table_name}" (stuff) VALUES ('have some data')})
+
+      postgres.exec(%{ALTER TABLE "#{table_name}" DROP COLUMN stuff})
+      postgres.exec(%{INSERT INTO "#{table_name}" DEFAULT VALUES})
+
+      message = kafka_take_messages(table_name, 2).last
+
+      expect(message.value).to_not be_nil
+      row = decode_value(message.value)
+      expect(row).to_not have_key('stuff')
+      expect(row).to be_a(Hash)
     end
   end
 
