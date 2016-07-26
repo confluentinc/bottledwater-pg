@@ -121,6 +121,7 @@ int schema_for_table_key(Relation rel, avro_schema_t *schema_out) {
  * If the table is unkeyed, sets *schema_out to NULL and returns 0. */
 int schema_for_table_row(Relation rel, avro_schema_t *schema_out) {
     char *rel_namespace, *relname, *relname_avro_safe, *rel_namespace_avro_safe;
+    char *attname_avro_safe;
     StringInfoData namespace;
     avro_schema_t record_schema, column_schema;
     TupleDesc tupdesc;
@@ -153,9 +154,13 @@ int schema_for_table_row(Relation rel, avro_schema_t *schema_out) {
         Form_pg_attribute attr = tupdesc->attrs[i];
         if (attr->attisdropped) continue; /* skip dropped columns */
 
+        attname_avro_safe = make_avro_safe(NameStr(attr->attname));
         column_schema = schema_for_oid(&predef, attr->atttypid);
-        err = avro_schema_record_field_append(record_schema, NameStr(attr->attname), column_schema);
+
+        err = avro_schema_record_field_append(record_schema, attname_avro_safe, column_schema);
+
         avro_schema_decref(column_schema);
+        free(attname_avro_safe);
 
         if (err) break;
     }

@@ -357,13 +357,6 @@ shared_examples 'database schema support' do |format|
 
 
   describe 'column names' do
-    after(:example) do
-      # this is known to crash Postgres
-      unless TEST_CLUSTER.healthy?
-        TEST_CLUSTER.restart(dump_logs: false)
-      end
-    end
-
     example 'supports column names up to Postgres max identifier length in row' do
       long_name = 'z' * postgres_max_identifier_length
 
@@ -387,31 +380,23 @@ shared_examples 'database schema support' do |format|
       expect(key).to have_key(long_name)
     end
 
-    example 'preserves non-alphanumeric characters in row' do
-      xbug 'crashes Postgres'
-
-      silly_name = 'person.name/surname'
-
+    example 'sanitises non-alphanumeric characters in row' do
       message = retrieve_roundtrip_message(
           'int', 42,
-          table_name: :test_silly_name_value, column_name: silly_name)
+          table_name: :test_silly_name_value, column_name: 'person.name/surname')
 
       value = decode_value(message.value)
-      expect(value).to have_key(silly_name)
+      expect(value.keys).to include(match(/person.*name.*surname/))
     end
 
-    example 'preserves non-alphanumeric characters in key' do
-      xbug 'crashes Postgres'
-
-      silly_name = 'person.name/surname'
-
+    example 'sanitises non-alphanumeric characters in key' do
       message = retrieve_roundtrip_message(
           'int', 42,
           as_key: true,
-          table_name: :test_silly_name_key, column_name: silly_name)
+          table_name: :test_silly_name_key, column_name: 'person.name/surname')
 
       key = decode_key(message.key)
-      expect(key).to have_key(silly_name)
+      expect(key.keys).to include(match(/person.*name.*surname/))
     end
   end
 
