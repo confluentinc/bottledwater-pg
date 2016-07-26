@@ -117,10 +117,12 @@ int schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, R
     err = schema_for_table_row(rel, &entry->row_schema);
     if (err) return err;
     entry->row_iface = avro_generic_class_from_schema(entry->row_schema);
+    if (entry->row_iface == NULL) return EINVAL;
     avro_generic_value_new(entry->row_iface, &entry->row_value);
 
     if (entry->key_schema) {
         entry->key_iface = avro_generic_class_from_schema(entry->key_schema);
+        if (entry->key_iface == NULL) return EINVAL;
         avro_generic_value_new(entry->key_iface, &entry->key_value);
     }
 
