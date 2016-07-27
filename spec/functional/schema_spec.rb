@@ -445,7 +445,7 @@ shared_examples 'database schema support' do |format|
     end
 
     example 'if you remove all columns from a table, publishes dummy messages' do
-      xbug 'dropping columns seems to do weird stuff'
+      known_bug 'terminates replication stream', 'https://github.com/confluentinc/bottledwater-pg/issues/97'
 
       table_name = 'zero_columns_eventually'
 
