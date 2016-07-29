@@ -49,6 +49,17 @@ describe 'topics', functional: true do
       expect(kazoo.topics).to include(match(/flobble.*biscuits.*whatisthetime.*hahahaha/))
     end
 
+    example 'table names with non-ASCII characters create a topic based on the sanitised name' do
+      unicode_name = 'crêpes'
+
+      postgres.exec %(CREATE TABLE "#{unicode_name}" (thing SERIAL NOT NULL PRIMARY KEY))
+      postgres.exec %(INSERT INTO "#{unicode_name}" DEFAULT VALUES)
+
+      sleep 1
+
+      expect(kazoo.topics).to include('cr_c3__aa_pes')
+    end
+
     example 'supports table names up to Postgres max identifier length' do
       long_name = 'z' * postgres_max_identifier_length
 

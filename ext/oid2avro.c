@@ -784,10 +784,11 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
  *    encoding it too (e.g. "person_2e_name" -> "person_5f_2e_5f_name"), but
  *    that seems ugly, especially since we ourselves generate names like
  *    "<relname>_pkey".
- *  * This function is not Unicode-aware!  Given a string containing (bytes
- *    representing the encoded form of) non-ASCII characters, it should still
- *    return a valid Avro identifier, but its behaviour is otherwise
- *    unspecified.  TODO make it handle Unicode. */
+ *  * The encoding is done bytewise, and so for identifiers containing
+ *    non-ASCII characters the result is a bit unintuitive: it is simply the
+ *    underscore encoding of the bytes representing those characters in the
+ *    server encoding (default UTF-8).  e.g.:
+ *           "crêpes" -> "cr_c3__aa_pes" */
 static char *make_avro_safe(const char *raw) {
     /* Allocate enough space for the worst case, where we have to encode every
      * character, requiring 4 bytes per character (_xx_).  This is rather
@@ -808,7 +809,7 @@ static char *make_avro_safe(const char *raw) {
                 (c >= '0' && c <= '9' && p != raw)) {
             *pe++ = c;
         } else {
-            sprintf(pe, "_%2x_", c);
+            sprintf(pe, "_%.2x_", (unsigned char) c);
             pe += 4;
         }
     }
