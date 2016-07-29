@@ -14,7 +14,7 @@
 
 #define CHECKPOINT_INTERVAL_SEC 10
 
-// #define DEBUG 1
+#define DEBUG 1
 
 int replication_stream_finish(replication_stream_t stream);
 int parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
@@ -145,12 +145,20 @@ int replication_stream_check(replication_stream_t stream) {
  * starting from position stream->start_lsn.
  * add options similar to that pattern after () separated by comma */
 int replication_stream_start(replication_stream_t stream) {
+
+    // Get a list of oids, which we want to stream
+    // If error, there's something wrong, the extension will send nothing
+    // Default: the extension will send everything
+    if(replication_stream_get_list_oids(stream)) {
+      repl_error(stream, "Could not get any tables match with tables %s and schemas %s",
+                                                stream->tables, stream->schema);
+    }
+
     PQExpBuffer query = createPQExpBuffer();
-    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"tables\" \'%s\', \"schemas\" \'%s\')",
+    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"tables\" \'%s\')",
             stream->slot_name,
             (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn,
-            stream->tables,
-            stream->schema);
+            stream->tables);
 
     PGresult *res = PQexec(stream->conn, query->data);
 
@@ -167,6 +175,54 @@ int replication_stream_start(replication_stream_t stream) {
     return 0;
 }
 
+int replication_stream_get_list_oids(replication_stream_t stream) {
+
+    if (strcmp(stream->tables, "%%") == 0 && strcmp(stream->tables, "%%") == 0) {
+        repl_error(stream, "All tables will be streamed");
+        return 0;
+    }
+
+    stream->oids = "";
+
+    PQExpBuffer query = createPQExpBuffer();
+    appendPQExpBuffer(query,
+          "SELECT c.oid
+          FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relkind = 'r' AND c.relname SIMILAR TO '%s' AND
+          n.nspname NOT LIKE 'pg_%%' AND n.nspname != 'information_schema' AND n.nspname SIMILAR TO '%s' AND
+          c.relpersistence = 'p'",
+        stream->tables,
+        stream->schema);
+
+    PGresult *res = PQexec(stream->conn, query->data);
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        repl_error(stream, "GET LIST OF OIDS failed: %s", PQerrorMessage(stream->conn));
+        PQclear(res);
+        return EIO;
+    }
+
+    if (PQntuples(res) < 1 || PQnfields(res) < 1) {
+        repl_error(stream, "UNEXPEDTED GET LIST OF OIDS RESULT (%d rows, %d fields).",
+                PQntuples(res), PQnfields(res));
+        PQclear(res);
+        return EIO;
+    }
+
+    int i;
+    int rows = PQntuples(res);
+
+    strcat(stream->oids, PQgetvalue(res, 0, 0));
+    for (i = 1; i < rows; ++i) {
+        strcat(stream->oids, ",");
+        strcat(stream->oids, PQgetvalue(res, i, 0));
+    }
+
+    fprintf(stderr, "stream->oids %s\n", stream->oids);
+
+    return 0;
+}
 
 /* Finish off after the server stopped sending us COPY data. */
 int replication_stream_finish(replication_stream_t stream) {

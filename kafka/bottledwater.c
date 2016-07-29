@@ -580,7 +580,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     bool enqueued = false;
     while (!enqueued) {
         int err = rd_kafka_produce(table->topic,
-                RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_COPY,
+                RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_FREE,
                 val, val == NULL ? 0 : val_encoded_len,
                 key, key == NULL ? 0 : key_encoded_len,
                 envelope);
@@ -605,8 +605,6 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         }
     }
 
-    if(val)
-      free(val);
     if(key)
       free(key);
 
@@ -729,6 +727,7 @@ client_context_t init_client() {
     client->repl.frame_reader = frame_reader;
     client->repl.schema = DEFAULT_SCHEMA;
     client->repl.tables = DEFAULT_TABLE;
+    client->repl.oids = DEFAULT_TABLE;
     return client;
 }
 
