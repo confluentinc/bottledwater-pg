@@ -6,7 +6,7 @@
 #include "access/tupdesc.h"
 #include "utils/lsyscache.h"
 
-void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, Relation rel);
+int schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, Relation rel);
 bool schema_cache_entry_changed(schema_cache_entry *entry, Relation rel);
 void schema_cache_entry_decrefs(schema_cache_entry *entry);
 void tupdesc_debug_info(StringInfo msg, TupleDesc tupdesc);
@@ -41,10 +41,12 @@ schema_cache_t schema_cache_new(MemoryContext context) {
 
 /* Obtains the schema cache entry for the given relation, creating or updating it if necessary.
  * If the schema hasn't changed since the last invocation, a cached value is used and 0 is returned.
- * If the schema has changed, 1 is returned. If the schema has not been seen before, 2 is returned. */
+ * If the schema has changed, 1 is returned. If the schema has not been seen before, 2 is returned.
+ * If an error occurred creating or updating the entry, returns a negative value. */
 int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry **entry_out) {
     Oid relid = RelationGetRelid(rel);
     bool found_entry;
+    int err;
     schema_cache_entry *entry = (schema_cache_entry *)
         hash_search(cache->entries, &relid, HASH_ENTER, &found_entry);
 
@@ -57,22 +59,31 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
         } else {
             /* Schema has changed since we last saw it -- update the cache */
             schema_cache_entry_decrefs(entry);
-            schema_cache_entry_update(cache, entry, rel);
+            err = schema_cache_entry_update(cache, entry, rel);
+            if (err) {
+                *entry_out = NULL;
+                return -1;
+            }
             *entry_out = entry;
             return 1;
         }
     } else {
         /* Schema not previously seen -- populate a new cache entry */
-        schema_cache_entry_update(cache, entry, rel);
+        err = schema_cache_entry_update(cache, entry, rel);
+        if (err) {
+            *entry_out = NULL;
+            return -2;
+        }
         *entry_out = entry;
         return 2;
     }
 }
 
 /* Populates a schema cache entry with the information from a given table. */
-void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, Relation rel) {
+int schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, Relation rel) {
     Relation index_rel;
     MemoryContext oldctx;
+    int err;
 
     entry->relid = RelationGetRelid(rel);
     entry->ns_id = RelationGetNamespace(rel);
@@ -101,15 +112,21 @@ void schema_cache_entry_update(schema_cache_t cache, schema_cache_entry *entry, 
     entry->row_tupdesc = CreateTupleDescCopyConstr(RelationGetDescr(rel));
     MemoryContextSwitchTo(oldctx);
 
-    entry->key_schema = schema_for_table_key(rel);
-    entry->row_schema = schema_for_table_row(rel);
+    err = schema_for_table_key(rel, &entry->key_schema);
+    if (err) return err;
+    err = schema_for_table_row(rel, &entry->row_schema);
+    if (err) return err;
     entry->row_iface = avro_generic_class_from_schema(entry->row_schema);
+    if (entry->row_iface == NULL) return EINVAL;
     avro_generic_value_new(entry->row_iface, &entry->row_value);
 
     if (entry->key_schema) {
         entry->key_iface = avro_generic_class_from_schema(entry->key_schema);
+        if (entry->key_iface == NULL) return EINVAL;
         avro_generic_value_new(entry->key_iface, &entry->key_value);
     }
+
+    return 0;
 }
 
 /* Returns false if the schema of the given relation matches the cache entry,
