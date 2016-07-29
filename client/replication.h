@@ -14,7 +14,7 @@ typedef struct {
     char *slot_name, *output_plugin, *snapshot_name;
     char *schema;
     char *tables;
-    char oids[REPLICATION_STREAM_OID_LIST_LEN];
+    char *oids;
     PGconn *conn;
     XLogRecPtr start_lsn;
     XLogRecPtr recvd_lsn;

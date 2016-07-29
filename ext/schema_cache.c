@@ -53,23 +53,25 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
         if (!schema_cache_entry_changed(entry, rel)) {
             /* Schema has not changed */
             *entry_out = entry;
-            return 0;
+            return SCHEMA_EXIST;
 
         } else {
             /* Schema has changed since we last saw it -- update the cache */
             schema_cache_entry_decrefs(entry);
             schema_cache_entry_update(cache, entry, rel);
             *entry_out = entry;
-            return 1;
+            return SCHEMA_UPDATE;
         }
     } else {
-        if (cache->update) { // Cannot update schema
+        if (cache->update) { // Can update schema
+          /* Schema not previously seen -- populate a new cache entry */
             schema_cache_entry_update(cache, entry, rel);
             *entry_out = entry;
-            return 2;
+            return SCHEMA_NEW;
         }
-        /* Schema not previously seen -- populate a new cache entry */
-        return 3;
+
+        // Cannot find that schema
+        return SCHEMA_NOT_FOUND;
     }
 }
 

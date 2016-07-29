@@ -727,7 +727,7 @@ client_context_t init_client() {
     client->repl.frame_reader = frame_reader;
     client->repl.schema = DEFAULT_SCHEMA;
     client->repl.tables = DEFAULT_TABLE;
-    strcpy(context->repl.oids, DEFAULT_TABLE);
+    client->repl.oids = DEFAULT_TABLE;
     return client;
 }
 

@@ -406,11 +406,9 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
 int get_list_oids(client_context_t context) {
 
     if (strcmp(context->repl.tables, "%%") == 0 && strcmp(context->repl.schema, "%%") == 0) {
-        repl_error(stream, "All tables will be streamed");
+        repl_error(context, "All tables will be streamed");
         return 0;
     }
-
-    strcpy(context->repl.oids, "");
 
     PQExpBuffer query = createPQExpBuffer();
     appendPQExpBuffer(query,
@@ -426,7 +424,7 @@ int get_list_oids(client_context_t context) {
     PGresult *res = PQexec(context->sql_conn, query->data);
 
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        client_error(context, "GET LIST OF OIDS failed: %s", PQerrorMessage(stream->conn));
+        client_error(context, "GET LIST OF OIDS failed: %s", PQerrorMessage(context->sql_conn));
         PQclear(res);
         return EIO;
     }
@@ -440,15 +438,17 @@ int get_list_oids(client_context_t context) {
 
     int i;
     int rows = PQntuples(res);
+    PQExpBuffer oids = createPQExpBuffer();
 
-    strcat(context->repl.oids, PQgetvalue(res, 0, 0));
+    appendPQExpBuffer(oids, rows > 0 ? PQgetvalue(0, 0): "");
     for (i = 1; i < rows; ++i) {
-        strcat(context->repl.oids, ".");
-        strcat(context->repl.oids, PQgetvalue(res, i, 0));
+        appendPQExpBuffer(oids, ".");
+        appendPQExpBuffer(oids, PQgetvalue(res, i, 0));
     }
+    context->repl.oids = strdup(oids->data);
 
-    fprintf(stderr, "stream->oids %s\n", context->repl.oids);
     PQclear(res);
     destroyPQExpBuffer(query);
+    destroyPQExpBuffer(oids);
     return 0;
 }

@@ -5,8 +5,10 @@
 #include "replication/logical.h"
 #include "replication/output_plugin.h"
 #include "utils/memutils.h"
+#include "utils/builtins.h"
 #include "nodes/parsenodes.h"
 #include "utils/lsyscache.h"
+#include "access/heapam.h"
 
 /* Entry point when Postgres loads the plugin */
 extern void _PG_init(void);
@@ -45,7 +47,9 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
-    ListCell *option;
+    ListCell *option, *l;
+    List *relname_list;
+    schema_cache_entry *entry;
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
     opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
@@ -64,7 +68,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     // tables is a vertical-line separated list
     // schema is a vertical-line separated list
     // TODO find a better way to store these 2 variables
-    state->tables = NULL;
+    state->oids = NULL;
     foreach(option, ctx->output_plugin_options) {
 
       DefElem *elem = lfirst(option);
@@ -103,18 +107,18 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
       }
     }
 
-    List *relname_list = stringToQualifiedNameList(state->oids);
-    ListCell   *l;
-    schema_cache_entry *entry;
-
-    foreach(l, relname_list) {
-        Relation rel = relation_open(atoi(l), AccessShareLock);
-        schema_cache_lookup(schema_cache, rel, &entry);
-        relation_close(rel, AccessShareLock);
-    }
     if (strcmp(state->oids, "%%") != 0) {
+        relname_list = stringToQualifiedNameList(state->oids);
+        foreach(l, relname_list) {
+            Relation rel = relation_open(atoi(lfirst(l)), AccessShareLock);
+            schema_cache_lookup(state->schema_cache, rel, &entry);
+            relation_close(rel, AccessShareLock);
+        }
         state->schema_cache->update = 0;
-    }
+        list_free(relname_list);
+    } // else {
+        // All tables will be streamed, so just return here
+    //}
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {
