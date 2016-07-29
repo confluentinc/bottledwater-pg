@@ -168,8 +168,6 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         Relation rel, ReorderBufferChange *change) {
     int err = 0;
     HeapTuple oldtuple = NULL, newtuple = NULL;
-    char *table_name = NULL;
-    char *schema_name = NULL;
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
     reset_frame(state);

@@ -406,7 +406,7 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
 int get_list_oids(client_context_t context) {
 
     if (strcmp(context->repl.tables, "%%") == 0 && strcmp(context->repl.schema, "%%") == 0) {
-        repl_error(context, "All tables will be streamed");
+        client_error(context, "All tables will be streamed");
         return 0;
     }
 
@@ -440,7 +440,7 @@ int get_list_oids(client_context_t context) {
     int rows = PQntuples(res);
     PQExpBuffer oids = createPQExpBuffer();
 
-    appendPQExpBuffer(oids, rows > 0 ? PQgetvalue(0, 0): "");
+    appendPQExpBuffer(oids, rows > 0 ? PQgetvalue(res, 0, 0): "");
     for (i = 1; i < rows; ++i) {
         appendPQExpBuffer(oids, ".");
         appendPQExpBuffer(oids, PQgetvalue(res, i, 0));
