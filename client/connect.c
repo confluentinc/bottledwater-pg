@@ -30,6 +30,9 @@ int snapshot_start(client_context_t context);
 int snapshot_poll(client_context_t context);
 int snapshot_tuple(client_context_t context, PGresult *res, int row_number);
 
+// TODO refactor this code, I don't wanna get a list of oids inside connect.c
+int get_list_oids(client_context_t context);
+
 
 /* Allocates a client_context struct. After this is done and before
  * db_client_start() is called, various fields in the struct need to be
@@ -60,6 +63,12 @@ int db_client_start(client_context_t context) {
 
     check(err, client_connect(context));
     checkRepl(err, context, replication_stream_check(&context->repl));
+    // this a hacky way to get list of oids from stream->tables, stream->schemas
+    // TODO refactor it
+    // Get a list of oids, which we want to stream
+    // If error, there's something wrong, the extension will send nothing
+    // Default: the extension will send everything
+    check(err, context, get_list_oids(context));
     check(err, replication_slot_exists(context, &slot_exists));
 
     if (slot_exists) {
@@ -392,4 +401,54 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
         client_error(context, "Error parsing frame data: %s", context->repl.frame_reader->error);
     }
     return err;
+}
+
+int get_list_oids(client_context_t context) {
+
+    if (strcmp(stream->tables, "%%") == 0 && strcmp(stream->tables, "%%") == 0) {
+        repl_error(stream, "All tables will be streamed");
+        return 0;
+    }
+
+    strcpy(context->repl.oids, "");
+
+    PQExpBuffer query = createPQExpBuffer();
+    appendPQExpBuffer(query,
+          "SELECT c.oid"
+          " FROM pg_catalog.pg_class c"
+          " JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
+          " WHERE c.relkind = 'r' AND c.relname SIMILAR TO '%s' AND"
+          " n.nspname NOT LIKE 'pg_%%' AND n.nspname != 'information_schema' AND n.nspname SIMILAR TO '%s' AND"
+          " c.relpersistence = 'p'",
+        stream->tables,
+        stream->schema);
+
+    PGresult *res = PQexec(context->sql_conn, query->data);
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        client_error(context, "GET LIST OF OIDS failed: %s", PQerrorMessage(stream->conn));
+        PQclear(res);
+        return EIO;
+    }
+
+    if (PQntuples(res) < 1 || PQnfields(res) < 1) {
+        client_error(context, "UNEXPEDTED GET LIST OF OIDS RESULT (%d rows, %d fields).",
+                PQntuples(res), PQnfields(res));
+        PQclear(res);
+        return EIO;
+    }
+
+    int i;
+    int rows = PQntuples(res);
+
+    strcat(stream->oids, PQgetvalue(res, 0, 0));
+    for (i = 1; i < rows; ++i) {
+        strcat(stream->oids, ",");
+        strcat(stream->oids, PQgetvalue(res, i, 0));
+    }
+
+    fprintf(stderr, "stream->oids %s\n", stream->oids);
+    PQclear(res);
+    destroyPQExpBuffer(query);
+    return 0;
 }
