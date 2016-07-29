@@ -18,6 +18,7 @@ schema_cache_t schema_cache_new(MemoryContext context) {
     MemoryContext oldctx = MemoryContextSwitchTo(context);
     schema_cache_t cache = palloc0(sizeof(schema_cache));
     cache->context = context;
+    cache->update = 1;
 
     memset(&hash_ctl, 0, sizeof(hash_ctl));
     hash_ctl.keysize = sizeof(Oid);
@@ -62,10 +63,13 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
             return 1;
         }
     } else {
+        if (cache->update) { // Cannot update schema
+            schema_cache_entry_update(cache, entry, rel);
+            *entry_out = entry;
+            return 2;
+        }
         /* Schema not previously seen -- populate a new cache entry */
-        schema_cache_entry_update(cache, entry, rel);
-        *entry_out = entry;
-        return 2;
+        return 3;
     }
 }
 

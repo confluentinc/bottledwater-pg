@@ -24,8 +24,7 @@ typedef struct {
     avro_value_iface_t *frame_iface;
     avro_value_t frame_value;
     schema_cache_t schema_cache;
-    char *tables;
-    char *schemas;
+    char *oids;
 } plugin_state;
 
 void reset_frame(plugin_state *state);
@@ -66,7 +65,6 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     // schema is a vertical-line separated list
     // TODO find a better way to store these 2 variables
     state->tables = NULL;
-    state->schemas = NULL;
     foreach(option, ctx->output_plugin_options) {
 
       DefElem *elem = lfirst(option);
@@ -80,20 +78,19 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                           errmsg("No value specified for parameter \"%s\"",
                           elem->defname)));
         } else {
-          char *val = strVal(elem->arg);
-          state->tables = strcmp(val, "%%") == 0 ? NULL : val;
+          state->oids = strVal(elem->arg);
         }
 
-      } else if (strcmp(elem->defname, "schemas") == 0) {
-
-        if (elem->arg == NULL) {
-          ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                          errmsg("No value specified for parameter \"%s\"",
-                          elem->defname)));
-        } else {
-          char *val = strVal(elem->arg);
-          state->schemas = strcmp(val, "%%") == 0 ? NULL : val;
-        }
+      // } else if (strcmp(elem->defname, "schemas") == 0) {
+      //
+      //   if (elem->arg == NULL) {
+      //     ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+      //                     errmsg("No value specified for parameter \"%s\"",
+      //                     elem->defname)));
+      //   } else {
+      //     char *val = strVal(elem->arg);
+      //     state->schemas = strcmp(val, "%%") == 0 ? NULL : val;
+      //   }
 
       } else {
 
@@ -106,6 +103,18 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
       }
     }
 
+    List *relname_list = stringToQualifiedNameList(state->oids);
+    ListCell   *l;
+    schema_cache_entry *entry;
+
+    foreach(l, relname_list) {
+        Relation rel = relation_open(atoi(l), AccessShareLock);
+        schema_cache_lookup(schema_cache, rel, &entry);
+        relation_close(rel, AccessShareLock);
+    }
+    if (strcmp(state->oids, "%%") != 0) {
+        state->schema_cache->update = 0;
+    }
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {
@@ -162,15 +171,15 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
     reset_frame(state);
 
     // check if we need to read that table/schema
-    table_name = RelationGetRelationName(rel);
-    if (state->tables && table_name && !strstr(state->tables, table_name)) {
-        goto context_reset;
-    }
-
-    schema_name = get_namespace_name(RelationGetNamespace(rel));
-    if (state->schemas && schema_name && !strstr(state->schemas, schema_name)) {
-        goto context_reset;
-    }
+    // table_name = RelationGetRelationName(rel);
+    // if (state->tables && table_name && !strstr(state->tables, table_name)) {
+    //     goto context_reset;
+    // }
+    //
+    // schema_name = get_namespace_name(RelationGetNamespace(rel));
+    // if (state->schemas && schema_name && !strstr(state->schemas, schema_name)) {
+    //     goto context_reset;
+    // }
 
     switch (change->action) {
         case REORDER_BUFFER_CHANGE_INSERT:
@@ -212,7 +221,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
     }
 
-context_reset:
+// context_reset:
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }

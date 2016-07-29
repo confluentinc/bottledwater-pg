@@ -4,6 +4,11 @@
 #include "oid2avro.h"
 #include "utils/hsearch.h"
 
+#define SCHEMA_EXIST 0
+#define SCHEMA_UPDATE 1
+#define SCHEMA_NEW 2
+#define SCHEMA_NOT_FOUND 3
+
 typedef struct {
     Oid                 relid;       /* Oid of the table. Used as key in hash table, so it must be first in struct */
     NameData            relname;     /* Name of the table */
@@ -26,6 +31,7 @@ typedef struct {
 typedef struct {
     MemoryContext context;         /* Context in which cache entries are allocated */
     HTAB *entries;                 /* Hash table mapping Oid to schema_cache_entry */
+    bool update;
 } schema_cache;
 
 typedef schema_cache *schema_cache_t;

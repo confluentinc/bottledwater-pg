@@ -149,7 +149,7 @@ int replication_stream_start(replication_stream_t stream) {
     appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"tables\" \'%s\')",
             stream->slot_name,
             (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn,
-            stream->tables);
+            stream->oids);
 
     PGresult *res = PQexec(stream->conn, query->data);
 

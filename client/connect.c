@@ -68,7 +68,7 @@ int db_client_start(client_context_t context) {
     // Get a list of oids, which we want to stream
     // If error, there's something wrong, the extension will send nothing
     // Default: the extension will send everything
-    check(err, context, get_list_oids(context));
+    check(err, get_list_oids(context));
     check(err, replication_slot_exists(context, &slot_exists));
 
     if (slot_exists) {
@@ -405,7 +405,7 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
 
 int get_list_oids(client_context_t context) {
 
-    if (strcmp(stream->tables, "%%") == 0 && strcmp(stream->tables, "%%") == 0) {
+    if (strcmp(context->repl.tables, "%%") == 0 && strcmp(context->repl.schema, "%%") == 0) {
         repl_error(stream, "All tables will be streamed");
         return 0;
     }
@@ -420,8 +420,8 @@ int get_list_oids(client_context_t context) {
           " WHERE c.relkind = 'r' AND c.relname SIMILAR TO '%s' AND"
           " n.nspname NOT LIKE 'pg_%%' AND n.nspname != 'information_schema' AND n.nspname SIMILAR TO '%s' AND"
           " c.relpersistence = 'p'",
-        stream->tables,
-        stream->schema);
+        context->repl.tables,
+        context->repl.schema);
 
     PGresult *res = PQexec(context->sql_conn, query->data);
 
@@ -441,13 +441,13 @@ int get_list_oids(client_context_t context) {
     int i;
     int rows = PQntuples(res);
 
-    strcat(stream->oids, PQgetvalue(res, 0, 0));
+    strcat(context->repl.oids, PQgetvalue(res, 0, 0));
     for (i = 1; i < rows; ++i) {
-        strcat(stream->oids, ",");
-        strcat(stream->oids, PQgetvalue(res, i, 0));
+        strcat(context->repl.oids, ".");
+        strcat(context->repl.oids, PQgetvalue(res, i, 0));
     }
 
-    fprintf(stderr, "stream->oids %s\n", stream->oids);
+    fprintf(stderr, "stream->oids %s\n", context->repl.oids);
     PQclear(res);
     destroyPQExpBuffer(query);
     return 0;
