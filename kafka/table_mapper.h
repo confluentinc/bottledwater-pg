@@ -37,6 +37,7 @@ typedef struct {
     int num_tables;                     /* Number of tables known */
     int capacity;                       /* Allocated size of tables array */
     table_metadata **tables;            /* Array of pointers to table_metadata structs */
+    char *key;
 } table_mapper;
 
 typedef table_mapper *table_mapper_t;

@@ -237,6 +237,7 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
     int schema_id = TABLE_MAPPER_SCHEMA_ID_MISSING;
 
     int err;
+    int key_position;
 
     if (mapper->registry) {
         err = schema_registry_request(mapper->registry, rd_kafka_topic_name(table->topic), is_key,
@@ -251,7 +252,7 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
         table_metadata_set_schema_id(table, is_key, schema_id);
     }
 
-    avro_schema_t schema;
+    avro_schema_t schema, tmp, key;
 
     /* If running with a schema registry, we can use the registry to detect
      * if the schema we just saw is the same as the one we remembered
@@ -273,6 +274,18 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
                         is_key ? "key" : "row", avro_strerror());
                 return err;
             }
+
+            // filter key, get field that we want to use as key for kafka
+            // TODO write a filter function instead of adding lines of code here
+
+            if (mapper->key && (key_position = avro_schema_record_field_get_index(schema, mapper->key)) != -1) {
+                tmp = avro_schema_record(avro_schema_name(schema), avro_schema_namespace(schema));
+                key = avro_schema_record_field_get(schema, mapper->key);
+                avro_schema_record_field_append(tmp, mapper->key, avro_schema_copy(key));
+                if (schema) avro_schema_decref(schema);
+                schema = tmp;
+            }
+
         } else {
             schema = NULL;
         }

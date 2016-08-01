@@ -205,6 +205,9 @@ void usage() {
             "  -i, --topics=value\n"
             "                          Vertical line-separated list of topics\n"
             "                          If not set, default value is %s\n"
+            "  -k, --key=value\n"
+            "                          Field for using as key to send to Kafka, if not exists\n"
+            "                          then use PRIMARY KEY or REPLICA IDENTITY"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -233,8 +236,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"on-error",        required_argument, NULL, 'e'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
-        {"schemas",          required_argument, NULL, 'o'},
+        {"schemas",         required_argument, NULL, 'o'},
         {"topics",          required_argument, NULL, 'i'},
+        {"key",             required_argument, NULL, 'k'},
         {"config-help",     no_argument,       NULL,  1 },
         {NULL,              0,                 NULL,  0 }
     };
@@ -283,6 +287,8 @@ void parse_options(producer_context_t context, int argc, char **argv) {
             case 'i':
                 context->client->repl.tables = optarg;
                 break;
+            case 'k':
+                context->mapper->key = optarg;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
                 exit(1);
