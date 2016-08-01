@@ -829,11 +829,11 @@ void exit_nicely(producer_context_t context, int status) {
         }
     }
 
-    if (context->topic_prefix)
-        free(context->topic_prefix);
+    //if (context->topic_prefix)
+        //free(context->topic_prefix);
 
-    if (context->key)
-        free(context->key);
+    //if (context->key)
+    //    free(context->key);
 
     table_mapper_free(context->mapper);
 

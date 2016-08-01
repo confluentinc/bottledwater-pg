@@ -34,7 +34,7 @@ table_mapper_t table_mapper_new(
         rd_kafka_t *kafka,
         rd_kafka_topic_conf_t *topic_conf,
         schema_registry_t registry,
-        const char *topic_prefix
+        const char *topic_prefix,
         const char *key) {
     table_mapper_t mapper = malloc(sizeof(table_mapper));
     memset(mapper, 0, sizeof(table_mapper));
@@ -282,12 +282,13 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
             // filter key, get field that we want to use as key for kafka
             // TODO write a filter function instead of adding lines of code here
 
-            if (mapper->key && (key_position = avro_schema_record_field_get_index(schema, mapper->key)) != -1) {
+            if (is_key && mapper->key && (key_position = avro_schema_record_field_get_index(schema, mapper->key)) != -1) {
                 tmp = avro_schema_record(avro_schema_name(schema), avro_schema_namespace(schema));
                 key = avro_schema_record_field_get(schema, mapper->key);
                 avro_schema_record_field_append(tmp, mapper->key, avro_schema_copy(key));
                 if (schema) avro_schema_decref(schema);
-                schema = tmp;
+                schema = avro_schema_copy(tmp);
+                if (tmp) avro_schema_decref(tmp);
             }
 
         } else {
