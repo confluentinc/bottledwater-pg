@@ -156,7 +156,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
     reset_frame(state);
 
     oid = RelationGetRelid(rel);
-    if (state->oid_list && oid_filter(state->oid_list, oid) == 1) {
+    if (state->oid_list && oid_filter(state->oid_list, oid) == 0) {
          goto context_reset;
     }
 

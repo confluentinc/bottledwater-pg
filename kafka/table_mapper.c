@@ -154,7 +154,8 @@ error:
  * associated topics. */
 void table_mapper_free(table_mapper_t mapper) {
     if (mapper->topic_prefix) free(mapper->topic_prefix);
-
+    if (mapper->key) free(mapper->key);
+    
     for (int i = 0; i < mapper->num_tables; i++) {
         table_metadata_t table = mapper->tables[i];
         table_metadata_free(table);
@@ -285,7 +286,7 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
             if (is_key && mapper->key && (key_position = avro_schema_record_field_get_index(schema, mapper->key)) != -1) {
                 tmp = avro_schema_record(avro_schema_name(schema), avro_schema_namespace(schema));
                 key = avro_schema_record_field_get(schema, mapper->key);
-                avro_schema_record_field_append(tmp, mapper->key, avro_schema_copy(key));
+                avro_schema_record_field_append(tmp, mapper->key, key);
                 if (schema) avro_schema_decref(schema);
                 schema = avro_schema_copy(tmp);
                 if (tmp) avro_schema_decref(tmp);
