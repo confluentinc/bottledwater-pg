@@ -50,7 +50,6 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
         bool is_init) {
     ListCell *option, *l;
     List *relname_list;
-    schema_cache_entry *entry;
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
     opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
