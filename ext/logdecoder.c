@@ -26,11 +26,12 @@ typedef struct {
     avro_value_iface_t *frame_iface;
     avro_value_t frame_value;
     schema_cache_t schema_cache;
-    char *oids;
+    List *oid_list;
 } plugin_state;
 
 void reset_frame(plugin_state *state);
 int write_frame(LogicalDecodingContext *ctx, plugin_state *state);
+int oid_filter(List *list, Oid oid);
 
 
 void _PG_init() {
@@ -68,7 +69,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     // tables is a vertical-line separated list
     // schema is a vertical-line separated list
     // TODO find a better way to store these 2 variables
-    state->oids = NULL;
+    state->oid_list = NULL;
     foreach(option, ctx->output_plugin_options) {
 
       DefElem *elem = lfirst(option);
@@ -82,23 +83,18 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                           errmsg("No value specified for parameter \"%s\"",
                           elem->defname)));
         } else {
-          state->oids = strVal(elem->arg);
+            if (strcmp(strVal(elem->arg), "%%") != 0) {
+                 relname_list = stringToQualifiedNameList(strVal(elem->arg));
+                 foreach(l, relname_list) {
+                         state->oid_list = lappend_oid(state->oid_list, atoi(strVal(lfirst(l))));
+                 }
+                 list_free(relname_list);
+               }
         }
-
-      // } else if (strcmp(elem->defname, "schemas") == 0) {
-      //
-      //   if (elem->arg == NULL) {
-      //     ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-      //                     errmsg("No value specified for parameter \"%s\"",
-      //                     elem->defname)));
-      //   } else {
-      //     char *val = strVal(elem->arg);
-      //     state->schemas = strcmp(val, "%%") == 0 ? NULL : val;
-      //   }
 
       } else {
 
-        ereport(ERROR,
+        ereport(INFO,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("option \"%s\" = \"%s\" is unknown",
 							elem->defname,
@@ -106,19 +102,6 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
 
       }
     }
-
-    if (strcmp(state->oids, "%%") != 0) {
-        relname_list = stringToQualifiedNameList(state->oids);
-        foreach(l, relname_list) {
-            Relation rel = relation_open(atoi(lfirst(l)), AccessShareLock);
-            schema_cache_lookup(state->schema_cache, rel, &entry);
-            relation_close(rel, AccessShareLock);
-        }
-        state->schema_cache->update = 0;
-        list_free(relname_list);
-    } // else {
-        // All tables will be streamed, so just return here
-    //}
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {
@@ -167,21 +150,16 @@ static void output_avro_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN
 static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
         Relation rel, ReorderBufferChange *change) {
     int err = 0;
+    Oid oid;
     HeapTuple oldtuple = NULL, newtuple = NULL;
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
     reset_frame(state);
 
-    // check if we need to read that table/schema
-    // table_name = RelationGetRelationName(rel);
-    // if (state->tables && table_name && !strstr(state->tables, table_name)) {
-    //     goto context_reset;
-    // }
-    //
-    // schema_name = get_namespace_name(RelationGetNamespace(rel));
-    // if (state->schemas && schema_name && !strstr(state->schemas, schema_name)) {
-    //     goto context_reset;
-    // }
+    oid = RelationGetRelid(rel);
+    if (state->oid_list && oid_filter(state->oid_list, oid) == 1) {
+         goto context_reset;
+    }
 
     switch (change->action) {
         case REORDER_BUFFER_CHANGE_INSERT:
@@ -223,7 +201,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
     }
 
-// context_reset:
+context_reset:
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }
@@ -246,4 +224,13 @@ int write_frame(LogicalDecodingContext *ctx, plugin_state *state) {
 
     pfree(output);
     return err;
+}
+
+int oid_filter(List *list, Oid oid) {
+    ListCell *l;
+    foreach (l, list) {
+       if (oid == lfirst_oid(l))
+               return 1;
+    }
+    return 0;
 }

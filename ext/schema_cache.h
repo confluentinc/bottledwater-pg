@@ -31,7 +31,6 @@ typedef struct {
 typedef struct {
     MemoryContext context;         /* Context in which cache entries are allocated */
     HTAB *entries;                 /* Hash table mapping Oid to schema_cache_entry */
-    bool update;
 } schema_cache;
 
 typedef schema_cache *schema_cache_t;

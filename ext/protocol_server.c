@@ -81,12 +81,7 @@ int update_frame_with_insert(avro_value_t *frame_val, schema_cache_t cache, Rela
     bytea *key_bin = NULL, *new_bin = NULL;
 
     int changed = schema_cache_lookup(cache, rel, &entry);
-
-    if (changed == SCHEMA_NOT_FOUND) {
-        return err;
-    }
-
-    if (changed == SCHEMA_UPDATE || changed == SCHEMA_NEW) {
+    if (changed != SCHEMA_EXIST) {
         check(err, update_frame_with_table_schema(frame_val, entry));
     }
 
@@ -109,12 +104,7 @@ int update_frame_with_update(avro_value_t *frame_val, schema_cache_t cache, Rela
     bytea *old_bin = NULL, *new_bin = NULL, *old_key_bin = NULL, *new_key_bin = NULL;
 
     int changed = schema_cache_lookup(cache, rel, &entry);
-
-    if (changed == SCHEMA_NOT_FOUND) {
-        return err;
-    }
-
-    if (changed == SCHEMA_UPDATE || changed == SCHEMA_NEW) {
+    if (changed != SCHEMA_EXIST) {
         check(err, update_frame_with_table_schema(frame_val, entry));
     }
 
@@ -156,12 +146,7 @@ int update_frame_with_delete(avro_value_t *frame_val, schema_cache_t cache, Rela
     bytea *key_bin = NULL, *old_bin = NULL;
 
     int changed = schema_cache_lookup(cache, rel, &entry);
-
-    if (changed == SCHEMA_NOT_FOUND) {
-        return err;
-    }
-
-    if (changed == SCHEMA_UPDATE || changed == SCHEMA_NEW) {
+    if (changed != SCHEMA_EXIST) {
         check(err, update_frame_with_table_schema(frame_val, entry));
     }
 

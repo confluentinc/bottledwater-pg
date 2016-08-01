@@ -14,7 +14,7 @@
 
 #define CHECKPOINT_INTERVAL_SEC 10
 
-#define DEBUG 1
+//#define DEBUG 1
 
 int replication_stream_finish(replication_stream_t stream);
 int parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
