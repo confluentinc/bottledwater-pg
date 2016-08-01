@@ -11,6 +11,8 @@
 #include <string.h>
 #include <signal.h>
 
+//#define DEBUG 1
+
 #define DEFAULT_REPLICATION_SLOT "bottledwater"
 #define APP_NAME "bottledwater"
 

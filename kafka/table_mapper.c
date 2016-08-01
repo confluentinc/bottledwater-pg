@@ -155,7 +155,7 @@ error:
 void table_mapper_free(table_mapper_t mapper) {
     if (mapper->topic_prefix) free(mapper->topic_prefix);
     if (mapper->key) free(mapper->key);
-    
+
     for (int i = 0; i < mapper->num_tables; i++) {
         table_metadata_t table = mapper->tables[i];
         table_metadata_free(table);
@@ -290,6 +290,10 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
                 if (schema) avro_schema_decref(schema);
                 schema = avro_schema_copy(tmp);
                 if (tmp) avro_schema_decref(tmp);
+
+                if (key_position == -1) {
+                    mapper_error(mapper, "THERE ARE NO AD_ID IN THIS PRIMARY/REPLICA OF %s", table->table_name);
+                }
             }
 
         } else {
