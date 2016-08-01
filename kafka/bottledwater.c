@@ -93,6 +93,7 @@ typedef struct {
     char *topic_prefix;                 /* String to be prepended to all topic names */
     error_policy_t error_policy;        /* What to do in case of a transient error */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
+    char *key;                          /* Key to use as Kafka key*/
 } producer_context;
 
 typedef producer_context *producer_context_t;
@@ -288,7 +289,8 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 context->client->repl.tables = optarg;
                 break;
             case 'k':
-                context->mapper->key = optarg;
+                context->key = optarg;
+                break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
                 exit(1);
@@ -808,7 +810,8 @@ void start_producer(producer_context_t context) {
             context->kafka,
             context->topic_conf,
             context->registry,
-            context->topic_prefix);
+            context->topic_prefix,
+            context->key);
 
     log_info("Writing messages to Kafka in %s format",
              output_format_name(context->output_format));
@@ -828,6 +831,9 @@ void exit_nicely(producer_context_t context, int status) {
 
     if (context->topic_prefix)
         free(context->topic_prefix);
+
+    if (context->key)
+        free(context->key);
 
     table_mapper_free(context->mapper);
 

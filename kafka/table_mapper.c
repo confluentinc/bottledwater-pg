@@ -34,7 +34,8 @@ table_mapper_t table_mapper_new(
         rd_kafka_t *kafka,
         rd_kafka_topic_conf_t *topic_conf,
         schema_registry_t registry,
-        const char *topic_prefix) {
+        const char *topic_prefix
+        const char *key) {
     table_mapper_t mapper = malloc(sizeof(table_mapper));
     memset(mapper, 0, sizeof(table_mapper));
 
@@ -50,6 +51,9 @@ table_mapper_t table_mapper_new(
         mapper->topic_prefix = strdup(topic_prefix);
     }
 
+    if (key != NULL) {
+        mapper->key = strdup(key);
+    }
     return mapper;
 }
 
