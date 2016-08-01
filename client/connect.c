@@ -49,7 +49,7 @@ void db_client_free(client_context_t context) {
     if (context->sql_conn) PQfinish(context->sql_conn);
     if (context->repl.conn) PQfinish(context->repl.conn);
     if (context->repl.oids) free(context->repl.oids);
-    if (context->repl.snapshot) free(context->repl.snapshot);
+    if (context->repl.snapshot_name) free(context->repl.snapshot_name);
     free(context);
 }
 
