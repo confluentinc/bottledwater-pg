@@ -39,16 +39,35 @@ describe 'topics', functional: true do
       expect(kazoo.topics).to have_key('things')
     end
 
-    example 'creating a table with a silly name creates a topic based on the sanitised name' do
-      known_bug 'crashes Postgres', 'https://github.com/confluentinc/bottledwater-pg/issues/64'
-
+    example 'table names with non-alphanumeric characters create a topic based on the sanitised name' do
       silly_name = 'flobble-biscuits?whatisthetime/hahahaha'
 
       postgres.exec %(CREATE TABLE "#{silly_name}" (thing SERIAL NOT NULL PRIMARY KEY))
       postgres.exec %(INSERT INTO "#{silly_name}" DEFAULT VALUES)
       sleep 1
 
-      expect(kazoo.topics).to include(match(/flobble/))
+      expect(kazoo.topics).to include(match(/flobble.*biscuits.*whatisthetime.*hahahaha/))
+    end
+
+    example 'table names with non-ASCII characters create a topic based on the sanitised name' do
+      unicode_name = 'crêpes'
+
+      postgres.exec %(CREATE TABLE "#{unicode_name}" (thing SERIAL NOT NULL PRIMARY KEY))
+      postgres.exec %(INSERT INTO "#{unicode_name}" DEFAULT VALUES)
+
+      sleep 1
+
+      expect(kazoo.topics).to include('cr_c3__aa_pes')
+    end
+
+    example 'supports table names up to Postgres max identifier length' do
+      long_name = 'z' * postgres_max_identifier_length
+
+      postgres.exec %(CREATE TABLE "#{long_name}" (thing SERIAL NOT NULL PRIMARY KEY))
+      postgres.exec %(INSERT INTO "#{long_name}" DEFAULT VALUES)
+      sleep 1
+
+      expect(kazoo.topics).to include(long_name)
     end
   end
 

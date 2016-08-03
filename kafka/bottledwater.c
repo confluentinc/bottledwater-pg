@@ -615,8 +615,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         }
     }
 
-    if(key)
-      free(key);
+    if (key)
+        free(key);
 
     return 0;
 }
