@@ -14,6 +14,12 @@ shared_examples 'publishing messages' do |format, postgres_version|
     before(:context) do
       TEST_CLUSTER.bottledwater_format = format
       TEST_CLUSTER.postgres_version = postgres_version
+
+      TEST_CLUSTER.before_service(TEST_CLUSTER.bottledwater_service, 'Prepopulating users table') do |cluster|
+        cluster.postgres.exec('CREATE TABLE users (id SERIAL PRIMARY KEY, username TEXT)')
+        cluster.postgres.exec(%{INSERT INTO users (username) SELECT 'user' || num FROM generate_series(1, 10) AS num})
+      end
+
       TEST_CLUSTER.start
     end
 
@@ -66,6 +72,26 @@ shared_examples 'publishing messages' do |format, postgres_version|
 
       new_value = decode_value(messages[1].value)
       expect(fetch_string(new_value, 'gadget')).to eq('Goodbye')
+    end
+
+    describe 'initial database snapshot' do
+      # uses the table that was prepopulated in the before hook above
+
+      example 'publishes the existing database contents into Kafka, then streams ongoing updates' do
+        messages = kafka_take_messages('users', 10)
+
+        messages.each do |message|
+          value = decode_value message.value
+          expect(fetch_string(value, 'username')).to match(/^user\d+/)
+        end
+
+        postgres.exec(%{INSERT INTO users (username) VALUES('user11')})
+
+        message_after_snapshot = kafka_take_messages('users', 1).first
+
+        value = decode_value message_after_snapshot.value
+        expect(fetch_string(value, 'username')).to eq('user11')
+      end
     end
   end
 
