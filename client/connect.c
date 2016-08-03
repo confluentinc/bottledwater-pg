@@ -46,7 +46,7 @@ client_context_t db_client_new() {
 void db_client_free(client_context_t context) {
     if (context->sql_conn) PQfinish(context->sql_conn);
     if (context->repl.conn) PQfinish(context->repl.conn);
-    if (context->repl.oids) free(context->repl.oids);
+    if (context->repl.oids && strcmp(context->repl.oids, "%%") != 0) free(context->repl.oids);
     free(context);
 }
 
