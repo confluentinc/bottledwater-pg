@@ -41,6 +41,8 @@ class TestCluster
 
     self.bottledwater_format = :json
     self.bottledwater_on_error = :exit
+
+    @before_hooks = Hash.new {|h, k| h[k] = [] }
   end
 
   def start(without: [])
@@ -98,6 +100,11 @@ class TestCluster
 
   def stopped?
     @state == :stopped
+  end
+
+  def before_service(service, description, &block)
+    raise 'before_service requires a block' unless block_given?
+    @before_hooks[service] << [description, block]
   end
 
   def kafka_advertised_host_name=(hostname)
@@ -219,6 +226,11 @@ class TestCluster
   def start_service(*services)
     services_to_start = services.reject {|service| @started_without.include?(service) }
     return if services_to_start.empty?
+
+    services_to_start.each do |service|
+      run_before_hooks(service)
+    end
+
     @compose.up(*services_to_start, detached: true, no_deps: true)
   end
 
@@ -292,8 +304,16 @@ class TestCluster
     result
   end
 
+  def run_before_hooks(service)
+    @before_hooks[service].each do |description, hook|
+      @logger << "#{description} before starting #{service}... "
+      hook.call(self)
+      @logger << "OK\n"
+    end
+  end
+
   def container_for_service(service)
-    check_started! unless starting?
+    check_started!
     id_output = @compose.run!(:ps, {q: true}, service)
     return nil if id_output.nil?
     @docker.inspect(id_output.strip)
@@ -305,7 +325,7 @@ class TestCluster
 
   def check_started!
     case @state
-    when :started; return
+    when :started, :starting; return
     when nil; raise 'cluster not started'
     else; raise "cluster #{@state}"
     end
