@@ -135,7 +135,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         state->schema_cache = schema_cache_new(funcctx->multi_call_memory_ctx);
         funcctx->user_fctx = state;
 
-        get_table_list(state, PG_GETARG_TEXT_P(0), PG_GETARG_BOOL(1));
+        get_table_list(state, PG_GETARG_TEXT_P(0), PG_GETARG_TEXT_P(1), PG_GETARG_BOOL(2));
         if (state->num_tables > 0) open_next_table(state);
     }
 

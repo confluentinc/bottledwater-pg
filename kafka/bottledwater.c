@@ -20,6 +20,8 @@
 #define DEFAULT_BROKER_LIST "localhost:9092"
 #define DEFAULT_SCHEMA_REGISTRY "http://localhost:8081"
 
+#define DEFAULT_SCHEMA "%%"
+#define DEFAULT_TABLE "%%"
 
 #define check(err, call) { err = call; if (err) return err; }
 
@@ -195,6 +197,12 @@ void usage() {
             "                          (see --config-help for list of properties).\n"
             "  -T, --topic-config property=value\n"
             "                          Set topic configuration property for Kafka producer.\n"
+            "  -o, --schemas=value\n"
+            "                          Vertical line-separated list of schemas\n"
+            "                          If not set, default value is %s\n"
+            "  -i, --topics=value\n"
+            "                          Vertical line-separated list of topics\n"
+            "                          If not set, default value is %s\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -203,7 +211,9 @@ void usage() {
             DEFAULT_BROKER_LIST,
             DEFAULT_SCHEMA_REGISTRY,
             DEFAULT_OUTPUT_FORMAT_NAME,
-            DEFAULT_ERROR_POLICY_NAME);
+            DEFAULT_ERROR_POLICY_NAME,
+            DEFAULT_SCHEMA,
+            DEFAULT_TABLE);
     exit(1);
 }
 
@@ -221,6 +231,8 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"on-error",        required_argument, NULL, 'e'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
+        {"schemas",         required_argument, NULL, 'o'},
+        {"topics",          required_argument, NULL, 'i'},
         {"config-help",     no_argument,       NULL,  1 },
         {NULL,              0,                 NULL,  0 }
     };
@@ -262,6 +274,12 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
+                break;
+            case 'i':
+                context->client->repl.tables = optarg;
+                break;
+            case 'o':
+                context->client->repl.schema = optarg;
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
@@ -584,7 +602,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
             return err;
         }
     }
-    
+
     if (key)
         free(key);
     return 0;
@@ -704,6 +722,9 @@ client_context_t init_client() {
     client->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     client->repl.output_plugin = OUTPUT_PLUGIN;
     client->repl.frame_reader = frame_reader;
+    client->repl.schema = DEFAULT_SCHEMA;
+    client->repl.tables = DEFAULT_TABLE;
+    client->repl.oids = DEFAULT_TABLE;
     return client;
 }
 

@@ -30,6 +30,7 @@ int snapshot_start(client_context_t context);
 int snapshot_poll(client_context_t context);
 int snapshot_tuple(client_context_t context, PGresult *res, int row_number);
 
+int get_list_oids(client_context_t context);
 
 /* Allocates a client_context struct. After this is done and before
  * db_client_start() is called, various fields in the struct need to be
@@ -45,6 +46,7 @@ client_context_t db_client_new() {
 void db_client_free(client_context_t context) {
     if (context->sql_conn) PQfinish(context->sql_conn);
     if (context->repl.conn) PQfinish(context->repl.conn);
+    if (context->repl.oids) free(context->repl.oids);
     free(context);
 }
 
@@ -60,6 +62,9 @@ int db_client_start(client_context_t context) {
 
     check(err, client_connect(context));
     checkRepl(err, context, replication_stream_check(&context->repl));
+    // Get list oids of tables and schemas
+    check(err, get_list_oids(context));
+
     check(err, replication_slot_exists(context, &slot_exists));
 
     if (slot_exists) {
@@ -305,12 +310,14 @@ int snapshot_start(client_context_t context) {
     check(err, exec_sql(context, query->data));
     destroyPQExpBuffer(query);
 
-    Oid argtypes[] = { 25, 16 }; // 25 == TEXTOID, 16 == BOOLOID
-    const char *args[] = { "%", context->allow_unkeyed ? "t" : "f" };
+    Oid argtypes[] = { 25, 25, 16 }; // 25 == TEXTOID, 16 == BOOLOID
+    const char *args[] = { context->repl.tables,
+                           context->repl.schema,
+                           context->allow_unkeyed ? "t" : "f" };
 
     if (!PQsendQueryParams(context->sql_conn,
-                "SELECT bottledwater_export(table_pattern := $1, allow_unkeyed := $2)",
-                2, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
+               "SELECT bottledwater_export(table_pattern := $1, table_schema := $2, allow_unkeyed := $3)",
+               3, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));
         return EIO;
@@ -390,4 +397,56 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
         client_error(context, "Error parsing frame data: %s", context->repl.frame_reader->error);
     }
     return err;
+}
+
+/* Get oids of all table and schema in replication context*/
+/* If tables==% and schema==% then BW will get all the tables in db*/
+int get_list_oids(client_context_t context) {
+
+    if (strcmp(context->repl.tables, "%%") == 0 && strcmp(context->repl.schema, "%%") == 0) {
+        client_error(context, "All tables will be streamed");
+        return 0;
+    }
+
+    PQExpBuffer query = createPQExpBuffer();
+    appendPQExpBuffer(query,
+          "SELECT c.oid"
+          " FROM pg_catalog.pg_class c"
+          " JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
+          " WHERE c.relkind = 'r' AND c.relname SIMILAR TO '%s' AND"
+          " n.nspname NOT LIKE 'pg_%%' AND n.nspname != 'information_schema' AND n.nspname SIMILAR TO '%s' AND"
+          " c.relpersistence = 'p'",
+        context->repl.tables,
+        context->repl.schema);
+
+    PGresult *res = PQexec(context->sql_conn, query->data);
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        client_error(context, "GET LIST OF OIDS failed: %s", PQerrorMessage(context->sql_conn));
+        PQclear(res);
+        return EIO;
+    }
+
+    if (PQntuples(res) < 1 || PQnfields(res) < 1) {
+        client_error(context, "UNEXPEDTED GET LIST OF OIDS RESULT (%d rows, %d fields).",
+                PQntuples(res), PQnfields(res));
+        PQclear(res);
+        return EIO;
+    }
+
+    int i;
+    int rows = PQntuples(res);
+    PQExpBuffer oids = createPQExpBuffer();
+
+    appendPQExpBuffer(oids, rows > 0 ? PQgetvalue(res, 0, 0): "");
+    for (i = 1; i < rows; ++i) {
+        appendPQExpBuffer(oids, ".");
+        appendPQExpBuffer(oids, PQgetvalue(res, i, 0));
+    }
+    context->repl.oids = strdup(oids->data);
+
+    PQclear(res);
+    destroyPQExpBuffer(query);
+    destroyPQExpBuffer(oids);
+    return 0;
 }

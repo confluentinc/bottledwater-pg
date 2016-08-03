@@ -5,6 +5,8 @@
 #include "replication/logical.h"
 #include "replication/output_plugin.h"
 #include "utils/memutils.h"
+#include "utils/builtins.h"
+#include "nodes/parsenodes.h"
 
 /* Entry point when Postgres loads the plugin */
 extern void _PG_init(void);
@@ -22,10 +24,12 @@ typedef struct {
     avro_value_iface_t *frame_iface;
     avro_value_t frame_value;
     schema_cache_t schema_cache;
+    List *oid_list;
 } plugin_state;
 
 void reset_frame(plugin_state *state);
 int write_frame(LogicalDecodingContext *ctx, plugin_state *state);
+int oid_filter(List *list, Oid oid);
 
 
 void _PG_init() {
@@ -42,6 +46,8 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
+    ListCell *option, *l;
+    List *relname_list;
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
     opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
@@ -53,6 +59,45 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     state->frame_iface = avro_generic_class_from_schema(state->frame_schema);
     avro_generic_value_new(state->frame_iface, &state->frame_value);
     state->schema_cache = schema_cache_new(ctx->context);
+
+    // Parse option from LogicalDecodingContext
+    // Send by START_REPLICATION SLOT
+    // tables is a vertical-line separated list
+    // schema is a vertical-line separated list
+    // TODO find a better way to store these 2 variables
+    state->oid_list = NULL;
+    foreach(option, ctx->output_plugin_options) {
+
+      DefElem *elem = lfirst(option);
+
+      Assert(elem->arg == NULL || IsA(elem->arg, String));
+
+      if (strcmp(elem->defname, "tables") == 0) {
+
+        if (elem->arg == NULL) {
+          ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                          errmsg("No value specified for parameter \"%s\"",
+                          elem->defname)));
+        } else {
+            if (strcmp(strVal(elem->arg), "%%") != 0) {
+                 relname_list = stringToQualifiedNameList(strVal(elem->arg));
+                 foreach(l, relname_list) {
+                         state->oid_list = lappend_oid(state->oid_list, atoi(strVal(lfirst(l))));
+                 }
+                 list_free(relname_list);
+               }
+        }
+
+      } else {
+
+        ereport(INFO,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("option \"%s\" = \"%s\" is unknown",
+							elem->defname,
+							elem->arg ? strVal(elem->arg) : "(null)")));
+
+      }
+    }
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {
@@ -101,10 +146,16 @@ static void output_avro_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN
 static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
         Relation rel, ReorderBufferChange *change) {
     int err = 0;
+    Oid oid;
     HeapTuple oldtuple = NULL, newtuple = NULL;
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
     reset_frame(state);
+
+    oid = RelationGetRelid(rel);
+    if (state->oid_list && oid_filter(state->oid_list, oid) == 0) {
+        goto context_reset;
+    }
 
     switch (change->action) {
         case REORDER_BUFFER_CHANGE_INSERT:
@@ -146,6 +197,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
     }
 
+context_reset:
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }
@@ -168,4 +220,13 @@ int write_frame(LogicalDecodingContext *ctx, plugin_state *state) {
 
     pfree(output);
     return err;
+}
+
+int oid_filter(List *list, Oid oid) {
+    ListCell *l;
+    foreach (l, list) {
+       if (oid == lfirst_oid(l))
+               return 1;
+    }
+    return 0;
 }
