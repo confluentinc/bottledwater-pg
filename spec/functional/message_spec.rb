@@ -2,7 +2,7 @@ require 'spec_helper'
 require 'format_contexts'
 require 'test_cluster'
 
-shared_examples 'publishing messages' do |format|
+shared_examples 'publishing messages' do |format, postgres_version|
   # We only stop the cluster after all examples in the context have run, so
   # state in Postgres, Kafka and Bottled Water can leak between examples.  We
   # therefore need to make sure examples look at different tables, so they
@@ -13,6 +13,7 @@ shared_examples 'publishing messages' do |format|
   describe 'table with a primary key' do
     before(:context) do
       TEST_CLUSTER.bottledwater_format = format
+      TEST_CLUSTER.postgres_version = postgres_version
       TEST_CLUSTER.start
     end
 
@@ -71,6 +72,7 @@ shared_examples 'publishing messages' do |format|
   describe 'unkeyed table' do
     before(:context) do
       TEST_CLUSTER.bottledwater_format = format
+      TEST_CLUSTER.postgres_version = postgres_version
 
       # Kafka 0.9 rejects unkeyed messages sent to a compacted table, but we
       # set compaction as default in test_cluster.rb, so we need to explicitly
@@ -134,10 +136,18 @@ shared_examples 'publishing messages' do |format|
 end
 
 
-describe 'publishing messages (JSON)', functional: true, format: :json do
-  include_examples 'publishing messages', :json
+describe 'publishing messages (JSON, Postgres 9.4)', functional: true, format: :json, postgres: '9.4' do
+  include_examples 'publishing messages', :json, '9.4'
 end
 
-describe 'publishing messages (Avro)', functional: true, format: :avro do
-  include_examples 'publishing messages', :avro
+describe 'publishing messages (Avro, Postgres 9.4)', functional: true, format: :avro, postgres: '9.4' do
+  include_examples 'publishing messages', :avro, '9.4'
+end
+
+describe 'publishing messages (JSON, Postgres 9.5)', functional: true, format: :json, postgres: '9.5' do
+  include_examples 'publishing messages', :json, '9.5'
+end
+
+describe 'publishing messages (Avro, Postgres 9.5)', functional: true, format: :avro, postgres: '9.5' do
+  include_examples 'publishing messages', :avro, '9.5'
 end
