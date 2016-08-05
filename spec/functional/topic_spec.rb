@@ -67,7 +67,7 @@ describe 'topics', functional: true do
       postgres.exec %(INSERT INTO "#{long_name}" DEFAULT VALUES)
       sleep 1
 
-      expect(kazoo.topics).to include("public." + long_name)
+      expect(kazoo.topics).to include('public.' + long_name)
     end
   end
 
