@@ -25,7 +25,7 @@ shared_examples 'publishing messages' do |format|
       postgres.exec('INSERT INTO things (thing) SELECT * FROM generate_series(1, 10) AS thing')
       sleep 1
 
-      messages = kafka_take_messages('things', 10)
+      messages = kafka_take_messages('public.things', 10)
 
       expect(messages.size).to eq 10
 
@@ -45,7 +45,7 @@ shared_examples 'publishing messages' do |format|
       postgres.exec('DELETE FROM widgets'); # no WHERE, don't try this at home
       sleep 1
 
-      messages = kafka_take_messages('widgets', 2)
+      messages = kafka_take_messages('public.widgets', 2)
 
       expect(messages[1].key).to eq(messages[0].key)
       expect(messages[0].value).to match(/Hello/)
@@ -58,7 +58,7 @@ shared_examples 'publishing messages' do |format|
       postgres.exec_params('UPDATE gadgets SET gadget = $1', ['Goodbye']); # no WHERE, don't try this at home
       sleep 1
 
-      messages = kafka_take_messages('gadgets', 2)
+      messages = kafka_take_messages('public.gadgets', 2)
 
       expect(messages[1].key).to eq(messages[0].key)
       expect(messages[0].value).to match(/Hello/)
@@ -89,7 +89,7 @@ shared_examples 'publishing messages' do |format|
       postgres.exec_params('INSERT INTO logs (message) VALUES ($1)', ['Launching missiles'])
       sleep 1
 
-      messages = kafka_take_messages('logs', 1)
+      messages = kafka_take_messages('public.logs', 1)
 
       expect(messages[0].key).to be_nil
       value = decode_value(messages[0].value)
@@ -106,7 +106,7 @@ shared_examples 'publishing messages' do |format|
       postgres.exec_params('INSERT INTO events(details) VALUES($1)', ['User 2 signup'])
       sleep 1
 
-      messages = kafka_take_messages('events', 2) # expecting no message for the DELETE
+      messages = kafka_take_messages('public.events', 2) # expecting no message for the DELETE
 
       message_details = messages.map do |message|
         expect(message.value).not_to be_nil
@@ -122,7 +122,7 @@ shared_examples 'publishing messages' do |format|
       postgres.exec_params('UPDATE numbers SET number = $1', [43]) # no WHERE, don't try this at home
       sleep 1
 
-      messages = kafka_take_messages('numbers', 2)
+      messages = kafka_take_messages('public.numbers', 2)
 
       numbers = messages.map do |message|
         expect(message.value).not_to be_nil
