@@ -63,8 +63,11 @@ int db_client_start(client_context_t context) {
     checkRepl(err, context, replication_stream_check(&context->repl));
     check(err, replication_slot_exists(context, &slot_exists));
 
-    if (!slot_exists) {
+    if (slot_exists) {
+        context->slot_created = false;
+    } else {
         checkRepl(err, context, replication_slot_create(&context->repl));
+        context->slot_created = true;
 
         if (!context->skip_snapshot) {
             context->taking_snapshot = true;

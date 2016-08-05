@@ -4,6 +4,7 @@
 #include "registry.h"
 
 #include <librdkafka/rdkafka.h>
+#include <assert.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -830,10 +831,16 @@ int main(int argc, char **argv) {
 
     replication_stream_t stream = &context->client->repl;
 
-    if (!context->client->taking_snapshot) {
+    if (!context->client->slot_created) {
         log_info("Replication slot \"%s\" exists, streaming changes from %X/%X.",
                  stream->slot_name,
                  (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
+    } else if (context->client->skip_snapshot) {
+        log_info("Created replication slot \"%s\", skipping snapshot and streaming changes from %X/%X.",
+                 stream->slot_name,
+                 (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
+    } else {
+        assert(context->client->taking_snapshot);
     }
 
     while (context->client->status >= 0 && !received_shutdown_signal) {
