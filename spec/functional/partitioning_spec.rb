@@ -30,7 +30,7 @@ describe 'partitioning', functional: true, format: :json do
       postgres.exec('INSERT INTO items (item) SELECT * FROM generate_series(1, 100) AS item')
       sleep 1
 
-      partitions = kafka_take_messages('public.items', 100, collect_partitions: true)
+      partitions = kafka_take_messages('items', 100, collect_partitions: true)
       expect(partitions.size).to eq(2)
       messages_0, messages_1 = partitions.values
 
@@ -47,7 +47,7 @@ describe 'partitioning', functional: true, format: :json do
 
       postgres.exec('DELETE FROM numbers')
 
-      partitions = kafka_take_messages('public.numbers', 20, collect_partitions: true)
+      partitions = kafka_take_messages('numbers', 20, collect_partitions: true)
 
       partitions.each do |partition, messages|
         # each key should have two messages, an insert followed by a delete
@@ -77,7 +77,7 @@ describe 'partitioning', functional: true, format: :json do
         postgres.exec_params('UPDATE things SET thing = thing + 1 WHERE id = $1', [id])
       end
 
-      partitions = kafka_take_messages('public.things', 20, collect_partitions: true)
+      partitions = kafka_take_messages('things', 20, collect_partitions: true)
 
       partitions.each do |partition, messages|
         # each key should have two messages, the second with an incremented value
@@ -102,7 +102,7 @@ describe 'partitioning', functional: true, format: :json do
       postgres.exec("INSERT INTO events (event) SELECT 'event ' || num AS event FROM generate_series(1, 100) AS num")
       sleep 1
 
-      partitions = kafka_take_messages('public.events', 100, collect_partitions: true)
+      partitions = kafka_take_messages('events', 100, collect_partitions: true)
       expect(partitions.size).to eq(2)
       messages_0, messages_1 = partitions.values
 

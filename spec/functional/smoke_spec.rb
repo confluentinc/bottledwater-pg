@@ -19,7 +19,7 @@ shared_examples 'smoke test' do |format, postgres_version|
     postgres.exec('INSERT INTO things (thing) SELECT * FROM generate_series(1, 10) AS thing')
     sleep 1
 
-    messages = kafka_take_messages('public.things', 10)
+    messages = kafka_take_messages('things', 10)
 
     expect(messages.size).to eq 10
   end

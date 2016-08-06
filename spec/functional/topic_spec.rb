@@ -28,7 +28,7 @@ describe 'topics', functional: true do
       postgres.exec('CREATE TABLE items (id SERIAL PRIMARY KEY, item TEXT)')
       sleep 1
 
-      expect(kazoo.topics).not_to have_key('public.items')
+      expect(kazoo.topics).not_to have_key('items')
     end
 
     example 'inserting rows in a new table creates a Kafka topic named after the table' do
@@ -36,7 +36,7 @@ describe 'topics', functional: true do
       postgres.exec('INSERT INTO things (thing) VALUES (42)')
       sleep 1
 
-      expect(kazoo.topics).to have_key('public.things')
+      expect(kazoo.topics).to have_key('things')
     end
 
     example 'table names with non-alphanumeric characters create a topic based on the sanitised name' do
@@ -46,7 +46,7 @@ describe 'topics', functional: true do
       postgres.exec %(INSERT INTO "#{silly_name}" DEFAULT VALUES)
       sleep 1
 
-      expect(kazoo.topics).to include(match(/public.flobble.*biscuits.*whatisthetime.*hahahaha/))
+      expect(kazoo.topics).to include(match(/flobble.*biscuits.*whatisthetime.*hahahaha/))
     end
 
     example 'table names with non-ASCII characters create a topic based on the sanitised name' do
@@ -57,7 +57,7 @@ describe 'topics', functional: true do
 
       sleep 1
 
-      expect(kazoo.topics).to include('public.cr_c3__aa_pes')
+      expect(kazoo.topics).to include('cr_c3__aa_pes')
     end
 
     example 'supports table names up to Postgres max identifier length' do
@@ -67,7 +67,7 @@ describe 'topics', functional: true do
       postgres.exec %(INSERT INTO "#{long_name}" DEFAULT VALUES)
       sleep 1
 
-      expect(kazoo.topics).to include('public.' + long_name)
+      expect(kazoo.topics).to include(long_name)
     end
   end
 
@@ -113,8 +113,8 @@ describe 'topics', functional: true do
     example 'renaming a table, creating the new topic, then inserting does not crash Bottled Water' do
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
 
-      kazoo.create_topic('public.users', partitions: 1, replication_factor: 1)
-      kazoo.create_topic('public.members', partitions: 1, replication_factor: 1)
+      kazoo.create_topic('users', partitions: 1, replication_factor: 1)
+      kazoo.create_topic('members', partitions: 1, replication_factor: 1)
       sleep 1
 
       postgres.exec('CREATE TABLE users (id SERIAL PRIMARY KEY, age INTEGER NOT NULL)')
@@ -131,7 +131,7 @@ describe 'topics', functional: true do
     example 'altering table schema then inserting does not crash Bottled Water' do
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
 
-      kazoo.create_topic('public.customers', partitions: 1, replication_factor: 1)
+      kazoo.create_topic('customers', partitions: 1, replication_factor: 1)
       sleep 1
 
       postgres.exec('CREATE TABLE customers (age INTEGER NOT NULL)')
@@ -152,7 +152,7 @@ describe 'topics', functional: true do
 
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
 
-      kazoo.create_topic('public.products', partitions: 1, replication_factor: 1)
+      kazoo.create_topic('products', partitions: 1, replication_factor: 1)
       sleep 1
 
       postgres.exec('CREATE TABLE products (sku INTEGER NOT NULL)')
@@ -198,7 +198,7 @@ describe 'topics', functional: true do
     example 'altering table schema then inserting does not crash Bottled Water' do
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
 
-      kazoo.create_topic('public.customers', partitions: 1, replication_factor: 1)
+      kazoo.create_topic('customers', partitions: 1, replication_factor: 1)
       sleep 1
 
       postgres.exec('CREATE TABLE customers (age INTEGER NOT NULL)')
@@ -219,7 +219,7 @@ describe 'topics', functional: true do
 
       expect(TEST_CLUSTER.bottledwater_running?).to be_truthy
 
-      kazoo.create_topic('public.products', partitions: 1, replication_factor: 1)
+      kazoo.create_topic('products', partitions: 1, replication_factor: 1)
       sleep 1
 
       postgres.exec('CREATE TABLE products (sku INTEGER NOT NULL)')

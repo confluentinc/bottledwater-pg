@@ -2,6 +2,7 @@
 #include "json.h"
 #include "logger.h"
 #include "registry.h"
+#include "oid2avro.h"
 
 #include <librdkafka/rdkafka.h>
 #include <getopt.h>
@@ -445,6 +446,22 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
         const char *row_schema_json, size_t row_schema_len, avro_schema_t row_schema) {
     producer_context_t context = (producer_context_t) _context;
     const char *topic_name = avro_schema_name(row_schema);
+
+    /*
+     * Get the Postgres table schema name from the Avro row schema namespace, stripping
+     * the value of GENERATED_SCHEMA_NAMESPACE                                              */
+    char* namespace = strdup(avro_schema_namespace(row_schema));
+    char pg_table_name_with_schema[127];
+    /* strip the beginning part of the namespace to extract the Postgres table schema name */
+    sscanf(namespace, GENERATED_SCHEMA_NAMESPACE ".%s", pg_table_name_with_schema);
+    /* If the Postgres schema name is 'public', skip to insert the prefix in the Kafka topic */
+    if(strcmp(pg_table_name_with_schema, "public")) {
+        strcat(pg_table_name_with_schema, ".");
+        strcat(pg_table_name_with_schema, topic_name);
+    } else {
+        strcpy(pg_table_name_with_schema, topic_name);
+    }
+    topic_name = pg_table_name_with_schema;
 
     table_metadata_t table = table_mapper_update(context->mapper, relid, topic_name,
             key_schema_json, key_schema_len, row_schema_json, row_schema_len);

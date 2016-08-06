@@ -14,7 +14,7 @@
 
 
 table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid);
-int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* table_name, const char* key_schema_json, size_t key_schema_len);
+int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* table_name);
 int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, int is_key, const char* schema_json, size_t schema_len);
 void table_metadata_set_schema_id(table_metadata_t table, int is_key, int schema_id);
 void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t new_schema);
@@ -118,7 +118,7 @@ table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
      */
     int err;
 
-    err = table_metadata_update_topic(mapper, table, table_name, row_schema_json, row_schema_len);
+    err = table_metadata_update_topic(mapper, table, table_name);
     if (err) goto error;
 
     err = table_metadata_update_schema(mapper, table, 1, key_schema_json, key_schema_len);
@@ -182,7 +182,7 @@ table_metadata_t table_metadata_new(table_mapper_t mapper, Oid relid) {
 }
 
 /* Returns 0 on success.  On failure, sets mapper->error and returns nonzero. */
-int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* table_name, const char* row_schema_json, size_t row_schema_len) {
+int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, const char* table_name) {
     const char* prev_table_name = table->table_name;
 
     if (table->topic) {
@@ -196,59 +196,57 @@ int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, c
 
     table->table_name = strdup(table_name);
 
+
+    /* NOTE: About Kafka topic name convention:
+     *
+   	 * To avoid potential issues about Kafka topic name collisions (for example same table name, in
+   	 * distinct database schemas of the same Postgres database) Bottled Water builds the topic name
+   	 * as the union of the original Postgres table schema name and the original table name:
+   	 *
+   	 *      <pg_table_schema_name>.<table_name>
+   	 *
+   	 * The original Postgres table schema name is omitted only in the case of the 'public' schema.
+   	 *
+     * There are also other potential issues:
+     *
+     *      1.  if the Kafka broker is being used for other purposes, topic names may also collide
+     *      2.  if a consumer wants to consume all tables, it can do so using a topic regex, but
+     *          currently that regex would have to be "/.*&#47;" which could lead to consuming unintended
+     *          topics (e.g. metadata topics such as used internally by the schema registry, Samza
+     *          jobs etc).
+     *
+     * Support for namespaces in Kafka has been proposed that would help with these problems, but it's
+     * still under discussion.
+   	 * As a solution in the meantime, to the topic_name formed with the original Postgres schema name
+   	 * plus the original this adds a --topic-prefix=SOME_PREFIX option to Bottled Water that it would
+   	 * prepend to all topic names. Anticipated uses could be:
+   --*
+   	 *      - topic-prefix=bottledwater     to simply prevent collisions, and allow consuming all tables
+   	 *                                      via the regex "/bottledwater.*&#47;"
+     *      - topic-prefix=DATABASE_NAME    if you want to stream several databases into the same Kafka
+     *                                      broker, using a separate BW instance for each database.			*/
+
     const char *topic_name;
-    /* NOTE: About Kafka topic_name conventions:
-	 * To avoid potential issues in Kafka topic name conflicts (for example same table name, in
-	 * distinct database schemas of the same Postgres database) the Kafka topic name could be always
-	 * prefixed with the Postgres database schema name, as follows:
-	 *
-	 * 		<pg_table_schema_name>-<table_name>
-	 *
-	 * The feature to use a further "topic-prefix" (-p option) could also be useful to distinguish
-	 * the potential name collision due to same table name in same Postgres database schema name, but
-	 * in different Postgres databases. In that case the final topic_name could be:
-	 *
-	 * 		<topic_prefix>-<pg_table_schema_name>-<table_name>
-	 *
-	 */
+    /* both branches set topic_name to a pointer we don't need to free,
+     * since rd_kafka_topic_new below is going to copy it anyway */
+    if (mapper->topic_prefix != NULL) {
+        char prefixed_name[TABLE_MAPPER_MAX_TOPIC_LEN];
+        int size = snprintf(prefixed_name, TABLE_MAPPER_MAX_TOPIC_LEN,
+                "%s%c%s",
+                mapper->topic_prefix, TABLE_MAPPER_TOPIC_PREFIX_DELIMITER, table_name);
 
-	/* get the Postgres database's schema name from the Avro key namespace */
-	avro_schema_t row_schema;
-	avro_schema_from_json_length(row_schema_json, row_schema_len, &row_schema);
-	char* namespace = strdup(avro_schema_namespace(row_schema));
-	char* pg_table_schema_name;
-	char sep[] = ".";
-	for (char* token = strtok(namespace, sep); token != NULL; token = strtok(NULL, sep))
-	{
-		pg_table_schema_name = token;
-	}
+        if (size >= TABLE_MAPPER_MAX_TOPIC_LEN) {
+            mapper_error(mapper, "prefixed topic name is too long (max %d bytes): prefix %s, table name %s",
+                    TABLE_MAPPER_MAX_TOPIC_LEN, mapper->topic_prefix, table_name);
+            return -1;
+        }
 
-	/* both branches set topic_name to a pointer we don't need to free,
-	 * since rd_kafka_topic_new below is going to copy it anyway */
-	char prefixed_name[TABLE_MAPPER_MAX_TOPIC_LEN];
-	int size;
-	if (mapper->topic_prefix != NULL) {
-		size = snprintf(prefixed_name, TABLE_MAPPER_MAX_TOPIC_LEN,
-						"%s%c%s%c%s",
-						mapper->topic_prefix, TABLE_MAPPER_TOPIC_PREFIX_DELIMITER, pg_table_schema_name, TABLE_MAPPER_TOPIC_PREFIX_DELIMITER, table_name);
-		if (size >= TABLE_MAPPER_MAX_TOPIC_LEN) {
-						   mapper_error(mapper, "prefixed topic name is too long (max %d bytes): prefix %s%c%s, table name %s",
-								   TABLE_MAPPER_MAX_TOPIC_LEN, mapper->topic_prefix, TABLE_MAPPER_TOPIC_PREFIX_DELIMITER, pg_table_schema_name, table_name);
-						   return -1;
-		}
-	}
-	else {
-		size = snprintf(prefixed_name, TABLE_MAPPER_MAX_TOPIC_LEN,
-								"%s%c%s",
-								pg_table_schema_name, TABLE_MAPPER_TOPIC_PREFIX_DELIMITER, table_name);
-		if (size >= TABLE_MAPPER_MAX_TOPIC_LEN) {
-							mapper_error(mapper, "prefixed topic name is too long (max %d bytes): prefix %s, table name %s",
-									TABLE_MAPPER_MAX_TOPIC_LEN, mapper->topic_prefix, table_name);
-							return -1;
-		}
-	}
-	// needn't free topic_name because prefixed_name was stack-allocated
-	topic_name = prefixed_name;
+        topic_name = prefixed_name;
+        /* needn't free topic_name because prefixed_name was stack-allocated */
+    } else {
+        topic_name = table_name;
+        /* needn't free topic_name because it aliases table_name which we don't own */
+    }
 
     log_info("Opening Kafka topic \"%s\" for table \"%s\"", topic_name, table_name);
 
