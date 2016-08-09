@@ -25,6 +25,7 @@
 void client_error(client_context_t context, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
 int exec_sql(client_context_t context, char *query);
 int client_connect(client_context_t context);
+void client_sql_disconnect(client_context_t context);
 int replication_slot_exists(client_context_t context, bool *exists);
 int snapshot_start(client_context_t context);
 int snapshot_poll(client_context_t context);
@@ -43,7 +44,7 @@ client_context_t db_client_new() {
 
 /* Closes any network connections, if applicable, and frees the client_context struct. */
 void db_client_free(client_context_t context) {
-    if (context->sql_conn) PQfinish(context->sql_conn);
+    client_sql_disconnect(context);
     if (context->repl.conn) PQfinish(context->repl.conn);
     free(context);
 }
@@ -63,19 +64,27 @@ int db_client_start(client_context_t context) {
     check(err, replication_slot_exists(context, &slot_exists));
 
     if (slot_exists) {
-        PQfinish(context->sql_conn);
-        context->sql_conn = NULL;
-        context->taking_snapshot = false;
-
-        checkRepl(err, context, replication_stream_start(&context->repl));
-        return err;
-
+        context->slot_created = false;
     } else {
-        context->taking_snapshot = true;
         checkRepl(err, context, replication_slot_create(&context->repl));
-        check(err, snapshot_start(context));
-        return err;
+        context->slot_created = true;
+
+        if (!context->skip_snapshot) {
+            context->taking_snapshot = true;
+            check(err, snapshot_start(context));
+
+            /* we'll switch over to replication in db_client_poll after the
+             * snapshot finishes */
+            return err;
+        }
     }
+
+    client_sql_disconnect(context);
+    context->taking_snapshot = false;
+
+    checkRepl(err, context, replication_stream_start(&context->repl));
+
+    return err;
 }
 
 
@@ -245,6 +254,14 @@ int client_connect(client_context_t context) {
 }
 
 
+void client_sql_disconnect(client_context_t context) {
+    if (!context->sql_conn) return;
+
+    PQfinish(context->sql_conn);
+    context->sql_conn = NULL;
+}
+
+
 /* Sets *exists to true if a replication slot with the name context->repl.slot_name
  * already exists, and false if not. In addition, if the slot already exists,
  * context->repl.start_lsn is filled in with the LSN at which the client should
@@ -339,8 +356,7 @@ int snapshot_poll(client_context_t context) {
     /* null result indicates that there are no more rows */
     if (!res) {
         check(err, exec_sql(context, "COMMIT"));
-        PQfinish(context->sql_conn);
-        context->sql_conn = NULL;
+        client_sql_disconnect(context);
 
         // Invoke the commit callback with xid==0 to indicate end of snapshot
         commit_txn_cb on_commit = context->repl.frame_reader->on_commit_txn;

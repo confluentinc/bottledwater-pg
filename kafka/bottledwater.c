@@ -4,6 +4,7 @@
 #include "registry.h"
 
 #include <librdkafka/rdkafka.h>
+#include <assert.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,6 +191,9 @@ void usage() {
             "  -e, --on-error=[log|exit]   (default: %s)\n"
             "                          What to do in case of a transient error, such as\n"
             "                          failure to publish to Kafka.\n"
+            "  -x, --skip-snapshot     Skip taking a consistent snapshot of the existing\n"
+            "                          database contents and just start streaming any new\n"
+            "                          updates.\n"
             "  -C, --kafka-config property=value\n"
             "                          Set global configuration property for Kafka producer\n"
             "                          (see --config-help for list of properties).\n"
@@ -219,6 +223,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"allow-unkeyed",   no_argument,       NULL, 'u'},
         {"topic-prefix",    required_argument, NULL, 'p'},
         {"on-error",        required_argument, NULL, 'e'},
+        {"skip-snapshot",   no_argument,       NULL, 'x'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
         {"config-help",     no_argument,       NULL,  1 },
@@ -229,7 +234,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
     int option_index;
     while (true) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:C:T:", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:xC:T:", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -256,6 +261,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'e':
                 set_error_policy(context, optarg);
+                break;
+            case 'x':
+                context->client->skip_snapshot = true;
                 break;
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
@@ -823,10 +831,16 @@ int main(int argc, char **argv) {
 
     replication_stream_t stream = &context->client->repl;
 
-    if (!context->client->taking_snapshot) {
+    if (!context->client->slot_created) {
         log_info("Replication slot \"%s\" exists, streaming changes from %X/%X.",
                  stream->slot_name,
                  (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
+    } else if (context->client->skip_snapshot) {
+        log_info("Created replication slot \"%s\", skipping snapshot and streaming changes from %X/%X.",
+                 stream->slot_name,
+                 (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
+    } else {
+        assert(context->client->taking_snapshot);
     }
 
     while (context->client->status >= 0 && !received_shutdown_signal) {
