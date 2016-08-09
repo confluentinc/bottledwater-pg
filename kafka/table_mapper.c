@@ -292,7 +292,7 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
                 if (tmp) avro_schema_decref(tmp);
 
                 if (key_position == -1) {
-                    mapper_error(mapper, "THERE ARE NO AD_ID IN THIS PRIMARY/REPLICA OF %s", table->table_name);
+                    mapper_error(mapper, "THERE ARE NO %s KEY IN THIS PRIMARY/REPLICA OF %s", mapper->key, table->table_name);
                 }
             }
 

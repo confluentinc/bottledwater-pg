@@ -2,6 +2,7 @@
 #include "json.h"
 #include "logger.h"
 #include "registry.h"
+#include "ini.h"
 
 #include <librdkafka/rdkafka.h>
 #include <getopt.h>
@@ -169,6 +170,9 @@ producer_context_t init_producer(client_context_t client);
 void start_producer(producer_context_t context);
 void exit_nicely(producer_context_t context, int status);
 
+/* Ini handler callback function for parsing options from ini file*/
+static int ini_handler(void* _context, const char* section,
+          const char* name, const char* value);
 
 void usage() {
     fprintf(stderr,
@@ -211,6 +215,10 @@ void usage() {
             "  -k, --key=value\n"
             "                          Field for using as key to send to Kafka, if not exists\n"
             "                          then use PRIMARY KEY or REPLICA IDENTITY"
+            "  -g, --config-file=value\n"
+            "                          Instead of passing config by command line,\n"
+            "                          you can use config-file to config bottledwater\n"
+            "                          if you use config-file, others option will has no effect\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -223,6 +231,44 @@ void usage() {
             DEFAULT_SCHEMA,
             DEFAULT_TABLE);
     exit(1);
+}
+
+static int ini_handler(void* _context, const char* section,
+          const char* name, const char* value) {
+
+    producer_context_t context = (producer_context_t) _context;
+
+    #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+    if (MATCH("kafka", "kafka-config")) {
+        set_kafka_config(context, name, value);
+    } else if (MATCH("kafka", "topic-config")) {
+        set_topic_config(context, name, value);
+    } else if (MATCH("bottledwater", "postgres")) {
+        context->client->conninfo = strdup(value);
+    } else if (MATCH("bottledwater", "slot")) {
+        context->client->repl.slot_name = strdup(value);
+    } else if (MATCH("bottledwater", "broker")) {
+        context->brokers = strdup(value);
+    } else if (MATCH("schema-registry", "schema-registry")) {
+        init_schema_registry(context, value);
+    } else if (MATCH("bottledwater", "output-format")) {
+        set_output_format(context, value);
+    } else if (MATCH("bottledwater", "allow-unkeyed")) {
+        context->client->allow_unkeyed = true;
+    } else if (MATCH("bottledwater", "topic-prefix")) {
+        allow-unkeyed = strdup(value);
+    } else if (MATCH("bottledwater", "on-error")) {
+        set_error_policy(context, value);
+    } else if (MATCH("bottledwater", "schemas")) {
+        context->client->repl.schema = strdup(value);
+    } else if (MATCH("bottledwater", "topics")) {
+        context->client->repl.tables = strdup(value);
+    } else if (MATCH("bottledwater", "key")) {
+        context->key = strdup(value);
+    } else {
+        return 0; // unknown section/option
+    }
+    return 1;
 }
 
 /* Parse command-line options */
@@ -242,6 +288,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"schemas",         required_argument, NULL, 'o'},
         {"topics",          required_argument, NULL, 'i'},
         {"key",             required_argument, NULL, 'k'},
+        {"config-file",     required_argument, NULL, 'g'},
         {"config-help",     no_argument,       NULL,  1 },
         {NULL,              0,                 NULL,  0 }
     };
@@ -249,8 +296,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     progname = argv[0];
 
     int option_index;
-    while (true) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:C:T:i:o:", options, &option_index);
+    bool continue_parse_options = true;
+    while (continue_parse_options) {
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:C:T:i:o:g:", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -292,6 +340,14 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'k':
                 context->key = optarg;
+                break;
+            case 'g':
+                if (ini_parse(optarg, ini_handler, context) == 0) {
+                    continue_parse_options = false;
+                } else {
+                    config_error("Error while parsing configuration file: %s", optarg);
+                    usage();
+                }
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
