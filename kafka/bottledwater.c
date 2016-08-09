@@ -132,13 +132,13 @@ static int unfinished_snapshot = 1;
 void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
 char *parse_config_option(char *option);
-void init_schema_registry(producer_context_t context, char *url);
+void init_schema_registry(producer_context_t context, const char *url);
 const char* output_format_name(format_t format);
-void set_output_format(producer_context_t context, char *format);
-void set_error_policy(producer_context_t context, char *policy);
+void set_output_format(producer_context_t context, const char *format);
+void set_error_policy(producer_context_t context, const char *policy);
 const char* error_policy_name(error_policy_t format);
-void set_kafka_config(producer_context_t context, char *property, char *value);
-void set_topic_config(producer_context_t context, char *property, char *value);
+void set_kafka_config(producer_context_t context, const char *property, const char *value);
+void set_topic_config(producer_context_t context, const char *property, const char *value);
 
 static int handle_error(producer_context_t context, int err, const char *fmt, ...) __attribute__ ((format (printf, 3, 4)));
 
@@ -170,9 +170,6 @@ producer_context_t init_producer(client_context_t client);
 void start_producer(producer_context_t context);
 void exit_nicely(producer_context_t context, int status);
 
-/* Ini handler callback function for parsing options from ini file*/
-static int ini_handler(void* _context, const char* section,
-          const char* name, const char* value);
 
 void usage() {
     fprintf(stderr,
@@ -214,7 +211,7 @@ void usage() {
             "                          If not set, default value is %s\n"
             "  -k, --key=value\n"
             "                          Field for using as key to send to Kafka, if not exists\n"
-            "                          then use PRIMARY KEY or REPLICA IDENTITY"
+            "                          then use PRIMARY KEY or REPLICA IDENTITY\n"
             "  -g, --config-file=value\n"
             "                          Instead of passing config by command line,\n"
             "                          you can use config-file to config bottledwater\n"
@@ -233,7 +230,7 @@ void usage() {
     exit(1);
 }
 
-static int ini_handler(void* _context, const char* section,
+static int handler(void* _context, const char* section,
           const char* name, const char* value) {
 
     producer_context_t context = (producer_context_t) _context;
@@ -256,7 +253,7 @@ static int ini_handler(void* _context, const char* section,
     } else if (MATCH("bottledwater", "allow-unkeyed")) {
         context->client->allow_unkeyed = true;
     } else if (MATCH("bottledwater", "topic-prefix")) {
-        allow-unkeyed = strdup(value);
+        context->topic_prefix = strdup(value);
     } else if (MATCH("bottledwater", "on-error")) {
         set_error_policy(context, value);
     } else if (MATCH("bottledwater", "schemas")) {
@@ -342,7 +339,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 context->key = optarg;
                 break;
             case 'g':
-                if (ini_parse(optarg, ini_handler, context) == 0) {
+                if (ini_parse(optarg, handler, context) == 0) {
                     continue_parse_options = false;
                 } else {
                     config_error("Error while parsing configuration file: %s", optarg);
@@ -358,7 +355,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         }
     }
 
-    if (!context->client->conninfo || optind < argc) usage();
+    if (!context->client->conninfo || optind < argc && continue_parse_options) usage();
 
     if (context->output_format == OUTPUT_FORMAT_AVRO && !context->registry) {
         init_schema_registry(context, DEFAULT_SCHEMA_REGISTRY);
@@ -385,7 +382,7 @@ char *parse_config_option(char *option) {
     return equals + 1;
 }
 
-void init_schema_registry(producer_context_t context, char *url) {
+void init_schema_registry(producer_context_t context, const char *url) {
     context->registry = schema_registry_new(url);
 
     if (!context->registry) {
@@ -394,7 +391,7 @@ void init_schema_registry(producer_context_t context, char *url) {
     }
 }
 
-void set_output_format(producer_context_t context, char *format) {
+void set_output_format(producer_context_t context, const char *format) {
     if (!strcmp("avro", format)) {
         context->output_format = OUTPUT_FORMAT_AVRO;
     } else if (!strcmp("json", format)) {
@@ -414,7 +411,7 @@ const char* output_format_name(format_t format) {
     }
 }
 
-void set_error_policy(producer_context_t context, char *policy) {
+void set_error_policy(producer_context_t context, const char *policy) {
     if (!strcmp("log", policy)) {
         context->error_policy = ERROR_POLICY_LOG;
     } else if (!strcmp("exit", policy)) {
@@ -434,7 +431,7 @@ const char* error_policy_name(error_policy_t policy) {
     }
 }
 
-void set_kafka_config(producer_context_t context, char *property, char *value) {
+void set_kafka_config(producer_context_t context, const char *property, const char *value) {
     if (rd_kafka_conf_set(context->kafka_conf, property, value,
                 context->error, PRODUCER_CONTEXT_ERROR_LEN) != RD_KAFKA_CONF_OK) {
         config_error("%s: %s", progname, context->error);
@@ -442,7 +439,7 @@ void set_kafka_config(producer_context_t context, char *property, char *value) {
     }
 }
 
-void set_topic_config(producer_context_t context, char *property, char *value) {
+void set_topic_config(producer_context_t context, const char *property, const char *value) {
     if (rd_kafka_topic_conf_set(context->topic_conf, property, value,
                 context->error, PRODUCER_CONTEXT_ERROR_LEN) != RD_KAFKA_CONF_OK) {
         config_error("%s: %s", progname, context->error);
