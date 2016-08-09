@@ -486,7 +486,7 @@ static int on_table_schema(void *_context, uint64_t wal_pos, Oid relid,
         return 1;
     }
 
-    return 1;
+    return 0;
 }
 
 
