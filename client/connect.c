@@ -8,6 +8,8 @@
 
 #include <internal/pqexpbuffer.h>
 
+#define DEFAULT_TABLE "%%"
+
 /* Wrap around a function call to bail on error. */
 #define check(err, call) { err = call; if (err) return err; }
 
@@ -48,7 +50,7 @@ client_context_t db_client_new() {
 void db_client_free(client_context_t context) {
     if (context->sql_conn) PQfinish(context->sql_conn);
     if (context->repl.conn) PQfinish(context->repl.conn);
-    if (context->repl.oids) free(context->repl.oids);
+    if (context->repl.oids && strcmp(context->repl.oids, DEFAULT_TABLE) != 0) free(context->repl.oids);
     if (context->repl.snapshot_name) free(context->repl.snapshot_name);
     free(context);
 }

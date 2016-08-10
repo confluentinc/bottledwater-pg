@@ -247,11 +247,14 @@ static int handler(void* _context, const char* section,
     } else if (MATCH("bottledwater", "broker")) {
         context->brokers = strdup(value);
     } else if (MATCH("schema-registry", "schema-registry")) {
+        if (context->registry) {
+            schema_registry_free(context->registry);
+        }
         init_schema_registry(context, value);
     } else if (MATCH("bottledwater", "output-format")) {
         set_output_format(context, value);
     } else if (MATCH("bottledwater", "allow-unkeyed")) {
-        context->client->allow_unkeyed = true;
+        context->client->allow_unkeyed = atoi(value);
     } else if (MATCH("bottledwater", "topic-prefix")) {
         context->topic_prefix = strdup(value);
     } else if (MATCH("bottledwater", "on-error")) {
