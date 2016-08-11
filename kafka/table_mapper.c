@@ -196,6 +196,36 @@ int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, c
 
     table->table_name = strdup(table_name);
 
+
+    /* NOTE: About Kafka topic name convention:
+     *
+     * To avoid potential issues about Kafka topic name collisions (for example same table name, in
+     * distinct database schema names of the same Postgres database) Bottled Water builds the topic name
+     * as the union of the original Postgres table schema name and the original table name:
+     *
+     *      <pg_table_schema_name>.<table_name>
+     *
+     * The original Postgres schema name is omitted only in the case of the 'public' schema.
+     *
+     * There are also other potential issues:
+     *
+     *      1.  if the Kafka broker is being used for other purposes, topic names may also collide
+     *      2.  if a consumer wants to consume all tables, it can do so using a topic regex, but    */
+    //          currently that regex would have to be /.*/ which could lead to consuming unintended
+    /*          topics (e.g. metadata topics such as used internally by the schema registry, Samza
+     *          jobs etc).
+     *
+     * Support for namespaces in Kafka has been proposed that would help with these problems, but it's
+     * still under discussion.
+     * As a solution in the meantime, to the topic_name formed with the original Postgres schema name
+     * plus the original this adds a --topic-prefix=SOME_PREFIX option to Bottled Water that it would
+     * prepend to all topic names. Anticipated uses could be:
+     *
+     *      - topic-prefix=bottledwater     to simply prevent collisions, and allow consuming all tables  */
+    //                                      via the regex /bottledwater.*/
+    /*      - topic-prefix=DATABASE_NAME    if you want to stream several databases into the same Kafka
+     *                                      broker, using a separate BW instance for each database.			*/
+
     const char *topic_name;
     /* both branches set topic_name to a pointer we don't need to free,
      * since rd_kafka_topic_new below is going to copy it anyway */
