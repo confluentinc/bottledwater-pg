@@ -383,17 +383,12 @@ char* topic_name_from_avro_schema(avro_schema_t schema) {
      * or if the Postgres schema name is 'public', we just init topic_name with the table_name. */
     if (!matched || is_public_schema) {
         strncpy(topic_name, table_name, TABLE_NAME_BUFFER_LENGTH);
+        topic_name[TABLE_NAME_BUFFER_LENGTH - 1] = '\0';
     /* Otherwise we append to the topic_name previously initialized with the schema_name a "."
      * separator followed by the table_name.                    */
     } else {
-        strncat(topic_name, ".", TABLE_NAME_BUFFER_LENGTH - strlen(topic_name));
-        strncat(topic_name, table_name, TABLE_NAME_BUFFER_LENGTH - strlen(topic_name));
-    }
-
-    /*  Adds the null terminator only if the final length of topic_name fills exactly
-     *  the buffer length, that means it maybe was truncated */
-    if (strlen(topic_name) == TABLE_NAME_BUFFER_LENGTH) {
-        topic_name[TABLE_NAME_BUFFER_LENGTH - 1] = '\0';
+        strncat(topic_name, ".", TABLE_NAME_BUFFER_LENGTH - strlen(topic_name) - 1);
+        strncat(topic_name, table_name, TABLE_NAME_BUFFER_LENGTH - strlen(topic_name) - 1);
     }
 
     return strdup(topic_name);
