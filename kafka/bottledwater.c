@@ -378,10 +378,9 @@ char* topic_name_from_avro_schema(avro_schema_t schema) {
     /* Strips the beginning part of the namespace to extract the Postgres schema name
      * and init topic_name with it */
     int matched = sscanf(namespace, GENERATED_SCHEMA_NAMESPACE ".%s", topic_name);
-    int is_public_schema = !strcmp(topic_name, "public");
     /* If the sscanf doesn't find a match with GENERATED_SCHEMA_NAMESPACE,
      * or if the Postgres schema name is 'public', we just init topic_name with the table_name. */
-    if (!matched || is_public_schema) {
+    if (!matched || !strcmp(topic_name, "public")) {
         strncpy(topic_name, table_name, TABLE_NAME_BUFFER_LENGTH);
         topic_name[TABLE_NAME_BUFFER_LENGTH - 1] = '\0';
     /* Otherwise we append to the topic_name previously initialized with the schema_name a "."
