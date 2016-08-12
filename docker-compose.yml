@@ -45,13 +45,13 @@ postgres-94:
   dockerfile: Dockerfile.postgres94
   hostname: postgres
   ports:
-    - '45432:5432'
+    - '54094:5432'
 postgres:
   build: ./tmp
   dockerfile: Dockerfile.postgres
   hostname: postgres
   ports:
-    - '45432:5432'
+    - '54095:5432'
 bottledwater:
   build: ./tmp
   dockerfile: Dockerfile.client
