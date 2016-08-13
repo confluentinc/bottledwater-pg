@@ -361,8 +361,9 @@ encouraged to include tests that exercise the changed code!
 Status
 ------
 
-This is early alpha-quality software. It will probably break. See
-[Github issues](https://github.com/confluentinc/bottledwater-pg/issues)
+This is early alpha-quality software. It will probably break. See [this discussion
+about production readiness](https://github.com/confluentinc/bottledwater-pg/issues/96),
+and [Github issues](https://github.com/confluentinc/bottledwater-pg/issues)
 for a list of known issues.
 
 Bug reports and pull requests welcome.
