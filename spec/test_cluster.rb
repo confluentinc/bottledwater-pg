@@ -42,6 +42,7 @@ class TestCluster
     self.bottledwater_format = :json
     self.bottledwater_on_error = :exit
     self.bottledwater_skip_snapshot = false
+    self.bottledwater_topic_prefix = nil
 
     @before_hooks = Hash.new {|h, k| h[k] = [] }
   end
@@ -143,6 +144,10 @@ class TestCluster
 
   def bottledwater_skip_snapshot=(policy)
     ENV['BOTTLED_WATER_SKIP_SNAPSHOT'] = policy ? 'true' : ''
+  end
+
+  def bottledwater_topic_prefix=(prefix)
+    ENV['BOTTLED_WATER_TOPIC_PREFIX'] = prefix.to_s
   end
 
   def schema_registry_needed?

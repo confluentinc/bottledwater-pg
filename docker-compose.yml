@@ -63,6 +63,7 @@ bottledwater:
     BOTTLED_WATER_ALLOW_UNKEYED: 'true'
     BOTTLED_WATER_ON_ERROR:
     BOTTLED_WATER_SKIP_SNAPSHOT:
+    BOTTLED_WATER_TOPIC_PREFIX:
 bottledwater-json:
   extends: {service: bottledwater}
   links:
