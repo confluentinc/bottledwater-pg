@@ -452,7 +452,7 @@ int lookup_table_oids(client_context_t context) {
     // Query returns zero fields, it means there something wrong with the query :D
     if (PQnfields(res) == 0) {
         client_error(context, "Unexpected result when looking up table ids with (table_schema %s, schema_pattern %s).",
-                context->repl.table_pattern, context->repl.schema_pattern;
+                context->repl.table_pattern, context->repl.schema_pattern);
         PQclear(res);
         return EIO;
     }
