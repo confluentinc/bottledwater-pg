@@ -229,11 +229,7 @@ class TestCluster
 
     @compose.stop
 
-    bottledwater = container_for_service(bottledwater_service)
-    if @valgrind && bottledwater.exit_code == VALGRIND_ERROR_EXITCODE
-      @logger << "VALGRIND_ERROR: Bottled Water had Valgrind errors!\n"
-      dump_container_logs(bottledwater)
-    end
+    check_valgrind_errors if @valgrind
 
     @compose.run! :rm, f: true, v: true
 
@@ -397,6 +393,23 @@ class TestCluster
       @logger << stderr
       @logger << "\n"
       @logger << ('-' * 80 + "\n")
+    end
+  end
+
+  def check_valgrind_errors
+    # We'd like to just fail the tests if Valgrind reported errors.  By passing
+    # --error-exitcode to Valgrind we can detect whether there were any errors,
+    # but surprisingly failing the tests is the hard part.  We can't check the
+    # exit code until we stop Bottled Water, and we generally stop the cluster
+    # in an after(:context) block; but RSpec ignores exceptions that occur in
+    # an after(:context) block.
+    #
+    # So instead we do it this fairly obtuse way: output a greppable string and
+    # grep for it outside the test suite (e.g. in .travis.yml).
+    bottledwater = container_for_service(bottledwater_service)
+    if bottledwater.exit_code == VALGRIND_ERROR_EXITCODE
+      @logger << "VALGRIND_ERROR: Bottled Water had Valgrind errors!\n"
+      dump_container_logs(bottledwater)
     end
   end
 end
