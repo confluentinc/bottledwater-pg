@@ -9,6 +9,7 @@ install:
 script:
   - make -j5 docker-compose
   - make test 2>make-test.err
+  - '! grep VALGRIND_ERROR make-test.err'
 after_failure:
   - "echo Tests failed, stderr was:"
   - cat make-test.err

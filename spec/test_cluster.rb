@@ -17,6 +17,8 @@ class TestCluster
     hstore
   ).freeze
 
+  VALGRIND_ERROR_EXITCODE = 123
+
   def initialize
     @logger = Logger.new($stderr)
 
@@ -43,6 +45,8 @@ class TestCluster
     self.bottledwater_on_error = :exit
     self.bottledwater_skip_snapshot = false
     self.bottledwater_topic_prefix = nil
+
+    self.valgrind = false
 
     @before_hooks = Hash.new {|h, k| h[k] = [] }
   end
@@ -150,6 +154,21 @@ class TestCluster
     ENV['BOTTLED_WATER_TOPIC_PREFIX'] = prefix.to_s
   end
 
+  def valgrind=(enabled)
+    if enabled
+      @valgrind = true
+      ENV['VALGRIND_ENABLED'] = 'true'
+      ENV['VALGRIND_OPTS'] = %W(
+        --leak-check=yes
+        --error-exitcode=#{VALGRIND_ERROR_EXITCODE}
+      ).join(' ')
+    else
+      @valgrind = false
+      ENV['VALGRIND_ENABLED'] = ''
+      ENV['VALGRIND_OPTS'] = ''
+    end
+  end
+
   def schema_registry_needed?
     bottledwater_format == :avro && !@started_without.include?(:'schema-registry')
   end
@@ -209,6 +228,13 @@ class TestCluster
     failed_services.each {|container| dump_container_logs(container) } if dump_logs
 
     @compose.stop
+
+    bottledwater = container_for_service(bottledwater_service)
+    if @valgrind && bottledwater.exit_code == VALGRIND_ERROR_EXITCODE
+      @logger << "VALGRIND_ERROR: Bottled Water had Valgrind errors!\n"
+      dump_container_logs(bottledwater)
+    end
+
     @compose.run! :rm, f: true, v: true
 
     reset if should_reset

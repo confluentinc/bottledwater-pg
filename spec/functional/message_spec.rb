@@ -2,7 +2,7 @@ require 'spec_helper'
 require 'format_contexts'
 require 'test_cluster'
 
-shared_examples 'publishing messages' do |format, postgres_version|
+shared_examples 'publishing messages' do |format, postgres_version, valgrind|
   # We only stop the cluster after all examples in the context have run, so
   # state in Postgres, Kafka and Bottled Water can leak between examples.  We
   # therefore need to make sure examples look at different tables, so they
@@ -14,6 +14,7 @@ shared_examples 'publishing messages' do |format, postgres_version|
     before(:context) do
       TEST_CLUSTER.bottledwater_format = format
       TEST_CLUSTER.postgres_version = postgres_version
+      TEST_CLUSTER.valgrind = valgrind
 
       TEST_CLUSTER.before_service(TEST_CLUSTER.bottledwater_service, 'Prepopulating users table') do |cluster|
         cluster.postgres.exec('CREATE TABLE users (id SERIAL PRIMARY KEY, username TEXT)')
@@ -99,6 +100,7 @@ shared_examples 'publishing messages' do |format, postgres_version|
     before(:context) do
       TEST_CLUSTER.bottledwater_format = format
       TEST_CLUSTER.postgres_version = postgres_version
+      TEST_CLUSTER.valgrind = valgrind
 
       # Kafka 0.9 rejects unkeyed messages sent to a compacted table, but we
       # set compaction as default in test_cluster.rb, so we need to explicitly
@@ -163,17 +165,25 @@ end
 
 
 describe 'publishing messages (JSON, Postgres 9.4)', functional: true, format: :json, postgres: '9.4' do
-  include_examples 'publishing messages', :json, '9.4'
+  include_examples 'publishing messages', :json, '9.4', false
 end
 
 describe 'publishing messages (Avro, Postgres 9.4)', functional: true, format: :avro, postgres: '9.4' do
-  include_examples 'publishing messages', :avro, '9.4'
+  include_examples 'publishing messages', :avro, '9.4', false
 end
 
 describe 'publishing messages (JSON, Postgres 9.5)', functional: true, format: :json, postgres: '9.5' do
-  include_examples 'publishing messages', :json, '9.5'
+  include_examples 'publishing messages', :json, '9.5', false
 end
 
 describe 'publishing messages (Avro, Postgres 9.5)', functional: true, format: :avro, postgres: '9.5' do
-  include_examples 'publishing messages', :avro, '9.5'
+  include_examples 'publishing messages', :avro, '9.5', false
+end
+
+describe 'publishing messages (JSON, Valgrind)', functional: true, format: :json, postgres: '9.5', valgrind: true do
+  include_examples 'publishing messages', :json, '9.5', true
+end
+
+describe 'publishing messages (Avro, Valgrind)', functional: true, format: :avro, postgres: '9.5', valgrind: true do
+  include_examples 'publishing messages', :avro, '9.5', true
 end
