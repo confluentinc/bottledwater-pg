@@ -186,7 +186,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
  * Also takes a shared lock on all the tables we're going to export, to make sure they
  * aren't dropped or schema-altered before we get around to reading them. (Ordinary
  * writes to the table, i.e. insert/update/delete, are not affected.) */
-void get_table_list(export_state *state, text *table_pattern, text *schema, bool allow_unkeyed) {
+void get_table_list(export_state *state, text *table_pattern, text *schema_pattern, bool allow_unkeyed) {
     Oid argtypes[] = { TEXTOID, TEXTOID };
     Datum args[] = { PointerGetDatum(table_pattern), PointerGetDatum(schema) };
     StringInfoData errors;

@@ -26,7 +26,7 @@ typedef struct {
     avro_value_iface_t *frame_iface;
     avro_value_t frame_value;
     schema_cache_t schema_cache;
-    List *oid_list;
+    List *table_oid_list;
 } plugin_state;
 
 void reset_frame(plugin_state *state);
@@ -49,7 +49,7 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
     ListCell *option, *l;
-    List *relname_list;
+    List *table_oid_list;
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
     opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
@@ -62,13 +62,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     avro_generic_value_new(state->frame_iface, &state->frame_value);
     state->schema_cache = schema_cache_new(ctx->context);
 
-
-    // Parse option from LogicalDecodingContext
-    // Send by START_REPLICATION SLOT
-    // tables is a vertical-line separated list
-    // schema is a vertical-line separated list
-    // TODO find a better way to store these 2 variables
-    state->oid_list = NULL;
+    state->table_oid_list = NULL;
     foreach(option, ctx->output_plugin_options) {
 
       DefElem *elem = lfirst(option);
@@ -78,14 +72,16 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
       if (strcmp(elem->defname, "tables") == 0) {
 
         if (elem->arg == NULL) {
-          ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+          ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                           errmsg("No value specified for parameter \"%s\"",
                           elem->defname)));
         } else {
             if (strcmp(strVal(elem->arg), "%%") != 0) {
-                 relname_list = stringToQualifiedNameList(strVal(elem->arg));
-                 foreach(l, relname_list) {
-                         state->oid_list = lappend_oid(state->oid_list, atoi(strVal(lfirst(l))));
+                 // the arg is a string contains list of table ids, which is seperated by dot '.'
+                 // stringToQualifiedNameList is a PG function that splits the string and stores them in side a list
+                 table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
+                 foreach(l, table_oid_list) {
+                         state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
                  }
                  list_free(relname_list);
                }
@@ -156,7 +152,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
     reset_frame(state);
 
     oid = RelationGetRelid(rel);
-    if (state->oid_list && oid_filter(state->oid_list, oid) == 0) {
+    if (state->table_oid_list && oid_filter(state->table_oid_list, oid) == 0) {
          goto context_reset;
     }
 

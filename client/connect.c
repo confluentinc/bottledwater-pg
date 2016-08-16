@@ -33,7 +33,7 @@ int snapshot_poll(client_context_t context);
 int snapshot_tuple(client_context_t context, PGresult *res, int row_number);
 
 // TODO refactor this code, I don't wanna get a list of oids inside connect.c
-int get_list_oids(client_context_t context);
+int lookup_table_oids(client_context_t context);
 
 
 /* Allocates a client_context struct. After this is done and before
@@ -407,10 +407,12 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
     return err;
 }
 
-int get_list_oids(client_context_t context) {
+/* Lookup for table oids from schema_pattern and table_pattern
+   If schema_pattern == % and table_pattern == % then BW will get all tables in db */
+int lookup_table_oids(client_context_t context) {
 
-    if (strcmp(context->repl.tables, "%%") == 0 && strcmp(context->repl.schema, "%%") == 0) {
-        client_error(context, "All tables will be streamed");
+    if (strcmp(context->repl.table_pattern, "%%") == 0 && strcmp(context->repl.schema_pattern, "%%") == 0) {
+        // All tables will be streamed
         return 0;
     }
 
@@ -419,37 +421,52 @@ int get_list_oids(client_context_t context) {
           "SELECT c.oid"
           " FROM pg_catalog.pg_class c"
           " JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
-          " WHERE c.relkind = 'r' AND c.relname SIMILAR TO '%s' AND"
-          " n.nspname NOT LIKE 'pg_%%' AND n.nspname != 'information_schema' AND n.nspname SIMILAR TO '%s' AND"
+          " WHERE c.relkind = 'r' AND"
+          " c.relname SIMILAR TO '%s' AND" // get table that has name similar to table_pattern
+                                           // pattern syntax follows
+                                           // https://www.postgresql.org/docs/current/static/functions-matching.html
+          " n.nspname NOT LIKE 'pg_%%' AND n.nspname != 'information_schema' AND"
+          " n.nspname SIMILAR TO '%s' AND" // only get table has schema similar to schema_pattern
+                                           // pattern syntax follows
+                                           // https://www.postgresql.org/docs/current/static/functions-matching.html
           " c.relpersistence = 'p'",
-        context->repl.tables,
-        context->repl.schema);
+        context->repl.table_pattern,
+        context->repl.schema_pattern);
 
     PGresult *res = PQexec(context->sql_conn, query->data);
 
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        client_error(context, "GET LIST OF OIDS failed: %s", PQerrorMessage(context->sql_conn));
+        client_error(context, "Failed to lookup table ids: %s.", PQerrorMessage(context->sql_conn));
         PQclear(res);
         return EIO;
     }
 
-    if (PQntuples(res) < 1 || PQnfields(res) < 1) {
-        client_error(context, "UNEXPEDTED GET LIST OF OIDS RESULT (%d rows, %d fields).",
-                PQntuples(res), PQnfields(res));
+    // Query returns zero row, mean there's no tables match with table_pattern and schema_pattern
+    if (PQntuples(res) == 0) {
+        client_error(context, "Couldn't find any tables matching: schemas %s, tables %s.",
+                    client->repl.schema_pattern, client->repl.table_pattern);
+        PQclear(res);
+        return EIO;
+    }
+
+    // Query returns zero fields, it means there something wrong with the query :D
+    if (PQnfields(res) == 0) {
+        client_error(context, "Unexpected result when looking up table ids with (table_schema %s, schema_pattern %s).",
+                client->repl.table_pattern, client->repl.schema_pattern;
         PQclear(res);
         return EIO;
     }
 
     int i;
     int rows = PQntuples(res);
-    PQExpBuffer oids = createPQExpBuffer();
+    PQExpBuffer table_ids = createPQExpBuffer();
 
-    appendPQExpBuffer(oids, rows > 0 ? PQgetvalue(res, 0, 0): "");
+    appendPQExpBuffer(table_ids, "%s", rows > 0 ? PQgetvalue(res, 0, 0): "");
     for (i = 1; i < rows; ++i) {
-        appendPQExpBuffer(oids, ".");
-        appendPQExpBuffer(oids, PQgetvalue(res, i, 0));
+        appendPQExpBuffer(table_ids, ".");
+        appendPQExpBuffer(table_ids, PQgetvalue(res, i, 0));
     }
-    context->repl.oids = strdup(oids->data);
+    context->repl.table_ids = strdup(oids->data);
 
     PQclear(res);
     destroyPQExpBuffer(query);

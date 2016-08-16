@@ -198,17 +198,23 @@ void usage() {
             "  -e, --on-error=[log|exit]   (default: %s)\n"
             "                          What to do in case of a transient error, such as\n"
             "                          failure to publish to Kafka.\n"
+            "  -o, --schemas=schema1|schema2  (default: all schemas)\n"
+            "                          Pattern specifying which schemas to stream.  If this\n"
+            "                          is not specified, all schemas\n"
+            "                          will be selected.  The pattern syntax is as per the\n"
+            "                          SQL `SIMILAR TO` operator: see\n"
+            "         https://www.postgresql.org/docs/current/static/functions-matching.html\n"
+            "  -i, --tables=table1|table2   (default: all tables)\n"
+            "                          Pattern specifying which tables to stream.  If this\n"
+            "                          is not specified, all tables in the selected schemas\n"
+            "                          will be streamed.  The pattern syntax is as per the\n"
+            "                          SQL `SIMILAR TO` operator: see\n"
+            "         https://www.postgresql.org/docs/current/static/functions-matching.html\n"
             "  -C, --kafka-config property=value\n"
             "                          Set global configuration property for Kafka producer\n"
             "                          (see --config-help for list of properties).\n"
             "  -T, --topic-config property=value\n"
             "                          Set topic configuration property for Kafka producer.\n"
-            "  -o, --schemas=value\n"
-            "                          Vertical line-separated list of schemas\n"
-            "                          If not set, default value is %s\n"
-            "  -i, --topics=value\n"
-            "                          Vertical line-separated list of topics\n"
-            "                          If not set, default value is %s\n"
             "  -k, --key=value\n"
             "                          Field for using as key to send to Kafka, if not exists\n"
             "                          then use PRIMARY KEY or REPLICA IDENTITY\n"
@@ -237,9 +243,9 @@ static int handler(void* _context, const char* section,
 
     #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
     if (MATCH("kafka", "kafka-config")) {
-        set_kafka_config(context, name, value);
+        set_kafka_config(context, value, parse_config_option(value));
     } else if (MATCH("kafka", "topic-config")) {
-        set_topic_config(context, name, value);
+        set_topic_config(context, value, parse_config_option(value));
     } else if (MATCH("bottledwater", "postgres")) {
         context->client->conninfo = strdup(value);
     } else if (MATCH("bottledwater", "slot")) {
@@ -261,7 +267,7 @@ static int handler(void* _context, const char* section,
         set_error_policy(context, value);
     } else if (MATCH("bottledwater", "schemas")) {
         context->client->repl.schema = strdup(value);
-    } else if (MATCH("bottledwater", "topics")) {
+    } else if (MATCH("bottledwater", "tables")) {
         context->client->repl.tables = strdup(value);
     } else if (MATCH("bottledwater", "key")) {
         context->key = strdup(value);
@@ -286,7 +292,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
         {"schemas",         required_argument, NULL, 'o'},
-        {"topics",          required_argument, NULL, 'i'},
+        {"tables",          required_argument, NULL, 'i'},
         {"key",             required_argument, NULL, 'k'},
         {"config-file",     required_argument, NULL, 'g'},
         {"config-help",     no_argument,       NULL,  1 },
@@ -677,6 +683,13 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     return 0;
 }
 
+/* Called by Kafka producer once per message before it's sent, to compute which partition
+ * the message will go to. This function is a wrapper of rd_kafka_msg_partitioner_consistent*/
+// static int32_t on_partitioner_call_back(const rd_kafka_topic_t *rkt, const void *keydata, size_t keylen,
+//                                         int32_t partition_cnt, void *rkt_opaque, void *msg_opaque) {
+//     printf("key %s\n", keydata);
+//     return 0;
+// }
 
 /* Called by Kafka producer once per message sent, to report the delivery status
  * (whether success or failure). */
@@ -934,7 +947,7 @@ int main(int argc, char **argv) {
                  (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
     }
 
-    while (context->client->status >= 0 && !received_shutdown_signal) {
+    while (context->client->status >= 0 && context->error_policy == ERROR_POLICY_EXIT && !received_shutdown_signal) {
         ensure(context, db_client_poll(context->client));
 
         if (context->client->status == 0) {

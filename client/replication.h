@@ -12,9 +12,9 @@
 
 typedef struct {
     char *slot_name, *output_plugin, *snapshot_name;
-    char *schema;
-    char *tables;
-    char *oids;
+    char *schema_pattern;
+    char *table_pattern;
+    char *table_ids;
     PGconn *conn;
     XLogRecPtr start_lsn;
     XLogRecPtr recvd_lsn;
