@@ -738,10 +738,10 @@ client_context_t init_client() {
     frame_reader->on_error        = on_client_error;
 
     client_context_t client = db_client_new();
-    client->app_name = APP_NAME;
+    client->app_name = strdup(APP_NAME);
     client->allow_unkeyed = false;
-    client->repl.slot_name = DEFAULT_REPLICATION_SLOT;
-    client->repl.output_plugin = OUTPUT_PLUGIN;
+    client->repl.slot_name = strdup(DEFAULT_REPLICATION_SLOT);
+    client->repl.output_plugin = strdup(OUTPUT_PLUGIN);
     client->repl.frame_reader = frame_reader;
     return client;
 }
