@@ -69,7 +69,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
 
       Assert(elem->arg == NULL || IsA(elem->arg, String));
 
-      if (strcmp(elem->defname, "tables") == 0) {
+      if (strcmp(elem->defname, "table_ids") == 0) {
 
         if (elem->arg == NULL) {
           ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -83,7 +83,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                  foreach(l, table_oid_list) {
                          state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
                  }
-                 list_free(relname_list);
+                 list_free(table_oid_list);
                }
         }
 

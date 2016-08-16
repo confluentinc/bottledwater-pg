@@ -230,9 +230,7 @@ void usage() {
             DEFAULT_BROKER_LIST,
             DEFAULT_SCHEMA_REGISTRY,
             DEFAULT_OUTPUT_FORMAT_NAME,
-            DEFAULT_ERROR_POLICY_NAME,
-            DEFAULT_SCHEMA,
-            DEFAULT_TABLE);
+            DEFAULT_ERROR_POLICY_NAME);
     exit(1);
 }
 
@@ -240,12 +238,22 @@ static int handler(void* _context, const char* section,
           const char* name, const char* value) {
 
     producer_context_t context = (producer_context_t) _context;
+    char *tmp_config_name; // temporary variable for store kafka config and kafka topic config name
+    char *tmp_config_value; // temporary variable for store kafka config and kafka topic config value
 
     #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
     if (MATCH("kafka", "kafka-config")) {
-        set_kafka_config(context, value, parse_config_option(value));
+        tmp_config_name = strdup(value);
+        tmp_config_value = parse_config_option(tmp_config_name);
+        set_kafka_config(context, tmp_config_name, tmp_config_value);
+        free(tmp_config_name);
+        free(tmp_config_value);
     } else if (MATCH("kafka", "topic-config")) {
-        set_topic_config(context, value, parse_config_option(value));
+        tmp_config_name = strdup(value);
+        tmp_config_value = parse_config_option(tmp_config_name);
+        set_kafka_config(context, tmp_config_name, tmp_config_value);
+        free(tmp_config_name);
+        free(tmp_config_value);
     } else if (MATCH("bottledwater", "postgres")) {
         context->client->conninfo = strdup(value);
     } else if (MATCH("bottledwater", "slot")) {
@@ -266,9 +274,9 @@ static int handler(void* _context, const char* section,
     } else if (MATCH("bottledwater", "on-error")) {
         set_error_policy(context, value);
     } else if (MATCH("bottledwater", "schemas")) {
-        context->client->repl.schema = strdup(value);
+        context->client->repl.schema_pattern = strdup(value);
     } else if (MATCH("bottledwater", "tables")) {
-        context->client->repl.tables = strdup(value);
+        context->client->repl.table_pattern = strdup(value);
     } else if (MATCH("bottledwater", "key")) {
         context->key = strdup(value);
     } else {
@@ -336,13 +344,13 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_kafka_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'o':
-                context->client->repl.schema = optarg;
+                context->client->repl.schema_pattern = optarg;
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'i':
-                context->client->repl.tables = optarg;
+                context->client->repl.table_pattern = optarg;
                 break;
             case 'k':
                 context->key = optarg;
@@ -364,7 +372,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         }
     }
 
-    if (!context->client->conninfo || optind < argc && continue_parse_options) usage();
+    if ((!context->client->conninfo || optind < argc) && continue_parse_options) usage();
 
     if (context->output_format == OUTPUT_FORMAT_AVRO && !context->registry) {
         init_schema_registry(context, DEFAULT_SCHEMA_REGISTRY);
@@ -804,9 +812,9 @@ client_context_t init_client() {
     client->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     client->repl.output_plugin = OUTPUT_PLUGIN;
     client->repl.frame_reader = frame_reader;
-    client->repl.schema = DEFAULT_SCHEMA;
-    client->repl.tables = DEFAULT_TABLE;
-    client->repl.oids = DEFAULT_TABLE;
+    client->repl.schema_pattern = DEFAULT_SCHEMA;
+    client->repl.table_pattern = DEFAULT_TABLE;
+    client->repl.table_ids = DEFAULT_TABLE;
     return client;
 }
 

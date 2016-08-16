@@ -188,7 +188,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
  * writes to the table, i.e. insert/update/delete, are not affected.) */
 void get_table_list(export_state *state, text *table_pattern, text *schema_pattern, bool allow_unkeyed) {
     Oid argtypes[] = { TEXTOID, TEXTOID };
-    Datum args[] = { PointerGetDatum(table_pattern), PointerGetDatum(schema) };
+    Datum args[] = { PointerGetDatum(table_pattern), PointerGetDatum(schema_pattern) };
     StringInfoData errors;
 
     int ret = SPI_execute_with_args(

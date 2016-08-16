@@ -146,10 +146,10 @@ int replication_stream_check(replication_stream_t stream) {
  * add options similar to that pattern after () separated by comma */
 int replication_stream_start(replication_stream_t stream) {
     PQExpBuffer query = createPQExpBuffer();
-    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"tables\" \'%s\')",
+    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"table_ids\" \'%s\')",
             stream->slot_name,
             (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn,
-            stream->table_oids);
+            stream->table_ids);
 
     PGresult *res = PQexec(stream->conn, query->data);
 
