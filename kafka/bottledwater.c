@@ -583,7 +583,7 @@ static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *old_bin, size_t old_len, avro_value_t *old_val) {
     producer_context_t context = (producer_context_t) _context;
     if (key_bin)
-        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, old_bin, old_len);
+        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, NULL, 0);
     else
         return 0; // delete on unkeyed table --> can't do anything
 }
@@ -955,7 +955,12 @@ int main(int argc, char **argv) {
                  (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
     }
 
-    while (context->client->status >= 0 && context->error_policy == ERROR_POLICY_EXIT && !received_shutdown_signal) {
+    while (!received_shutdown_signal) {
+        if (context->client->status < 0 && context->error_policy == ERROR_POLICY_EXIT) {
+            log_info("There's an error, and youre policy is exit on error, so BW will stop, If you dont want this behavior,\
+                      please set error policy to log on error instead.");
+            break;
+        }
         ensure(context, db_client_poll(context->client));
 
         if (context->client->status == 0) {
