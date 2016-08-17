@@ -107,7 +107,7 @@ int schema_registry_request(schema_registry_t registry, const char *name, int is
         return EINVAL;
     }
 
-    char * tmp_schema_json = NULL:
+    char * tmp_schema_json = NULL;
 
     if (key && is_key) {
         json_t *root;
