@@ -379,8 +379,13 @@ char* topic_name_from_avro_schema(avro_schema_t schema) {
 
     const char *table_name = avro_schema_name(schema);
 
+#ifdef AVRO_1_8
     /* Gets the avro schema namespace which contains the Postgres schema name */
     const char *namespace = avro_schema_namespace(schema);
+#else
+#warning "avro-c older than 1.8.0, will not include Postgres schema in Kafka topic name"
+    const char namespace[] = "dummy";
+#endif
 
     char topic_name[TABLE_NAME_BUFFER_LENGTH];
     /* Strips the beginning part of the namespace to extract the Postgres schema name
