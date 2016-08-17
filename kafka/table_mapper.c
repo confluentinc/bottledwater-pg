@@ -242,10 +242,9 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
     int schema_id = TABLE_MAPPER_SCHEMA_ID_MISSING;
 
     int err;
-    int key_position;
 
     if (mapper->registry) {
-        err = schema_registry_request(mapper->registry, rd_kafka_topic_name(table->topic), is_key,
+        err = schema_registry_request(mapper->registry, rd_kafka_topic_name(table->topic), is_key, mapper->key,
                 schema_json, schema_len,
                 &schema_id);
         if (err) {
@@ -283,17 +282,13 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
             // filter key, get field that we want to use as key for kafka
             // TODO write a filter function instead of adding lines of code here
 
-            if (is_key && mapper->key && (key_position = avro_schema_record_field_get_index(schema, mapper->key)) != -1) {
+            if (is_key && mapper->key && avro_schema_record_field_get_index(schema, mapper->key) != -1) {
                 tmp = avro_schema_record(avro_schema_name(schema), avro_schema_namespace(schema));
                 key = avro_schema_record_field_get(schema, mapper->key);
                 avro_schema_record_field_append(tmp, mapper->key, key);
                 if (schema) avro_schema_decref(schema);
                 schema = avro_schema_copy(tmp);
                 if (tmp) avro_schema_decref(tmp);
-
-                if (key_position == -1) {
-                    mapper_error(mapper, "THERE ARE NO %s KEY IN THIS PRIMARY/REPLICA OF %s", mapper->key, table->table_name);
-                }
             }
 
         } else {

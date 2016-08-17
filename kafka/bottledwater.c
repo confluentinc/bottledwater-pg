@@ -908,12 +908,6 @@ void exit_nicely(producer_context_t context, int status) {
         }
     }
 
-    //if (context->topic_prefix)
-        //free(context->topic_prefix);
-
-    //if (context->key)
-    //    free(context->key);
-
     table_mapper_free(context->mapper);
 
     if (context->registry)
@@ -957,7 +951,7 @@ int main(int argc, char **argv) {
 
     while (!received_shutdown_signal) {
         if (context->client->status < 0 && context->error_policy == ERROR_POLICY_EXIT) {
-            log_info("There's an error, and youre policy is exit on error, so BW will stop, If you dont want this behavior,\
+            log_info("There's an error, and your policy is exit on error, so BW will stop, If you dont want this behavior,\
                       please set error policy to log on error instead.");
             break;
         }
