@@ -9,6 +9,9 @@ install:
 script:
   - make -j5 docker-compose
   - make test 2>make-test.err
+  # We log VALGRIND_ERROR if Valgrind detected any errors during the tests;
+  # see check_valgrind_errors in spec/test_cluster.rb
+  - '! grep VALGRIND_ERROR make-test.err'
 after_failure:
   - "echo Tests failed, stderr was:"
   - cat make-test.err

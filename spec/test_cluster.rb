@@ -17,6 +17,8 @@ class TestCluster
     hstore
   ).freeze
 
+  VALGRIND_ERROR_EXITCODE = 123
+
   def initialize
     @logger = Logger.new($stderr)
 
@@ -43,6 +45,8 @@ class TestCluster
     self.bottledwater_on_error = :exit
     self.bottledwater_skip_snapshot = false
     self.bottledwater_topic_prefix = nil
+
+    self.valgrind = false
 
     @before_hooks = Hash.new {|h, k| h[k] = [] }
   end
@@ -150,6 +154,21 @@ class TestCluster
     ENV['BOTTLED_WATER_TOPIC_PREFIX'] = prefix.to_s
   end
 
+  def valgrind=(enabled)
+    if enabled
+      @valgrind = true
+      ENV['VALGRIND_ENABLED'] = 'true'
+      ENV['VALGRIND_OPTS'] = %W(
+        --leak-check=yes
+        --error-exitcode=#{VALGRIND_ERROR_EXITCODE}
+      ).join(' ')
+    else
+      @valgrind = false
+      ENV['VALGRIND_ENABLED'] = ''
+      ENV['VALGRIND_OPTS'] = ''
+    end
+  end
+
   def schema_registry_needed?
     bottledwater_format == :avro && !@started_without.include?(:'schema-registry')
   end
@@ -209,6 +228,9 @@ class TestCluster
     failed_services.each {|container| dump_container_logs(container) } if dump_logs
 
     @compose.stop
+
+    check_valgrind_errors if @valgrind
+
     @compose.run! :rm, f: true, v: true
 
     reset if should_reset
@@ -371,6 +393,23 @@ class TestCluster
       @logger << stderr
       @logger << "\n"
       @logger << ('-' * 80 + "\n")
+    end
+  end
+
+  def check_valgrind_errors
+    # We'd like to just fail the tests if Valgrind reported errors.  By passing
+    # --error-exitcode to Valgrind we can detect whether there were any errors,
+    # but surprisingly failing the tests is the hard part.  We can't check the
+    # exit code until we stop Bottled Water, and we generally stop the cluster
+    # in an after(:context) block; but RSpec ignores exceptions that occur in
+    # an after(:context) block.
+    #
+    # So instead we do it this fairly obtuse way: output a greppable string and
+    # grep for it outside the test suite (e.g. in .travis.yml).
+    bottledwater = container_for_service(bottledwater_service)
+    if bottledwater.exit_code == VALGRIND_ERROR_EXITCODE
+      @logger << "VALGRIND_ERROR: Bottled Water had Valgrind errors!\n"
+      dump_container_logs(bottledwater)
     end
   end
 end

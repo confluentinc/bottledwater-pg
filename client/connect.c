@@ -46,6 +46,11 @@ client_context_t db_client_new() {
 void db_client_free(client_context_t context) {
     client_sql_disconnect(context);
     if (context->repl.conn) PQfinish(context->repl.conn);
+    if (context->repl.snapshot_name) free(context->repl.snapshot_name);
+    if (context->repl.output_plugin) free(context->repl.output_plugin);
+    if (context->repl.slot_name) free(context->repl.slot_name);
+    if (context->app_name) free(context->app_name);
+    if (context->conninfo) free(context->conninfo);
     free(context);
 }
 
