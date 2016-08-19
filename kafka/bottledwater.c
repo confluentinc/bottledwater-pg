@@ -121,6 +121,8 @@ typedef struct {
     uint64_t wal_pos;
     Oid relid;
     transaction_info *xact;
+    avro_value_t *key_val;// primary key/replica identity encoded in avro_value_t use for partitioner if any
+    // avro_value_t *new_val;
 } msg_envelope;
 
 typedef msg_envelope *msg_envelope_t;
@@ -161,8 +163,11 @@ static int on_keepalive(void *_context, uint64_t wal_pos);
 static int on_client_error(void *_context, int err, const char *message);
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
-        const void *val_bin, size_t val_len);
+        const void *val_bin, size_t val_len,
+        const avro_value_t *key_val); // add new key_val, this is encoded primary key
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *envelope);
+static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const void *keydata, size_t keylen,
+                                        int32_t partition_cnt, void *rkt_opaque, void *msg_opaque);
 void maybe_checkpoint(producer_context_t context);
 void backpressure(producer_context_t context);
 client_context_t init_client(void);
@@ -279,6 +284,7 @@ static int handler(void* _context, const char* section,
         context->client->repl.table_pattern = strdup(value);
     } else if (MATCH("bottledwater", "key")) {
         context->key = strdup(value);
+        rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &on_customized_paritioner_cb);
     } else {
         return 0; // unknown section/option
     }
@@ -354,6 +360,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 'k':
                 context->key = optarg;
+                rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &on_customized_paritioner_cb);
                 break;
             case 'g':
                 if (ini_parse(optarg, handler, context) == 0) {
@@ -567,7 +574,7 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len, avro_value_t *key_val,
         const void *new_bin, size_t new_len, avro_value_t *new_val) {
     producer_context_t context = (producer_context_t) _context;
-    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len);
+    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len, key_val);
 }
 
 static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
@@ -575,7 +582,7 @@ static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *old_bin, size_t old_len, avro_value_t *old_val,
         const void *new_bin, size_t new_len, avro_value_t *new_val) {
     producer_context_t context = (producer_context_t) _context;
-    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len);
+    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len, key_val);
 }
 
 static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
@@ -583,7 +590,7 @@ static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *old_bin, size_t old_len, avro_value_t *old_val) {
     producer_context_t context = (producer_context_t) _context;
     if (key_bin)
-        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, NULL, 0);
+        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, NULL, 0, key_val);
     else
         return 0; // delete on unkeyed table --> can't do anything
 }
@@ -606,7 +613,8 @@ static int on_client_error(void *_context, int err, const char *message) {
 
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
-        const void *val_bin, size_t val_len) {
+        const void *val_bin, size_t val_len,
+        const avro_value_t *key_val) {
 
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
@@ -624,6 +632,8 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     envelope->wal_pos = wal_pos;
     envelope->relid = relid;
     envelope->xact = xact;
+    envelope->key_val = key_val;
+    //envelope->new_val = new_val;
 
     void *key = NULL, *val = NULL;
     size_t key_encoded_len, val_encoded_len;
@@ -693,11 +703,48 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
 /* Called by Kafka producer once per message before it's sent, to compute which partition
  * the message will go to. This function is a wrapper of rd_kafka_msg_partitioner_consistent*/
-// static int32_t on_partitioner_call_back(const rd_kafka_topic_t *rkt, const void *keydata, size_t keylen,
-//                                         int32_t partition_cnt, void *rkt_opaque, void *msg_opaque) {
-//     printf("key %s\n", keydata);
-//     return 0;
-// }
+static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const void *keydata, size_t keylen,
+                                        int32_t partition_cnt, void *rkt_opaque, void *msg_opaque) {
+    msg_envelope_t envelope = (msg_envelope_t) msg_opaque;
+    char *key = envelope->context->mapper->key;
+    avro_value_t *key_val = envelope->key_val;
+    int err;
+
+    // Only check for keylen because we've already checked that keydata is NULL or not before calling this function
+    if (keylen != 0 && key_val) {
+
+        // We only get specified key in primary key
+        // Because of the structure
+        // First get key_field from key_val by name
+        // Then get branch from key_field
+        avro_value_t key_field;
+        err = avro_value_get_by_name(key_val, key, &key_field, NULL);
+        if (err) {
+            log_error("on_customized_paritioner_cb cannot get value of field '%s' : %s", key, avro_strerror());
+            goto default_partitioner;
+        }
+
+        avro_value_t key_field_branch;
+        err = avro_value_get_current_branch(&key_field, &key_field_branch);
+        if (err) {
+            log_error("on_customized_paritioner_cb cannot get value of branch '%s' : %s", key, avro_strerror());
+            goto default_partitioner;
+        }
+
+        // the key_field_branch is avro int
+        // we use avro_value_hash to hash the key_field_branch then mod it with partition_cnt
+        return avro_value_hash(&key_field_branch) % partition_cnt;
+    }
+
+default_partitioner:
+    return rd_kafka_msg_partitioner_consistent_random(rkt,
+                                                      keydata,
+                                                      keylen,
+                                                      partition_cnt,
+                                                      rkt_opaque,
+                                                      msg_opaque);
+
+}
 
 /* Called by Kafka producer once per message sent, to report the delivery status
  * (whether success or failure). */

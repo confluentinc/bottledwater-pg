@@ -107,43 +107,44 @@ int schema_registry_request(schema_registry_t registry, const char *name, int is
         return EINVAL;
     }
 
-    char * tmp_schema_json = NULL;
+    // char * tmp_schema_json = NULL;
 
-    if (key && is_key) {
-        json_t *root;
-        json_error_t error;
+    // if (key && is_key) {
+    //     json_t *root;
+    //     json_error_t error;
+    //
+    //     root = json_loads(schema_json, 0, &error);
+    //
+    //     if (!root) {
+    //         registry_error(registry, "Schema registry json error on line %d: %s\n", error.line, error.text);
+    //     } else {
+    //         json_t *fields = json_object_get(root, "fields");
+    //         if (fields) {
+    //             json_t *tmp_fields = json_array();
+    //             json_t *value;
+    //             size_t index;
+    //
+    //             json_array_foreach(fields, index, value) {
+    //                 if (strcmp(json_string_value(json_object_get(value, "name")), key) == 0) {
+    //                     json_array_append_new(tmp_fields, json_copy(value));
+    //                     break;
+    //                 }
+    //             }
+    //
+    //             if (json_array_size(tmp_fields) > 0) {
+    //                 json_object_set(root, "fields", tmp_fields);
+    //                 tmp_schema_json = json_dumps(root, JSON_COMPACT);
+    //             }
+    //             json_decref(tmp_fields);
+    //         }
+    //
+    //         json_decref(root);
+    //     }
+    //
+    // }
 
-        root = json_loads(schema_json, 0, &error);
-
-        if (!root) {
-            registry_error(registry, "Schema registry json error on line %d: %s\n", error.line, error.text);
-        } else {
-            json_t *fields = json_object_get(root, "fields");
-            if (fields) {
-                json_t *tmp_fields = json_array();
-                json_t *value;
-                size_t index;
-
-                json_array_foreach(fields, index, value) {
-                    if (strcmp(json_string_value(json_object_get(value, "name")), key) == 0) {
-                        json_array_append_new(tmp_fields, json_copy(value));
-                        break;
-                    }
-                }
-
-                if (json_array_size(tmp_fields) > 0) {
-                    json_object_set(root, "fields", tmp_fields);
-                    tmp_schema_json = json_dumps(root, JSON_COMPACT);
-                }
-                json_decref(tmp_fields);
-            }
-
-            json_decref(root);
-        }
-
-    }
-
-    json_t *req_json = json_pack("{s:s}", "schema", tmp_schema_json ? tmp_schema_json : schema_json);
+    // json_t *req_json = json_pack("{s:s}", "schema", tmp_schema_json ? tmp_schema_json : schema_json);
+    json_t *req_json = json_pack("{s:s}", "schema", schema_json);
     char *req_body = json_dumps(req_json, JSON_COMPACT);
     if (!req_body) {
         registry_error(registry, "Could not encode JSON request for schema registry");

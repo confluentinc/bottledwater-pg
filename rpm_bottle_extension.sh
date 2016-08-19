@@ -8,7 +8,7 @@ echo "+----------------------------+"
 ###
 ###
 
-yum install -y zlib-devel.x86_64 snappy-devel.x86_64 gcc g++ jansson-devel.x86_64 libcurl-devel.x86_64 postgresql94-devel.x86_64
+# yum install -y zlib-devel.x86_64 snappy-devel.x86_64 gcc g++ jansson-devel.x86_64 libcurl-devel.x86_64 postgresql94-devel.x86_64
 
 ORG_DIR=$(pwd)
 PG_SHAREDIR=$(pg_config --sharedir)
