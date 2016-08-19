@@ -730,7 +730,7 @@ client_context_t init_client() {
 
     // list id of table from Postgres, default is '%' means every id
     // https://www.postgresql.org/docs/current/static/functions-matching.html
-    client->table_ids = DEFAULT_TABLE;
+    client->repl.table_ids = DEFAULT_TABLE;
     return client;
 }
 

@@ -48,7 +48,7 @@ void db_client_free(client_context_t context) {
     if (context->repl.conn) PQfinish(context->repl.conn);
     if (context->table_pattern) free(context->table_pattern);
     if (context->schema_pattern) free(context->schema_pattern);
-    if (context->repl.oids && strcmp(context->repl.oids, "%%") != 0) free(context->repl.oids);
+    if (context->repl.table_ids && strcmp(context->repl.table_ids, "%%") != 0) free(context->repl.table_ids);
     free(context);
 }
 
