@@ -164,7 +164,7 @@ static int on_client_error(void *_context, int err, const char *message);
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
         const void *val_bin, size_t val_len,
-        const avro_value_t *key_val); // add new key_val, this is encoded primary key
+        avro_value_t *key_val); // add new key_val, this is encoded primary key
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *envelope);
 static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const void *keydata, size_t keylen,
                                         int32_t partition_cnt, void *rkt_opaque, void *msg_opaque);
@@ -614,7 +614,7 @@ static int on_client_error(void *_context, int err, const char *message) {
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
         const void *val_bin, size_t val_len,
-        const avro_value_t *key_val) {
+        avro_value_t *key_val) {
 
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
@@ -720,14 +720,18 @@ static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const vo
         avro_value_t key_field;
         err = avro_value_get_by_name(key_val, key, &key_field, NULL);
         if (err) {
-            log_error("on_customized_paritioner_cb cannot get value of field '%s' : %s", key, avro_strerror());
+#ifdef DEBUG
+            log_warn("on_customized_paritioner_cb : %s", avro_strerror());
+#endif
             goto default_partitioner;
         }
 
         avro_value_t key_field_branch;
         err = avro_value_get_current_branch(&key_field, &key_field_branch);
         if (err) {
-            log_error("on_customized_paritioner_cb cannot get value of branch '%s' : %s", key, avro_strerror());
+#ifdef DEBUG
+            log_warn("on_customized_paritioner_cb : %s", avro_strerror());
+#endif
             goto default_partitioner;
         }
 
@@ -737,7 +741,7 @@ static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const vo
     }
 
 default_partitioner:
-if (RD_KAFKA_VERSION >= 0x000901ff)
+#if RD_KAFKA_VERSION >= 0x000901ff
     /* librdkafka 0.9.1 provides a "consistent_random" partitioner, which is
      * a good choice for us: "Uses consistent hashing to map identical keys
      * onto identical partitions, and messages without keys will be assigned
@@ -748,7 +752,8 @@ if (RD_KAFKA_VERSION >= 0x000901ff)
                                                        partition_cnt,
                                                        rkt_opaque,
                                                        msg_opaque);
-else if (RD_KAFKA_VERSION >= 0x00090000)
+#else
+    // #if RD_KAFKA_VERSION >= 0x00090000
     /* librdkafka 0.9.0 provides a "consistent hashing partitioner", which we
      * can use to ensure that all updates for a given key go to the same
      * partition.  However, for unkeyed messages (such as we send for tables
@@ -761,6 +766,7 @@ else if (RD_KAFKA_VERSION >= 0x00090000)
                                                partition_cnt,
                                                rkt_opaque,
                                                msg_opaque);
+#endif
 
 }
 
