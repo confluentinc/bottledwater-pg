@@ -60,7 +60,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     avro_generic_value_new(state->frame_iface, &state->frame_value);
     state->schema_cache = schema_cache_new(ctx->context);
 
-    state->oid_list = NULL;
+    state->table_oid_list = NULL;
     foreach(option, ctx->output_plugin_options) {
 
       DefElem *elem = lfirst(option);
@@ -150,7 +150,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
     reset_frame(state);
 
     oid = RelationGetRelid(rel);
-    if (state->oid_list && oid_filter(state->oid_list, oid) == 0) {
+    if (state->table_oid_list && oid_filter(state->table_oid_list, oid) == 0) {
         goto context_reset;
     }
 
