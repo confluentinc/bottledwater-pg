@@ -173,7 +173,7 @@ int schema_registry_request(schema_registry_t registry, const char *name, int is
 
     destroyPQExpBuffer(response);
     free(req_body);
-    if (tmp_schema_json) free(tmp_schema_json);
+    // if (tmp_schema_json) free(tmp_schema_json);
     json_decref(req_json);
     return err;
 }
