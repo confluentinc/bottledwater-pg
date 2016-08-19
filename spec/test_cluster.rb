@@ -17,6 +17,8 @@ class TestCluster
     hstore
   ).freeze
 
+  VALGRIND_ERROR_EXITCODE = 123
+
   def initialize
     @logger = Logger.new($stderr)
 
@@ -41,6 +43,12 @@ class TestCluster
 
     self.bottledwater_format = :json
     self.bottledwater_on_error = :exit
+    self.bottledwater_skip_snapshot = false
+    self.bottledwater_topic_prefix = nil
+
+    self.valgrind = false
+
+    @before_hooks = Hash.new {|h, k| h[k] = [] }
   end
 
   def start(without: [])
@@ -100,6 +108,11 @@ class TestCluster
     @state == :stopped
   end
 
+  def before_service(service, description, &block)
+    raise 'before_service requires a block' unless block_given?
+    @before_hooks[service] << [description, block]
+  end
+
   def kafka_advertised_host_name=(hostname)
     ENV['KAFKA_ADVERTISED_HOST_NAME'] = hostname
   end
@@ -131,6 +144,29 @@ class TestCluster
 
   def bottledwater_on_error=(policy)
     ENV['BOTTLED_WATER_ON_ERROR'] = policy.to_s
+  end
+
+  def bottledwater_skip_snapshot=(policy)
+    ENV['BOTTLED_WATER_SKIP_SNAPSHOT'] = policy ? 'true' : ''
+  end
+
+  def bottledwater_topic_prefix=(prefix)
+    ENV['BOTTLED_WATER_TOPIC_PREFIX'] = prefix.to_s
+  end
+
+  def valgrind=(enabled)
+    if enabled
+      @valgrind = true
+      ENV['VALGRIND_ENABLED'] = 'true'
+      ENV['VALGRIND_OPTS'] = %W(
+        --leak-check=yes
+        --error-exitcode=#{VALGRIND_ERROR_EXITCODE}
+      ).join(' ')
+    else
+      @valgrind = false
+      ENV['VALGRIND_ENABLED'] = ''
+      ENV['VALGRIND_OPTS'] = ''
+    end
   end
 
   def schema_registry_needed?
@@ -192,6 +228,9 @@ class TestCluster
     failed_services.each {|container| dump_container_logs(container) } if dump_logs
 
     @compose.stop
+
+    check_valgrind_errors if @valgrind
+
     @compose.run! :rm, f: true, v: true
 
     reset if should_reset
@@ -219,6 +258,11 @@ class TestCluster
   def start_service(*services)
     services_to_start = services.reject {|service| @started_without.include?(service) }
     return if services_to_start.empty?
+
+    services_to_start.each do |service|
+      run_before_hooks(service)
+    end
+
     @compose.up(*services_to_start, detached: true, no_deps: true)
   end
 
@@ -292,8 +336,16 @@ class TestCluster
     result
   end
 
+  def run_before_hooks(service)
+    @before_hooks[service].each do |description, hook|
+      @logger << "#{description} before starting #{service}... "
+      hook.call(self)
+      @logger << "OK\n"
+    end
+  end
+
   def container_for_service(service)
-    check_started! unless starting?
+    check_started!
     id_output = @compose.run!(:ps, {q: true}, service)
     return nil if id_output.nil?
     @docker.inspect(id_output.strip)
@@ -305,7 +357,7 @@ class TestCluster
 
   def check_started!
     case @state
-    when :started; return
+    when :started, :starting; return
     when nil; raise 'cluster not started'
     else; raise "cluster #{@state}"
     end
@@ -341,6 +393,23 @@ class TestCluster
       @logger << stderr
       @logger << "\n"
       @logger << ('-' * 80 + "\n")
+    end
+  end
+
+  def check_valgrind_errors
+    # We'd like to just fail the tests if Valgrind reported errors.  By passing
+    # --error-exitcode to Valgrind we can detect whether there were any errors,
+    # but surprisingly failing the tests is the hard part.  We can't check the
+    # exit code until we stop Bottled Water, and we generally stop the cluster
+    # in an after(:context) block; but RSpec ignores exceptions that occur in
+    # an after(:context) block.
+    #
+    # So instead we do it this fairly obtuse way: output a greppable string and
+    # grep for it outside the test suite (e.g. in .travis.yml).
+    bottledwater = container_for_service(bottledwater_service)
+    if bottledwater.exit_code == VALGRIND_ERROR_EXITCODE
+      @logger << "VALGRIND_ERROR: Bottled Water had Valgrind errors!\n"
+      dump_container_logs(bottledwater)
     end
   end
 end

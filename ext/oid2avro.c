@@ -49,7 +49,7 @@ int update_avro_with_char(avro_value_t *output_val, char c);
 int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum);
 
 
-static char *make_avro_safe(const char *raw);
+static char *make_avro_safe(const char *raw, bool is_namespace);
 
 
 /* Returns the relation object for the index that we're going to use as key for a
@@ -135,10 +135,10 @@ int schema_for_table_row(Relation rel, avro_schema_t *schema_out) {
     rel_namespace = get_namespace_name(RelationGetNamespace(rel));
     if (rel_namespace) appendStringInfo(&namespace, ".%s", rel_namespace);
 
-    rel_namespace_avro_safe = make_avro_safe(namespace.data);
+    rel_namespace_avro_safe = make_avro_safe(namespace.data, true);
 
     relname = RelationGetRelationName(rel);
-    relname_avro_safe = make_avro_safe(relname);
+    relname_avro_safe = make_avro_safe(relname, false);
 
     record_schema = avro_schema_record(relname_avro_safe, rel_namespace_avro_safe);
     free(relname_avro_safe);
@@ -166,7 +166,7 @@ int schema_for_table_row(Relation rel, avro_schema_t *schema_out) {
         Form_pg_attribute attr = tupdesc->attrs[i];
         if (attr->attisdropped) continue; /* skip dropped columns */
 
-        attname_avro_safe = make_avro_safe(NameStr(attr->attname));
+        attname_avro_safe = make_avro_safe(NameStr(attr->attname), false);
         column_schema = schema_for_oid(&predef, attr->atttypid);
 
         err = avro_schema_record_field_append(record_schema, attname_avro_safe, column_schema);
@@ -770,10 +770,14 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
 /* Sanitises the `raw` string to be a valid Avro identifier using an encoding
  * similar to the "percent encoding" used in URLs.  Unsupported characters are
  * replaced by a hexadecimal representation:
- *      e.g. "person.name" -> "person_2e_name"
+ *      e.g. "person/name" -> "person_2f_name"
  *
  * Valid Avro identifiers start with [A-Za-z_] and subsequently contain only
  * [A-Za-z0-9_], as per https://avro.apache.org/docs/1.8.1/spec.html#names
+ *
+ * If `is_namespace` is true, then dots ('.') will also be passed through
+ * unencoded, provided they are neither the first nor the last character; this
+ * is intended for namespaces which are a dot-separated sequence of names.
  *
  * Returns a malloc'd string which the caller is responsible for freeing.
  *
@@ -789,7 +793,9 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
  *    underscore encoding of the bytes representing those characters in the
  *    server encoding (default UTF-8).  e.g.:
  *           "crêpes" -> "cr_c3__aa_pes" */
-static char *make_avro_safe(const char *raw) {
+static char *make_avro_safe(const char *raw, bool is_namespace) {
+    const size_t length = strlen(raw);
+
     /* Allocate enough space for the worst case, where we have to encode every
      * character, requiring 4 bytes per character (_xx_).  This is rather
      * wasteful in the common case, but we expect this will get freed soon, and
@@ -797,16 +803,17 @@ static char *make_avro_safe(const char *raw) {
      *
      * (To be precise, we never need to encode the null terminator byte, and
      * thus this always wastes at least three bytes.) */
-    char *encoded = malloc(4 * strlen(raw));
+    char *encoded = malloc(4 * length);
 
     char *pe = encoded;
-    for (const char *p = raw; *p != '\0'; ++p) {
-        const char c = *p;
+    for (size_t index = 0; index < length; ++index) {
+        const char c = raw[index];
         if (
                 (c >= 'A' && c <= 'Z') ||
                 (c >= 'a' && c <= 'z') ||
                 c == '_' ||
-                (c >= '0' && c <= '9' && p != raw)) {
+                (c == '.' && is_namespace && index > 0 && index < length - 1) ||
+                (c >= '0' && c <= '9' && index > 0)) {
             *pe++ = c;
         } else {
             sprintf(pe, "_%.2x_", (unsigned char) c);

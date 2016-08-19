@@ -2,7 +2,7 @@ require 'spec_helper'
 require 'format_contexts'
 require 'test_cluster'
 
-shared_examples 'publishing messages' do |format|
+shared_examples 'publishing messages' do |format, postgres_version, valgrind|
   # We only stop the cluster after all examples in the context have run, so
   # state in Postgres, Kafka and Bottled Water can leak between examples.  We
   # therefore need to make sure examples look at different tables, so they
@@ -13,6 +13,14 @@ shared_examples 'publishing messages' do |format|
   describe 'table with a primary key' do
     before(:context) do
       TEST_CLUSTER.bottledwater_format = format
+      TEST_CLUSTER.postgres_version = postgres_version
+      TEST_CLUSTER.valgrind = valgrind
+
+      TEST_CLUSTER.before_service(TEST_CLUSTER.bottledwater_service, 'Prepopulating users table') do |cluster|
+        cluster.postgres.exec('CREATE TABLE users (id SERIAL PRIMARY KEY, username TEXT)')
+        cluster.postgres.exec(%{INSERT INTO users (username) SELECT 'user' || num FROM generate_series(1, 10) AS num})
+      end
+
       TEST_CLUSTER.start
     end
 
@@ -66,11 +74,33 @@ shared_examples 'publishing messages' do |format|
       new_value = decode_value(messages[1].value)
       expect(fetch_string(new_value, 'gadget')).to eq('Goodbye')
     end
+
+    describe 'initial database snapshot' do
+      # uses the table that was prepopulated in the before hook above
+
+      example 'publishes the existing database contents into Kafka, then streams ongoing updates' do
+        messages = kafka_take_messages('users', 10)
+
+        messages.each do |message|
+          value = decode_value message.value
+          expect(fetch_string(value, 'username')).to match(/^user\d+/)
+        end
+
+        postgres.exec(%{INSERT INTO users (username) VALUES('user11')})
+
+        message_after_snapshot = kafka_take_messages('users', 1).first
+
+        value = decode_value message_after_snapshot.value
+        expect(fetch_string(value, 'username')).to eq('user11')
+      end
+    end
   end
 
   describe 'unkeyed table' do
     before(:context) do
       TEST_CLUSTER.bottledwater_format = format
+      TEST_CLUSTER.postgres_version = postgres_version
+      TEST_CLUSTER.valgrind = valgrind
 
       # Kafka 0.9 rejects unkeyed messages sent to a compacted table, but we
       # set compaction as default in test_cluster.rb, so we need to explicitly
@@ -134,10 +164,26 @@ shared_examples 'publishing messages' do |format|
 end
 
 
-describe 'publishing messages (JSON)', functional: true, format: :json do
-  include_examples 'publishing messages', :json
+describe 'publishing messages (JSON, Postgres 9.4)', functional: true, format: :json, postgres: '9.4' do
+  include_examples 'publishing messages', :json, '9.4', false
 end
 
-describe 'publishing messages (Avro)', functional: true, format: :avro do
-  include_examples 'publishing messages', :avro
+describe 'publishing messages (Avro, Postgres 9.4)', functional: true, format: :avro, postgres: '9.4' do
+  include_examples 'publishing messages', :avro, '9.4', false
+end
+
+describe 'publishing messages (JSON, Postgres 9.5)', functional: true, format: :json, postgres: '9.5' do
+  include_examples 'publishing messages', :json, '9.5', false
+end
+
+describe 'publishing messages (Avro, Postgres 9.5)', functional: true, format: :avro, postgres: '9.5' do
+  include_examples 'publishing messages', :avro, '9.5', false
+end
+
+describe 'publishing messages (JSON, Valgrind)', functional: true, format: :json, postgres: '9.5', valgrind: true do
+  include_examples 'publishing messages', :json, '9.5', true
+end
+
+describe 'publishing messages (Avro, Valgrind)', functional: true, format: :avro, postgres: '9.5', valgrind: true do
+  include_examples 'publishing messages', :avro, '9.5', true
 end

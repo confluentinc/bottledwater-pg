@@ -68,11 +68,19 @@ First, install:
 * [docker-compose](https://docs.docker.com/compose/install/), which is used to
   orchestrate the interaction between services.
 
-After the prerequisite applications are installed, you need to build the Docker containers for Bottled Water and Postgres by running `make docker-compose`.
-As soon as the build process finishes, start up Postgres, Kafka, Zookeeper (required by Kafka) and the [Confluent schema registry](http://confluent.io/docs/current/schema-registry/docs/intro.html)
-by running `docker-compose` as follows:
+After the prerequisite applications are installed, you need to build the Docker containers for Bottled Water and Postgres:
 
-    $ docker-compose up -d zookeeper kafka schema-registry postgres
+    $ make docker-compose
+
+Once the build process finishes, set up some required environment variables,
+then start up Postgres, Kafka and the [Confluent schema
+registry](http://confluent.io/docs/current/schema-registry/docs/intro.html) by
+running `docker-compose` as follows:
+
+    $ export KAFKA_ADVERTISED_HOST_NAME=$(docker run --rm debian:jessie ip route | awk '/^default via / { print $3 }') \
+             KAFKA_LOG_CLEANUP_POLICY=compact \
+             KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+    $ docker-compose up -d kafka schema-registry postgres
 
 The `postgres-bw` image extends the
 [official Postgres docker image](https://registry.hub.docker.com/_/postgres/) and adds
@@ -353,8 +361,9 @@ encouraged to include tests that exercise the changed code!
 Status
 ------
 
-This is early alpha-quality software. It will probably break. See
-[Github issues](https://github.com/confluentinc/bottledwater-pg/issues)
+This is early alpha-quality software. It will probably break. See [this discussion
+about production readiness](https://github.com/confluentinc/bottledwater-pg/issues/96),
+and [Github issues](https://github.com/confluentinc/bottledwater-pg/issues)
 for a list of known issues.
 
 Bug reports and pull requests welcome.

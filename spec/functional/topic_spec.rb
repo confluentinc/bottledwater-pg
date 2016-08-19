@@ -39,6 +39,15 @@ describe 'topics', functional: true do
       expect(kazoo.topics).to have_key('things')
     end
 
+    example 'schemas other than "public" are included in the topic name' do
+      postgres.exec('CREATE SCHEMA myapp')
+      postgres.exec('CREATE TABLE myapp.things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO myapp.things (thing) VALUES (42)')
+      sleep 1
+
+      expect(kazoo.topics).to have_key('myapp.things')
+    end
+
     example 'table names with non-alphanumeric characters create a topic based on the sanitised name' do
       silly_name = 'flobble-biscuits?whatisthetime/hahahaha'
 
@@ -68,6 +77,36 @@ describe 'topics', functional: true do
       sleep 1
 
       expect(kazoo.topics).to include(long_name)
+    end
+  end
+
+  describe 'with topic autocreate enabled and --topic-prefix=bottledwater' do
+    before(:context) do
+      TEST_CLUSTER.bottledwater_topic_prefix = 'bottledwater'
+      TEST_CLUSTER.start
+    end
+
+    after(:context) do
+      TEST_CLUSTER.stop
+    end
+
+    after(:example) { kazoo.reset_metadata }
+
+    example 'topic name has the prefix prepended' do
+      postgres.exec('CREATE TABLE things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO things (thing) VALUES (42)')
+      sleep 1
+
+      expect(kazoo.topics).to have_key('bottledwater.things')
+    end
+
+    example 'schemas other than "public" are included in the topic name, after the prefix' do
+      postgres.exec('CREATE SCHEMA myapp')
+      postgres.exec('CREATE TABLE myapp.things (id SERIAL PRIMARY KEY, thing INTEGER NOT NULL)')
+      postgres.exec('INSERT INTO myapp.things (thing) VALUES (42)')
+      sleep 1
+
+      expect(kazoo.topics).to have_key('bottledwater.myapp.things')
     end
   end
 
