@@ -632,7 +632,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     envelope->wal_pos = wal_pos;
     envelope->relid = relid;
     envelope->xact = xact;
-    envelope->key_val = key_val;
+    envelope->key_val = key_val; // this will be used in partitioner call back
     //envelope->new_val = new_val;
 
     void *key = NULL, *val = NULL;
@@ -702,7 +702,19 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 }
 
 /* Called by Kafka producer once per message before it's sent, to compute which partition
- * the message will go to. This function is a wrapper of rd_kafka_msg_partitioner_consistent*/
+ * the message will go to. This function is a wrapper of rd_kafka_msg_partitioner_consistent.
+ * It seems like this will be called before returning from rd_kafka_produce
+ * NOTE this is from librdkafka, in the future please check that note in librakafka
+ /**
+ * Produce: creates a new message, runs the partitioner and enqueues
+ *          into on the selected partition.
+ *
+ * Returns 0 on success or -1 on error.
+ *
+ * If the function returns -1 and RD_KAFKA_MSG_F_FREE was specified, then
+ * the memory associated with the payload is still the caller's
+ * responsibility.
+ */
 static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const void *keydata, size_t keylen,
                                         int32_t partition_cnt, void *rkt_opaque, void *msg_opaque) {
     msg_envelope_t envelope = (msg_envelope_t) msg_opaque;
