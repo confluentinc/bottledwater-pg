@@ -737,12 +737,30 @@ static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const vo
     }
 
 default_partitioner:
-    return rd_kafka_msg_partitioner_consistent_random(rkt,
-                                                      keydata,
-                                                      keylen,
-                                                      partition_cnt,
-                                                      rkt_opaque,
-                                                      msg_opaque);
+if (RD_KAFKA_VERSION >= 0x000901ff)
+    /* librdkafka 0.9.1 provides a "consistent_random" partitioner, which is
+     * a good choice for us: "Uses consistent hashing to map identical keys
+     * onto identical partitions, and messages without keys will be assigned
+     * via the random partitioner." */
+     return rd_kafka_msg_partitioner_consistent_random(rkt,
+                                                       keydata,
+                                                       keylen,
+                                                       partition_cnt,
+                                                       rkt_opaque,
+                                                       msg_opaque);
+else if (RD_KAFKA_VERSION >= 0x00090000)
+    /* librdkafka 0.9.0 provides a "consistent hashing partitioner", which we
+     * can use to ensure that all updates for a given key go to the same
+     * partition.  However, for unkeyed messages (such as we send for tables
+     * with no primary key), it sends them all to the same partition, rather
+     * than randomly partitioning them as would be preferable for scalability.
+     */
+    return rd_kafka_msg_partitioner_consistent(rkt,
+                                               keydata,
+                                               keylen,
+                                               partition_cnt,
+                                               rkt_opaque,
+                                               msg_opaque);
 
 }
 
