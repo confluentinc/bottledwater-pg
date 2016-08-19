@@ -39,7 +39,7 @@ typedef struct {
 } export_state;
 
 void print_tupdesc(char *title, TupleDesc tupdesc);
-void get_table_list(export_state *state, text *table_pattern, text *schema, bool allow_unkeyed);
+void get_table_list(export_state *state, text *table_pattern, text *schema_pattern, bool allow_unkeyed);
 void open_next_table(export_state *state);
 void close_current_table(export_state *state);
 bytea *format_snapshot_row(export_state *state);
@@ -178,7 +178,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
     SRF_RETURN_DONE(funcctx);
 }
 
-/* Queries the PG catalog to get a list of tables (matching the given table name pattern)
+/* Queries the PG catalog to get a list of tables (matching the given table name pattern and schema pattern)
  * that we should export. The pattern is given to the LIKE operator, so "%" means any
  * table. Selects only ordinary tables (no views, foreign tables, etc) and excludes any
  * PG system tables. Updates export_state with the list of tables.
@@ -186,9 +186,9 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
  * Also takes a shared lock on all the tables we're going to export, to make sure they
  * aren't dropped or schema-altered before we get around to reading them. (Ordinary
  * writes to the table, i.e. insert/update/delete, are not affected.) */
-void get_table_list(export_state *state, text *table_pattern, text *schema, bool allow_unkeyed) {
+void get_table_list(export_state *state, text *table_pattern, text *schema_pattern, bool allow_unkeyed) {
     Oid argtypes[] = { TEXTOID, TEXTOID };
-    Datum args[] = { PointerGetDatum(table_pattern), PointerGetDatum(schema) };
+    Datum args[] = { PointerGetDatum(table_pattern), PointerGetDatum(schema_pattern) };
     StringInfoData errors;
 
     int ret = SPI_execute_with_args(

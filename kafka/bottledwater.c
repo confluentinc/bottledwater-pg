@@ -20,7 +20,7 @@
 #define DEFAULT_BROKER_LIST "localhost:9092"
 #define DEFAULT_SCHEMA_REGISTRY "http://localhost:8081"
 
-#define DEFAULT_SCHEMA "%%"
+#define DEFAULT_SCHEMA "%%" // double % is for escaping special character
 #define DEFAULT_TABLE "%%"
 
 #define check(err, call) { err = call; if (err) return err; }
@@ -192,17 +192,22 @@ void usage() {
             "  -e, --on-error=[log|exit]   (default: %s)\n"
             "                          What to do in case of a transient error, such as\n"
             "                          failure to publish to Kafka.\n"
+            "  -o, --schemas=schema1|schema2  (default: all schemas)\n"
+            "                          Pattern specifying which schemas to stream.  If this\n"
+            "                          is not specified, all schemas will be selected.\n"
+            "                          The pattern syntax is as per the SQL `SIMILAR TO` operator: see\n"
+            "         https://www.postgresql.org/docs/current/static/functions-matching.html\n"
+            "  -i, --tables=table1|table2   (default: all tables)\n"
+            "                          Pattern specifying which tables to stream.  If this\n"
+            "                          is not specified, all tables in the selected schemas\n"
+            "                          will be streamed.  The pattern syntax is as per the\n"
+            "                          SQL `SIMILAR TO` operator: see\n"
+            "         https://www.postgresql.org/docs/current/static/functions-matching.html\n"
             "  -C, --kafka-config property=value\n"
             "                          Set global configuration property for Kafka producer\n"
             "                          (see --config-help for list of properties).\n"
             "  -T, --topic-config property=value\n"
             "                          Set topic configuration property for Kafka producer.\n"
-            "  -o, --schemas=value\n"
-            "                          Vertical line-separated list of schemas\n"
-            "                          If not set, default value is %s\n"
-            "  -i, --topics=value\n"
-            "                          Vertical line-separated list of topics\n"
-            "                          If not set, default value is %s\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n",
 
@@ -211,9 +216,7 @@ void usage() {
             DEFAULT_BROKER_LIST,
             DEFAULT_SCHEMA_REGISTRY,
             DEFAULT_OUTPUT_FORMAT_NAME,
-            DEFAULT_ERROR_POLICY_NAME,
-            DEFAULT_SCHEMA,
-            DEFAULT_TABLE);
+            DEFAULT_ERROR_POLICY_NAME);
     exit(1);
 }
 
@@ -229,10 +232,10 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"allow-unkeyed",   no_argument,       NULL, 'u'},
         {"topic-prefix",    required_argument, NULL, 'p'},
         {"on-error",        required_argument, NULL, 'e'},
+        {"schemas",         required_argument, NULL, 'o'},
+        {"tables",          required_argument, NULL, 'i'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
-        {"schemas",         required_argument, NULL, 'o'},
-        {"topics",          required_argument, NULL, 'i'},
         {"config-help",     no_argument,       NULL,  1 },
         {NULL,              0,                 NULL,  0 }
     };
@@ -276,10 +279,10 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_topic_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'i':
-                context->client->repl.tables = optarg;
+                context->client->table_pattern = strdup(optarg);
                 break;
             case 'o':
-                context->client->repl.schema = optarg;
+                context->client->schema_pattern = strdup(optarg);
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
@@ -722,9 +725,12 @@ client_context_t init_client() {
     client->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     client->repl.output_plugin = OUTPUT_PLUGIN;
     client->repl.frame_reader = frame_reader;
-    client->repl.schema = DEFAULT_SCHEMA;
-    client->repl.tables = DEFAULT_TABLE;
-    client->repl.oids = DEFAULT_TABLE;
+    client->schema_pattern = DEFAULT_SCHEMA;
+    client->table_pattern = DEFAULT_TABLE;
+
+    // list id of table from Postgres, default is '%' means every id
+    // https://www.postgresql.org/docs/current/static/functions-matching.html
+    client->table_ids = DEFAULT_TABLE;
     return client;
 }
 
