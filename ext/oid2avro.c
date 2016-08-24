@@ -289,7 +289,10 @@ avro_schema_t schema_for_oid(predef_schema *predef, Oid typid) {
             value_schema = avro_schema_long();
             break;
         case NUMERICOID: /* numeric(p, s), decimal(p, s): arbitrary precision number */
-            value_schema = schema_for_numeric(predef);
+            /* There is no implementation for Decimal type in apache/avro package for c language.
+             * We use logic for "double" type ti avoid "0.0" values.
+             */
+            value_schema = avro_schema_double();
             break;
 
         /* Date/time types. We don't bother with abstime, reltime and tinterval (which are based
@@ -407,7 +410,10 @@ int update_avro_with_datum(avro_value_t *output_val, Oid typid, Datum pg_datum) 
             check(err, avro_value_set_long(&branch_val, DatumGetCommandId(pg_datum)));
             break;
         case NUMERICOID:
-            DatumGetNumeric(pg_datum); // TODO
+            /* There is no implementation for Decimal type in apache/avro package for c language.
+             * We use logic for "double" type ti avoid "0.0" values.
+             */
+            check(err, avro_value_set_double(&branch_val, atof(numeric_normalize(DatumGetNumeric(pg_datum)))));
             break;
         case DATEOID:
             check(err, update_avro_with_date(output_val, DatumGetDateADT(pg_datum)));
