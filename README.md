@@ -135,7 +135,7 @@ For that to work, you need the following dependencies installed:
   Ubuntu: `sudo apt-get install postgresql-server-dev-9.5 libpq-dev`)
 * [libsnappy](https://code.google.com/p/snappy/), a dependency of Avro.
   (Homebrew: `brew install snappy`; Ubuntu: `sudo apt-get install libsnappy-dev`)
-* [avro-c](http://avro.apache.org/), the C implementation of Avro.
+* [avro-c](http://avro.apache.org/) (1.7.7 or later), the C implementation of Avro.
   (Homebrew: `brew install avro-c`; others: build from source)
 * [Jansson](http://www.digip.org/jansson/), a JSON parser.
   (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
