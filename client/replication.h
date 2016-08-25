@@ -26,7 +26,7 @@ typedef replication_stream *replication_stream_t;
 int replication_slot_create(replication_stream_t stream);
 int replication_slot_drop(replication_stream_t stream);
 int replication_stream_check(replication_stream_t stream);
-int replication_stream_start(replication_stream_t stream);
+int replication_stream_start(replication_stream_t stream, const char *error_policy);
 int replication_stream_poll(replication_stream_t stream);
 int replication_stream_keepalive(replication_stream_t stream);
 

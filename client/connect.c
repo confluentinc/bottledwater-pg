@@ -49,9 +49,15 @@ void db_client_free(client_context_t context) {
     if (context->repl.snapshot_name) free(context->repl.snapshot_name);
     if (context->repl.output_plugin) free(context->repl.output_plugin);
     if (context->repl.slot_name) free(context->repl.slot_name);
+    if (context->error_policy) free(context->error_policy);
     if (context->app_name) free(context->app_name);
     if (context->conninfo) free(context->conninfo);
     free(context);
+}
+
+void db_client_set_error_policy(client_context_t context, const char *policy) {
+    if (context->error_policy) free(context->error_policy);
+    context->error_policy = strdup(policy);
 }
 
 
@@ -87,7 +93,7 @@ int db_client_start(client_context_t context) {
     client_sql_disconnect(context);
     context->taking_snapshot = false;
 
-    checkRepl(err, context, replication_stream_start(&context->repl));
+    checkRepl(err, context, replication_stream_start(&context->repl, context->error_policy));
 
     return err;
 }
@@ -113,7 +119,7 @@ int db_client_poll(client_context_t context) {
 
         /* If the snapshot is finished, switch over to the replication stream */
         if (!context->sql_conn) {
-            checkRepl(err, context, replication_stream_start(&context->repl));
+            checkRepl(err, context, replication_stream_start(&context->repl, context->error_policy));
         }
         return err;
 

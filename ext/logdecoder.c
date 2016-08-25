@@ -195,9 +195,9 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
 }
 
 error_policy_t parse_error_policy(const char *str) {
-    if (strcmp("log", str) == 0) {
+    if (strcmp(PROTOCOL_ERROR_POLICY_LOG, str) == 0) {
         return ERROR_POLICY_LOG;
-    } else if (strcmp("exit", str) == 0) {
+    } else if (strcmp(PROTOCOL_ERROR_POLICY_EXIT, str) == 0) {
         return ERROR_POLICY_EXIT;
     } else {
         ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -208,8 +208,8 @@ error_policy_t parse_error_policy(const char *str) {
 
 const char* error_policy_name(error_policy_t policy) {
     switch (policy) {
-        case ERROR_POLICY_LOG: return "log";
-        case ERROR_POLICY_EXIT: return "exit";
+        case ERROR_POLICY_LOG: return PROTOCOL_ERROR_POLICY_LOG;
+        case ERROR_POLICY_EXIT: return PROTOCOL_ERROR_POLICY_EXIT;
         case ERROR_POLICY_UNDEFINED: return "undefined (probably a bug)";
         default: return "unknown (probably a bug)";
     }

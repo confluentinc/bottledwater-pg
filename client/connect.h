@@ -7,6 +7,7 @@
 
 typedef struct {
     char *conninfo, *app_name;
+    char *error_policy;
     PGconn *sql_conn;
     replication_stream repl;
     bool allow_unkeyed;
@@ -21,6 +22,7 @@ typedef client_context *client_context_t;
 
 client_context_t db_client_new(void);
 void db_client_free(client_context_t context);
+void db_client_set_error_policy(client_context_t context, const char *policy);
 int db_client_start(client_context_t context);
 int db_client_poll(client_context_t context);
 int db_client_wait(client_context_t context);
