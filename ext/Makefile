@@ -7,7 +7,7 @@ AVRO_LDFLAGS = $(shell pkg-config --libs avro-c)
 PG_CPPFLAGS += $(AVRO_CFLAGS) -std=c99
 SHLIB_LINK += $(AVRO_LDFLAGS)
 
-OBJS = io_util.o logdecoder.o oid2avro.o schema_cache.o protocol.o protocol_server.o snapshot.o
+OBJS = io_util.o error_policy.o logdecoder.o oid2avro.o schema_cache.o protocol.o protocol_server.o snapshot.o
 DATA = bottledwater--0.1.sql
 
 PG_CONFIG = pg_config

@@ -1,6 +1,7 @@
 #include "io_util.h"
 #include "protocol_server.h"
 #include "oid2avro.h"
+#include "error_policy.h"
 
 #include "replication/logical.h"
 #include "replication/output_plugin.h"
@@ -16,18 +17,6 @@ static void output_avro_shutdown(LogicalDecodingContext *ctx);
 static void output_avro_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn);
 static void output_avro_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn, Relation rel, ReorderBufferChange *change);
-
-
-typedef enum {
-    ERROR_POLICY_UNDEFINED = 0,
-    ERROR_POLICY_LOG,
-    ERROR_POLICY_EXIT
-} error_policy_t;
-
-static const error_policy_t DEFAULT_ERROR_POLICY = ERROR_POLICY_EXIT;
-
-static error_policy_t parse_error_policy(const char *str);
-static const char* error_policy_name(error_policy_t policy);
 
 typedef struct {
     MemoryContext memctx; /* reset after every change event, to prevent leaks */
@@ -192,27 +181,6 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
 
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
-}
-
-error_policy_t parse_error_policy(const char *str) {
-    if (strcmp(PROTOCOL_ERROR_POLICY_LOG, str) == 0) {
-        return ERROR_POLICY_LOG;
-    } else if (strcmp(PROTOCOL_ERROR_POLICY_EXIT, str) == 0) {
-        return ERROR_POLICY_EXIT;
-    } else {
-        ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                    errmsg("invalid error_policy: %s", str)));
-        return ERROR_POLICY_UNDEFINED;
-    }
-}
-
-const char* error_policy_name(error_policy_t policy) {
-    switch (policy) {
-        case ERROR_POLICY_LOG: return PROTOCOL_ERROR_POLICY_LOG;
-        case ERROR_POLICY_EXIT: return PROTOCOL_ERROR_POLICY_EXIT;
-        case ERROR_POLICY_UNDEFINED: return "undefined (probably a bug)";
-        default: return "unknown (probably a bug)";
-    }
 }
 
 void reset_frame(plugin_state *state) {

@@ -8,8 +8,17 @@ describe 'error handling', functional: true, format: :json do
   end
 
   LONG_STRING = ('x' * 2_000_000).freeze
+  LARGE_JSON = JSON.generate({}.tap do |h|
+    100_000.times do |i|
+      h["property#{i}"] = i
+    end
+  end).freeze
 
   let(:postgres) { TEST_CLUSTER.postgres }
+
+  def fetch_json(object, name)
+    JSON.parse(fetch_string(object, name))
+  end
 
   describe 'with --on-error=exit' do
     before(:example) do
@@ -50,6 +59,17 @@ describe 'error handling', functional: true, format: :json do
       sleep 5
 
       expect(TEST_CLUSTER.bottledwater_running?).to be_falsy
+    end
+
+    example 'if existing data contains a large value, Bottled Water crashes during snapshot' do
+      TEST_CLUSTER.before_service(TEST_CLUSTER.bottledwater_service, 'Prepopulating users table') do |cluster|
+        cluster.postgres.exec('CREATE TABLE users (id SERIAL PRIMARY KEY, prefs JSONB)')
+        cluster.postgres.exec_params(%{INSERT INTO users (prefs) VALUES ($1)}, ['{"colour":"red"}'])
+        cluster.postgres.exec_params(%{INSERT INTO users (prefs) VALUES ($1)}, [LARGE_JSON])
+        cluster.postgres.exec_params(%{INSERT INTO users (prefs) VALUES ($1)}, ['{"colour":"blue"}'])
+      end
+
+      expect { TEST_CLUSTER.start }.to raise_error(/bottledwater.* not ready/i)
     end
   end
 
@@ -106,6 +126,23 @@ describe 'error handling', functional: true, format: :json do
       messages = kafka_take_messages('events', 2)
       events = messages.map {|message| fetch_string(decode_value(message.value), 'event') }
       expect(events).to eq(['Wednesday', 'Friday'])
+    end
+
+    example 'if existing data contains a large value, Bottled Water skips that row during snapshot' do
+      TEST_CLUSTER.before_service(TEST_CLUSTER.bottledwater_service, 'Prepopulating users table') do |cluster|
+        cluster.postgres.exec('CREATE TABLE users (id SERIAL PRIMARY KEY, prefs JSONB)')
+        cluster.postgres.exec_params(%{INSERT INTO users (prefs) VALUES ($1)}, ['{"colour":"red"}'])
+        cluster.postgres.exec_params(%{INSERT INTO users (prefs) VALUES ($1)}, [LARGE_JSON])
+        cluster.postgres.exec_params(%{INSERT INTO users (prefs) VALUES ($1)}, ['{"colour":"blue"}'])
+      end
+
+      TEST_CLUSTER.start
+
+      messages = kafka_take_messages('users', 2)
+      prefs = messages.map {|message| fetch_json(decode_value(message.value), 'prefs') }
+      prefs.each {|pref| expect(pref).to have_key('colour') }
+      colours = prefs.map {|pref| pref.fetch('colour') }
+      expect(colours).to eq(['red', 'blue'])
     end
   end
 end
