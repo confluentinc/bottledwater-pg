@@ -354,7 +354,7 @@ const char* error_policy_name(error_policy_t policy) {
     switch (policy) {
         case ERROR_POLICY_LOG: return "log";
         case ERROR_POLICY_EXIT: return "exit";
-        case OUTPUT_FORMAT_UNDEFINED: return "undefined (probably a bug)";
+        case ERROR_POLICY_UNDEFINED: return "undefined (probably a bug)";
         default: return "unknown (probably a bug)";
     }
 }
