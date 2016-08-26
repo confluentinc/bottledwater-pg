@@ -4,6 +4,7 @@
 
 #include "replication/logical.h"
 #include "replication/output_plugin.h"
+#include "utils/builtins.h"
 #include "utils/memutils.h"
 
 /* Entry point when Postgres loads the plugin */
@@ -16,12 +17,25 @@ static void output_avro_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN 
 static void output_avro_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn, Relation rel, ReorderBufferChange *change);
 
+
+typedef enum {
+    ERROR_POLICY_UNDEFINED = 0,
+    ERROR_POLICY_LOG,
+    ERROR_POLICY_EXIT
+} error_policy_t;
+
+static const error_policy_t DEFAULT_ERROR_POLICY = ERROR_POLICY_EXIT;
+
+static error_policy_t parse_error_policy(const char *str);
+static const char* error_policy_name(error_policy_t policy);
+
 typedef struct {
     MemoryContext memctx; /* reset after every change event, to prevent leaks */
     avro_schema_t frame_schema;
     avro_value_iface_t *frame_iface;
     avro_value_t frame_value;
     schema_cache_t schema_cache;
+    error_policy_t error_policy;
 } plugin_state;
 
 void reset_frame(plugin_state *state);
@@ -42,6 +56,8 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
+    ListCell *option;
+
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
     opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
@@ -53,6 +69,26 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     state->frame_iface = avro_generic_class_from_schema(state->frame_schema);
     avro_generic_value_new(state->frame_iface, &state->frame_value);
     state->schema_cache = schema_cache_new(ctx->context);
+
+    foreach(option, ctx->output_plugin_options) {
+        DefElem *elem = lfirst(option);
+        Assert(elem->arg == NULL || IsA(elem->arg, String));
+
+        if (strcmp(elem->defname, "error_policy") == 0) {
+            if (elem->arg == NULL) {
+                ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                        errmsg("No value specified for parameter \"%s\"",
+                            elem->defname)));
+            } else {
+                state->error_policy = parse_error_policy(strVal(elem->arg));
+            }
+        } else {
+            ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                    errmsg("Parameter \"%s\" = \"%s\" is unknown",
+                        elem->defname,
+                        elem->arg ? strVal(elem->arg) : "(null)")));
+        }
+    }
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {
@@ -140,7 +176,15 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
 
     if (err) {
         elog(INFO, "Row conversion failed: %s", schema_debug_info(rel, NULL));
-        elog(ERROR, "output_avro_change: row conversion failed: %s", avro_strerror());
+        switch (state->error_policy) {
+        case ERROR_POLICY_LOG:
+            elog(WARNING, "output_avro_change: row conversion failed: %s", avro_strerror());
+            break;
+        case ERROR_POLICY_EXIT:
+            elog(ERROR, "output_avro_change: row conversion failed: %s", avro_strerror());
+        default:
+            elog(ERROR, "AHHH WTF");
+        }
     }
     if (write_frame(ctx, state)) {
         elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
@@ -148,6 +192,27 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
 
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
+}
+
+error_policy_t parse_error_policy(const char *str) {
+    if (strcmp("log", str) == 0) {
+        return ERROR_POLICY_LOG;
+    } else if (strcmp("exit", str) == 0) {
+        return ERROR_POLICY_EXIT;
+    } else {
+        ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                    errmsg("invalid error_policy: %s", str)));
+        return ERROR_POLICY_UNDEFINED;
+    }
+}
+
+const char* error_policy_name(error_policy_t policy) {
+    switch (policy) {
+        case ERROR_POLICY_LOG: return "log";
+        case ERROR_POLICY_EXIT: return "exit";
+        case ERROR_POLICY_UNDEFINED: return "undefined (probably a bug)";
+        default: return "unknown (probably a bug)";
+    }
 }
 
 void reset_frame(plugin_state *state) {
