@@ -165,18 +165,14 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
 
     if (err) {
         elog(INFO, "Row conversion failed: %s", schema_debug_info(rel, NULL));
-        switch (state->error_policy) {
-        case ERROR_POLICY_LOG:
-            elog(WARNING, "output_avro_change: row conversion failed: %s", avro_strerror());
-            break;
-        case ERROR_POLICY_EXIT:
-            elog(ERROR, "output_avro_change: row conversion failed: %s", avro_strerror());
-        default:
-            elog(ERROR, "AHHH WTF");
-        }
+        error_policy_handle(state->error_policy, "output_avro_change: row conversion failed", avro_strerror());
+        /* if handling the error didn't exit early, it should be safe to fall
+         * through, because we'll just write the frame without the message that
+         * failed (so potentially it'll be an empty frame)
+         */
     }
     if (write_frame(ctx, state)) {
-        elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
+        error_policy_handle(state->error_policy, "output_avro_change: writing Avro binary failed", avro_strerror());
     }
 
     MemoryContextSwitchTo(oldctx);

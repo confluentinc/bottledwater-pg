@@ -174,7 +174,9 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
             /* don't forget to clear the SPI temp context */
             SPI_freetuptable(SPI_tuptable);
 
-            SRF_RETURN_NEXT(funcctx, PointerGetDatum(result));
+            if (result != NULL) {
+                SRF_RETURN_NEXT(funcctx, PointerGetDatum(result));
+            }
         }
     }
 
@@ -340,18 +342,16 @@ bytea *format_snapshot_row(export_state *state) {
             SPI_tuptable->tupdesc, SPI_tuptable->vals[0])) {
         elog(INFO, "Failed tuptable: %s", schema_debug_info(table->rel, SPI_tuptable->tupdesc));
         elog(INFO, "Failed relation: %s", schema_debug_info(table->rel, RelationGetDescr(table->rel)));
-        switch (state->error_policy) {
-        case ERROR_POLICY_LOG:
-            elog(WARNING, "bottledwater_export: Avro conversion failed: %s", avro_strerror());
-            break;
-        case ERROR_POLICY_EXIT:
-            elog(ERROR, "bottledwater_export: Avro conversion failed: %s", avro_strerror());
-        default:
-            elog(ERROR, "AHHH WTF");
-        }
+        error_policy_handle(state->error_policy, "bottledwater_export: Avro conversion failed", avro_strerror());
+        /* if handling the error didn't exit early, it should be safe to fall
+         * through, because we'll just write the frame without the message that
+         * failed (so potentially it'll be an empty frame)
+         */
     }
     if (try_writing(&output, &write_avro_binary, &state->frame_value)) {
-        elog(ERROR, "bottledwater_export: writing Avro binary failed: %s", avro_strerror());
+        error_policy_handle(state->error_policy, "bottledwater_export: writing Avro binary failed", avro_strerror());
+        /* if we didn't exit early, then output remains uninitialised */
+        return NULL;
     }
     return output;
 }

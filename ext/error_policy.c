@@ -24,3 +24,17 @@ const char* error_policy_name(error_policy_t policy) {
         default: return "unknown (probably a bug)";
     }
 }
+
+
+void error_policy_handle(error_policy_t policy, const char *message, const char *error) {
+    switch (policy) {
+    case ERROR_POLICY_LOG:
+        elog(WARNING, "%s: %s", message, error);
+        break;
+    case ERROR_POLICY_EXIT:
+        elog(ERROR, "%s: %s", message, error);
+    default:
+        elog(WARNING, "%s: %s", message, error);
+        elog(ERROR, "error_policy_handle: unknown error policy!");
+    }
+}
