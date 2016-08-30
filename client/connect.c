@@ -50,7 +50,9 @@ client_context_t db_client_new() {
 void db_client_free(client_context_t context) {
     if (context->sql_conn) PQfinish(context->sql_conn);
     if (context->repl.conn) PQfinish(context->repl.conn);
-    if (context->repl.table_ids && strcmp(context->repl.table_ids, DEFAULT_TABLE) != 0) free(context->repl.table_ids);
+    if (context->repl.table_ids) free(context->repl.table_ids);
+    if (context->repl.schema_pattern) free(context->repl.schema_pattern);
+    if (context->repl.table_pattern) free(context->repl.table_pattern);
     if (context->repl.snapshot_name) free(context->repl.snapshot_name);
     free(context);
 }

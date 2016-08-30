@@ -8,7 +8,7 @@ echo "+----------------------------+"
 ###
 ###
 ORG_DIR=$(pwd)
-PACK_DIR=bottledwater-0.4
+PACK_DIR=bottledwater-0.4.2
 EXECUTABLE=bottledwater
 
 make clean && make

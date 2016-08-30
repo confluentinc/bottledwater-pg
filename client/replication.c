@@ -146,7 +146,7 @@ int replication_stream_check(replication_stream_t stream) {
  * add options similar to that pattern after () separated by comma */
 int replication_stream_start(replication_stream_t stream) {
     PQExpBuffer query = createPQExpBuffer();
-    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"table_ids\" \'%s\')",
+    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"table_ids\" '%s')",
             stream->slot_name,
             (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn,
             stream->table_ids);
@@ -196,13 +196,10 @@ int replication_stream_poll(replication_stream_t stream) {
                     PQerrorMessage(stream->conn));
             err = EIO;
         }
-        //if (buf) PQfreemem(buf);
+        if (buf) PQfreemem(buf);
         stream->status = ret;
-        //return err;
-        // this is very tricky that what we should do incase of database error
-        // what we should do, ignore it and send keepalive messages
-        // we log the error for more investigate
-        goto repl_error_handle;
+        return err;
+        // goto repl_error_handle;
     }
 
     if (ret > 0) {
@@ -223,12 +220,9 @@ int replication_stream_poll(replication_stream_t stream) {
     }
 
 
-repl_error_handle:
+// repl_error_handle:
     /* Periodically let the server know up to which point we've consumed the stream. */
-    // if (!err) err = replication_stream_keepalive(stream);
-    /* Because we dont want BW to stop despite of error appears, so we should send replication_stream_keepalive msg anyway*/
-    err = replication_stream_keepalive(stream);
-
+    if (!err) err = replication_stream_keepalive(stream);
     if (buf) PQfreemem(buf);
     return err;
 }

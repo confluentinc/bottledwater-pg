@@ -13,7 +13,7 @@ echo "+----------------------------+"
 ORG_DIR=$(pwd)
 PG_SHAREDIR=$(pg_config --sharedir)
 PG_LIBDIR=$(pg_config --libdir)
-PACK_DIR=bottledwater-0.4
+PACK_DIR=bottledwater-0.4.2
 
 make clean && make
 mkdir -p ${PACK_DIR}/RPMBUILD

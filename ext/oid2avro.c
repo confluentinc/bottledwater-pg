@@ -753,7 +753,7 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
     char *str;
 
     getTypeOutputInfo(typid, &output_func, &is_varlena);
-    if (is_varlena) {
+    if (is_varlena && !VARATT_IS_EXTERNAL_ONDISK(pg_datum)) {
         pg_datum = PointerGetDatum(PG_DETOAST_DATUM(pg_datum));
     }
 

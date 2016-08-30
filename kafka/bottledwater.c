@@ -895,9 +895,9 @@ client_context_t init_client() {
     client->repl.slot_name = DEFAULT_REPLICATION_SLOT;
     client->repl.output_plugin = OUTPUT_PLUGIN;
     client->repl.frame_reader = frame_reader;
-    client->repl.schema_pattern = DEFAULT_SCHEMA;
-    client->repl.table_pattern = DEFAULT_TABLE;
-    client->repl.table_ids = DEFAULT_TABLE;
+    client->repl.schema_pattern = strdup(DEFAULT_SCHEMA);
+    client->repl.table_pattern = strdup(DEFAULT_TABLE);
+    client->repl.table_ids = strdup(DEFAULT_TABLE);
     return client;
 }
 
@@ -1032,12 +1032,8 @@ int main(int argc, char **argv) {
                  (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
     }
 
-    while (!received_shutdown_signal) {
-        if (context->client->status < 0 && context->error_policy == ERROR_POLICY_EXIT) {
-            log_info("There's an error, and your policy is exit on error, so BW will stop, If you dont want this behavior,\
-                      please set error policy to log on error instead.");
-            break;
-        }
+    while (context->client->status >= 0 && !received_shutdown_signal) {
+
         ensure(context, db_client_poll(context->client));
 
         if (context->client->status == 0) {
