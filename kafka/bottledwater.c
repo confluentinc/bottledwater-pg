@@ -67,7 +67,7 @@ typedef enum {
     ERROR_POLICY_EXIT
 } error_policy_t;
 
-static const char* DEFAULT_ERROR_POLICY_NAME = "exit";
+static const char* DEFAULT_ERROR_POLICY_NAME = PROTOCOL_ERROR_POLICY_EXIT;
 static const error_policy_t DEFAULT_ERROR_POLICY = ERROR_POLICY_EXIT;
 
 
@@ -340,20 +340,22 @@ const char* output_format_name(format_t format) {
 }
 
 void set_error_policy(producer_context_t context, char *policy) {
-    if (!strcmp("log", policy)) {
+    if (!strcmp(PROTOCOL_ERROR_POLICY_LOG, policy)) {
         context->error_policy = ERROR_POLICY_LOG;
-    } else if (!strcmp("exit", policy)) {
+    } else if (!strcmp(PROTOCOL_ERROR_POLICY_EXIT, policy)) {
         context->error_policy = ERROR_POLICY_EXIT;
     } else {
         config_error("invalid error policy (expected log or exit): %s", policy);
         exit(1);
     }
+
+    db_client_set_error_policy(context->client, policy);
 }
 
 const char* error_policy_name(error_policy_t policy) {
     switch (policy) {
-        case ERROR_POLICY_LOG: return "log";
-        case ERROR_POLICY_EXIT: return "exit";
+        case ERROR_POLICY_LOG: return PROTOCOL_ERROR_POLICY_LOG;
+        case ERROR_POLICY_EXIT: return PROTOCOL_ERROR_POLICY_EXIT;
         case ERROR_POLICY_UNDEFINED: return "undefined (probably a bug)";
         default: return "unknown (probably a bug)";
     }
@@ -744,6 +746,7 @@ client_context_t init_client() {
 
     client_context_t client = db_client_new();
     client->app_name = strdup(APP_NAME);
+    db_client_set_error_policy(client, DEFAULT_ERROR_POLICY_NAME);
     client->allow_unkeyed = false;
     client->repl.slot_name = strdup(DEFAULT_REPLICATION_SLOT);
     client->repl.output_plugin = strdup(OUTPUT_PLUGIN);

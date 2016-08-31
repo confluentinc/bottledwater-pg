@@ -40,6 +40,10 @@ shared_examples 'type specs' do
     include_examples 'roundtrip type', "boolean", true
   end
 
+  describe 'bottledwater_error_policy' do
+    example('internal type not supported') {}
+  end
+
   describe 'box' do
     include_examples 'geometric type', "box", "(3,4),(0,0)"
   end

@@ -143,11 +143,12 @@ int replication_stream_check(replication_stream_t stream) {
 
 /* Starts streaming logical changes from replication slot stream->slot_name,
  * starting from position stream->start_lsn. */
-int replication_stream_start(replication_stream_t stream) {
+int replication_stream_start(replication_stream_t stream, const char *error_policy) {
     PQExpBuffer query = createPQExpBuffer();
-    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X",
+    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"error_policy\" '%s')",
             stream->slot_name,
-            (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn);
+            (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn,
+            error_policy);
 
     PGresult *res = PQexec(stream->conn, query->data);
 

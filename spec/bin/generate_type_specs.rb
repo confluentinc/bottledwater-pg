@@ -97,6 +97,7 @@ BOUNDED_LENGTH_TYPES = Set[*%w(
 INTERNAL_TYPES = Set[*%w(
   abstime
   aclitem
+  bottledwater_error_policy
   "char"
   cid
   ghstore
