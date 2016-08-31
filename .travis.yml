@@ -8,6 +8,8 @@ install:
   - make -j5 test-bundle
 script:
   - make -j5 docker-compose
+  # Quick sanity check that the build succeeded: run bottledwater --help
+  - docker run --rm local-bottledwater:dev --help
   - make test 2>make-test.err
   # We log VALGRIND_ERROR if Valgrind detected any errors during the tests;
   # see check_valgrind_errors in spec/test_cluster.rb
