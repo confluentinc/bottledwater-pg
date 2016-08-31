@@ -342,7 +342,7 @@ If you want to work on the Bottled Water codebase, the [Docker setup](#running-i
 a good place to start.
 
 Bottled Water ships with a [test suite](spec) that [verifies basic
-functionality](spec/functional/smoke_spec.rb), [documents supported Postgres
+functionality](spec/functional/message_spec.rb), [documents supported Postgres
 types](spec/functional/type_specs.rb) and [tests message publishing
 semantics](spec/functional/partitioning_spec.rb).  The test suite also relies on Docker and
 Docker Compose.  To run it:
