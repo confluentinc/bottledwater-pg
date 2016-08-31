@@ -201,11 +201,19 @@ Bottled Water as follows:
 
 The first time this runs, it will create a replication slot called `bottledwater`,
 take a consistent snapshot of your database, and send it to Kafka. (You can change the
-name of the replication slot with a command line flag.) When the snapshot is complete,
-it switches to consuming the replication stream.
+name of the replication slot with the `--slot` [command line
+flag](#command-line-options).) When the snapshot is complete, it switches to consuming
+the replication stream.
 
 If the slot already exists, the tool assumes that no snapshot is needed, and simply
 resumes the replication stream where it last left off.
+
+In some scenarios, if you only care about streaming ongoing changes (and not
+replicating the existing database contents into Kafka), you may want to skip the
+snapshot - e.g. to avoid the performance overhead of taking the snapshot, or because
+you are repointing Bottled Water at a newly promoted replica.  In that case, you can
+pass `--skip-snapshot` at the [command line](#command-line-options).  (This option is
+ignored if the replication slot already exists.)
 
 When you no longer want to run Bottled Water, you have to drop its replication slot
 (otherwise you'll eventually run out of disk space, as the open replication slot
@@ -249,8 +257,9 @@ However, in some scenarios, exiting on the first error may not be desirable:
 To support these scenarios, Bottled Water supports an alternative error handling
 policy where it will simply log that the error occurred and drop the update it was
 attempting to process, acknowledging the update so that Postgres can stop retaining
-WAL.  This policy can be enabled via the `--on-error` command-line switch.  N.B. that
-in this mode Bottled Water can no longer guarantee to never miss an update.
+WAL.  This policy can be enabled via the `--on-error` [command-line
+switch](#command-line-options).  N.B. that in this mode Bottled Water can no longer
+guarantee to never miss an update.
 
 
 Consuming data
@@ -264,9 +273,10 @@ is null, which allows Kafka's [log compaction](http://kafka.apache.org/documenta
 to garbage-collect deleted values.
 
 If a table doesn't have a primary key or replica identity index, Bottled Water will
-complain and refuse to start. You can override this with the `--allow-unkeyed` option.
-Any inserts and updates to tables without primary key or replica identity will be
-sent to Kafka as messages without a key. Deletes to such tables are not sent to Kafka.
+complain and refuse to start. You can override this with the `--allow-unkeyed`
+[option](#command-line-options).  Any inserts and updates to tables without primary
+key or replica identity will be sent to Kafka as messages without a key. Deletes to
+such tables are not sent to Kafka.
 
 Messages are written to Kafka by default in a binary Avro encoding, which is
 efficient, but not human-readable. To view the contents of a Kafka topic, you can use
@@ -280,7 +290,7 @@ the Avro console consumer:
 
 Bottled Water currently supports writing messages to Kafka in one of two output
 formats: Avro, or JSON.  The output format is configured via the `--output-format`
-command-line switch.
+[command-line switch](#command-line-options).
 
 Avro is recommended for large scale use, since it uses a much more efficient binary
 encoding for messages, defines rules for [schema
@@ -348,7 +358,8 @@ If this disagrees with the output of `bottledwater --help`, then `--help` is cor
    Connection string or URI of the PostgreSQL server.
 
  * `-s`, `--slot=slotname` *(default: bottledwater)*:
-   Name of replication slot.  The slot is automatically created on first use.
+   Name of [replication slot](#configuration).  The slot is automatically created on
+   first use.
 
  * `-b`, `--broker=host1[:port1],host2[:port2]...` *(default: localhost:9092)*:
    Comma-separated list of Kafka broker hosts/ports.
@@ -358,33 +369,37 @@ If this disagrees with the output of `bottledwater --help`, then `--help` is cor
    `--output-format=avro`.  Omit when `--output-format=json`.)
 
  * `-f`, `--output-format=[avro|json]` *(default: avro)*:
-   How to encode the messages for writing to Kafka.
+   How to encode the messages for writing to Kafka.  See discussion of [output
+   formats](#output-formats).
 
  * `-u`, `--allow-unkeyed`:
-   Allow export of tables that don't have a primary key.  This is disallowed by
-   default, because updates and deletes need a primary key to identify their row.
+   Allow export of tables that don't have a primary key.  This is [disallowed by
+   default](#consuming-data), because updates and deletes need a primary key to
+   identify their row.
 
  * `-p`, `--topic-prefix=prefix`:
    String to prepend to all topic names.  e.g. with `--topic-prefix=postgres`, updates
    from table "users" will be written to topic "postgres.users".
 
  * `-e`, `--on-error=[log|exit]` *(default: exit)*:
-   What to do in case of a transient error, such as failure to publish to Kafka.
+   What to do in case of a transient error, such as failure to publish to Kafka.  See
+   discussion of [error handling](#error-handling).
 
  * `-x`, `--skip-snapshot`:
-   Skip taking a consistent snapshot of the existing database contents and just start
-   streaming any new updates.  (Ignored if the replication slot already exists.)
+   Skip taking a [consistent snapshot](#configuration) of the existing database
+   contents and just start streaming any new updates.  (Ignored if the replication
+   slot already exists.)
 
  * `-C`, `--kafka-config property=value`:
-   Set global configuration property for Kafka producer (see `--config-help` for list
-   of properties).
+   Set global configuration property for Kafka producer (see [librdkafka
+   docs](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)).
 
  * `-T`, `--topic-config property=value`:
-   Set topic configuration property for Kafka producer.
+   Set topic configuration property for Kafka producer (see [librdkafka
+   docs](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)).
 
  * `--config-help`:
-   Print the list of configuration properties. See also:
-   https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+   Print the list of Kafka configuration properties.
 
  * `-h`, `--help`: Print this help text.
 
