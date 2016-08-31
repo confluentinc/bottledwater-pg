@@ -1,9 +1,11 @@
 #include "io_util.h"
 #include "protocol_server.h"
 #include "oid2avro.h"
+#include "error_policy.h"
 
 #include "replication/logical.h"
 #include "replication/output_plugin.h"
+#include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/builtins.h"
 #include "nodes/parsenodes.h"
@@ -25,6 +27,7 @@ typedef struct {
     avro_value_t frame_value;
     schema_cache_t schema_cache;
     List *table_oid_list;
+    error_policy_t error_policy;
 } plugin_state;
 
 void reset_frame(plugin_state *state);
@@ -46,7 +49,7 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
-    ListCell *option, *l;
+    ListCell *option;
     List *table_oid_list;
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
@@ -68,33 +71,37 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
       Assert(elem->arg == NULL || IsA(elem->arg, String));
 
       if (strcmp(elem->defname, "table_ids") == 0) {
+            if (elem->arg == NULL) {
+                ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                        errmsg("No value specified for parameter \"%s\"",
+                             elem->defname)));
+            } else {
+                if (strcmp(strVal(elem->arg), "%%") != 0) {
+                        // stringToQualifiedNameList splits up the dot-separated list of string
+                        // in our case is a list of table oids separated by dot.
+                        table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
+                        foreach(l, table_oid_list) {
+                             state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
+                        }
+                        list_free(table_oid_list);
+                }
+            }
 
-        if (elem->arg == NULL) {
-          ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                          errmsg("No value specified for parameter \"%s\"",
-                          elem->defname)));
-        } else {
-            if (strcmp(strVal(elem->arg), "%%") != 0) {
-                 // stringToQualifiedNameList splits up the dot-separated list of string
-                 // in our case is a list of table oids separated by dot.
-                 table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
-                 foreach(l, table_oid_list) {
-                         state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
-                 }
-                 list_free(table_oid_list);
-               }
-        }
-
+      } else if (strcmp(elem->defname, "error_policy") == 0) {
+            if (elem->arg == NULL) {
+                ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                        errmsg("No value specified for parameter \"%s\"",
+                            elem->defname)));
+            } else {
+                state->error_policy = parse_error_policy(strVal(elem->arg));
+            }
       } else {
-
-        ereport(INFO,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("option \"%s\" = \"%s\" is unknown",
-							elem->defname,
-							elem->arg ? strVal(elem->arg) : "(null)")));
-
+            ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                    errmsg("Parameter \"%s\" = \"%s\" is unknown",
+                        elem->defname,
+                        elem->arg ? strVal(elem->arg) : "(null)")));
       }
-    }
+   }
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {
@@ -188,10 +195,14 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
 
     if (err) {
         elog(INFO, "Row conversion failed: %s", schema_debug_info(rel, NULL));
-        elog(ERROR, "output_avro_change: row conversion failed: %s", avro_strerror());
+        error_policy_handle(state->error_policy, "output_avro_change: row conversion failed", avro_strerror());
+        /* if handling the error didn't exit early, it should be safe to fall
+         * through, because we'll just write the frame without the message that
+         * failed (so potentially it'll be an empty frame)
+         */
     }
     if (write_frame(ctx, state)) {
-        elog(ERROR, "output_avro_change: writing Avro binary failed: %s", avro_strerror());
+        error_policy_handle(state->error_policy, "output_avro_change: writing Avro binary failed", avro_strerror());
     }
 
 context_reset:
