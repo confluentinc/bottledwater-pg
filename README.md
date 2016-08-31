@@ -476,10 +476,14 @@ encouraged to include tests that exercise the changed code!
 Status
 ------
 
-This is early alpha-quality software. It will probably break. See [this discussion
-about production readiness](https://github.com/confluentinc/bottledwater-pg/issues/96),
-and [Github issues](https://github.com/confluentinc/bottledwater-pg/issues)
-for a list of known issues.
+Bottled Water has been tested on a variety of use cases and Postgres schemas, and is
+believed to be fairly stable.  In particular, because of its design, it is unlikely to
+corrupt the data in Postgres. However, it has not yet been run on large production
+databases, or for long periods of time, so proceed with caution if you intend to use
+it in production.  See [this discussion about production
+readiness](https://github.com/confluentinc/bottledwater-pg/issues/96), and [Github
+issues](https://github.com/confluentinc/bottledwater-pg/issues) for a list of known
+issues.
 
 Bug reports and pull requests welcome.
 
