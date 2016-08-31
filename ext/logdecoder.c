@@ -49,7 +49,7 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
-    ListCell *option;
+    ListCell *option, *l;
     List *table_oid_list;
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
