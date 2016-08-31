@@ -190,7 +190,7 @@ void usage() {
             "  -p, --topic-prefix=prefix\n"
             "                          String to prepend to all topic names.\n"
             "                          e.g. with --topic-prefix=postgres, updates from table\n"
-            "                          'users' will be written to topic 'postgres-users'.\n"
+            "                          'users' will be written to topic 'postgres.users'.\n"
             "  -e, --on-error=[log|exit]   (default: %s)\n"
             "                          What to do in case of a transient error, such as\n"
             "                          failure to publish to Kafka.\n"
