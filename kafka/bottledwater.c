@@ -592,7 +592,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     size_t key_encoded_len, val_encoded_len;
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
-        log_error("relid %d" PRIu32 " has no registered schema", relid);
+        log_error("relid %" PRIu32 " has no registered schema", relid);
         return 1;
     }
 
