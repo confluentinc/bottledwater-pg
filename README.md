@@ -135,14 +135,14 @@ For that to work, you need the following dependencies installed:
   Ubuntu: `sudo apt-get install postgresql-server-dev-9.5 libpq-dev`)
 * [libsnappy](https://code.google.com/p/snappy/), a dependency of Avro.
   (Homebrew: `brew install snappy`; Ubuntu: `sudo apt-get install libsnappy-dev`)
-* [avro-c](http://avro.apache.org/) (1.7.7 or later), the C implementation of Avro.
+* [avro-c](http://avro.apache.org/) (1.8.0 or later), the C implementation of Avro.
   (Homebrew: `brew install avro-c`; others: build from source)
 * [Jansson](http://www.digip.org/jansson/), a JSON parser.
   (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
 * [libcurl](http://curl.haxx.se/libcurl/), a HTTP client.
   (Homebrew: `brew install curl`; Ubuntu: `sudo apt-get install libcurl4-openssl-dev`)
 * [librdkafka](https://github.com/edenhill/librdkafka) (0.9.1 or later), a Kafka client.
-  (Ubuntu universe: `sudo apt-get install librdkafka-dev`, but see [known gotchas](#known-gotchas-with-older-librdkafka-versions); others: build from source)
+  (Ubuntu universe: `sudo apt-get install librdkafka-dev`, but see [known gotchas](#known-gotchas-with-older-dependencies); others: build from source)
 
 You can see the Dockerfile for
 [building the quickstart images](https://github.com/ept/bottledwater-pg/blob/master/build/Dockerfile.build)
@@ -305,12 +305,47 @@ without good Avro library support.  JSON is human readable, and widely supported
 programming languages.  JSON output does not require a schema registry.
 
 
-Known gotchas with older librdkafka versions
---------------------------------------------
+### Topic names
 
-It is recommended to compile Bottled Water against librdkafka version 0.9.1 or
-later.  However, Bottled Water will work with older librdkafka versions, with
-degraded functionality.
+For each table being streamed, Bottled Water publishes messages to a corresponding
+Kafka topic.  The naming convention for topics is
+*\[topic_prefix\].\[postgres_schema_name\].table_name*:
+
+ * *table_name* is the name of the table in Postgres.
+ * *postgres_schema_name* is the name of the Postgres
+   [schema](https://www.postgresql.org/docs/current/static/sql-createschema.html) the
+   table belongs to; this is omitted if the schema is "public" (the default schema
+   under the default Postgres configuration).  N.B. this requires the avro-c library
+   to be [at least version 0.8.0](#avro-c--080-schema-omitted-from-topic-name).
+ * *topic_prefix* is omitted by default, but may be configured via the
+   `--topic-prefix` [command-line option](#command-line-options).  A prefix is useful:
+       * to prevent name collisions with other topics, if the Kafka broker is also
+         being used for other purposes besides Bottled Water.
+       * if you want to stream several databases into the same broker, using a
+         separate Bottled Water instance with a different prefix for each database.
+       * to make it easier for a Kafka consumer to consume updates from all Postgres
+         tables, by using a topic regex that matches the prefix.
+
+For example:
+
+ * with no prefix configured, a table named "users" in the public (default) schema
+   would be streamed to a topic named "users".
+ * with `--topic-prefix=bottledwater`, a table named "transactions" in the
+   "point-of-sale" schema would be streamed to a topic named
+   "bottledwater.point-of-sale.transactions".
+
+(Support for [namespaces in
+Kafka](https://cwiki.apache.org/confluence/display/KAFKA/KIP-37+-+Add+Namespaces+to+Kafka)
+has been proposed that would replace this sort of ad-hoc prefixing, but it's still
+under discussion.)
+
+
+Known gotchas with older dependencies
+-------------------------------------
+
+It is recommended to compile Bottled Water against the versions of librdkafka and
+avro-c specified [above](#building-from-source).  However, Bottled Water may work with
+older versions, with degraded functionality.
 
 At time of writing, the librdkafka-dev packages in the official Ubuntu repositories
 (for all releases up to 15.10) contain a release prior to 0.8.6.  This means if you
@@ -343,6 +378,16 @@ to partition 0, then a subsequent delete for row 42 goes to partition 1, then
 log compaction will be unable to garbage-collect the insert).  It will also
 break any consumer relying on seeing all updates relating to a given key (e.g.
 for a stream-table join).
+
+### avro-c &lt; 0.8.0: schema omitted from topic name
+
+Bottled Water encodes the Postgres schema to which tables belong in the Avro schema
+namespace.  Support for accessing the schema namespace was added to the Avro C library
+in version 0.8.0, so prior releases do not have access to this information.
+
+If Bottled Water is compiled against a version of avro-c prior to 0.8.0, the schema
+will be omitted from the [Kafka topic name](#topic-names).  This means that tables
+with the same names in different schemas will have changes streamed to the same topic.
 
 
 Command-line options
@@ -378,8 +423,9 @@ If this disagrees with the output of `bottledwater --help`, then `--help` is cor
    identify their row.
 
  * `-p`, `--topic-prefix=prefix`:
-   String to prepend to all topic names.  e.g. with `--topic-prefix=postgres`, updates
-   from table "users" will be written to topic "postgres.users".
+   String to prepend to all [topic names](#topic-names).  e.g. with
+   `--topic-prefix=postgres`, updates from table "users" will be written to topic
+   "postgres.users".
 
  * `-e`, `--on-error=[log|exit]` *(default: exit)*:
    What to do in case of a transient error, such as failure to publish to Kafka.  See
