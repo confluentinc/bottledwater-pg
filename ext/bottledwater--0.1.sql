@@ -21,7 +21,7 @@ CREATE DOMAIN bottledwater_error_policy AS text
 CREATE OR REPLACE FUNCTION bottledwater_export(
         table_pattern text    DEFAULT '%',
         schema_pattern  text    DEFAULT '%',
-        allow_unkeyed boolean DEFAULT false
+        allow_unkeyed boolean DEFAULT false,
         error_policy bottledwater_error_policy DEFAULT 'exit'
     ) RETURNS setof bytea
     AS 'bottledwater', 'bottledwater_export' LANGUAGE C VOLATILE STRICT;
