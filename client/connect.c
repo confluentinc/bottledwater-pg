@@ -47,9 +47,9 @@ client_context_t db_client_new() {
 void db_client_free(client_context_t context) {
     client_sql_disconnect(context);
     if (context->repl.conn) PQfinish(context->repl.conn);
-    if (context->table_pattern && strcmp(context->table_pattern, "%%")) free(context->table_pattern);
-    if (context->schema_pattern && strcmp(context->schema_pattern, "%%")) free(context->schema_pattern);
-    if (context->repl.table_ids && strcmp(context->repl.table_ids, "%%")) free(context->repl.table_ids);
+    if (context->table_pattern) free(context->table_pattern);
+    if (context->schema_pattern) free(context->schema_pattern);
+    if (context->repl.table_ids) free(context->repl.table_ids);
     if (context->repl.snapshot_name) free(context->repl.snapshot_name);
     if (context->repl.output_plugin) free(context->repl.output_plugin);
     if (context->repl.slot_name) free(context->repl.slot_name);
@@ -433,12 +433,6 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
 /* Lookup for table oids from schema_pattern and table_pattern
    If schema_pattern == % and table_pattern == % then BW will get all tables in db */
 int lookup_table_oids(client_context_t context) {
-
-    if (strcmp(context->table_pattern, "%%") == 0 && strcmp(context->schema_pattern, "%%") == 0) {
-        // All tables will be streamed
-        return 0;
-    }
-
     PQExpBuffer query = createPQExpBuffer();
     appendPQExpBuffer(query,
           "SELECT c.oid"

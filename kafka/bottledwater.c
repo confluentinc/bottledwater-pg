@@ -22,8 +22,8 @@
 #define DEFAULT_BROKER_LIST "localhost:9092"
 #define DEFAULT_SCHEMA_REGISTRY "http://localhost:8081"
 
-#define DEFAULT_SCHEMA "%%" // double % is for escaping special character
-#define DEFAULT_TABLE "%%"
+#define DEFAULT_SCHEMA_PATTERN ""
+#define DEFAULT_TABLE_PATTERN ""
 
 #define TABLE_NAME_BUFFER_LENGTH 128
 
@@ -200,7 +200,8 @@ void usage() {
             "  -o, --schemas=schema1|schema2  (default: all schemas)\n"
             "                          Pattern specifying which schemas to stream.  If this\n"
             "                          is not specified, all schemas will be selected.\n"
-            "                          The pattern syntax is as per the SQL `SIMILAR TO` operator: see\n"
+            "                          The pattern syntax is as per the SQL\n"
+            "                          `SIMILAR TO` operator: see\n"
             "         https://www.postgresql.org/docs/current/static/functions-matching.html\n"
             "  -i, --tables=table1|table2   (default: all tables)\n"
             "                          Pattern specifying which tables to stream.  If this\n"
@@ -591,7 +592,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     size_t key_encoded_len, val_encoded_len;
     table_metadata_t table = table_mapper_lookup(context->mapper, relid);
     if (!table) {
-        log_error("relid %" PRIu32 " has no registered schema", relid);
+        log_error("relid %d" PRIu32 " has no registered schema", relid);
         return 1;
     }
 
@@ -773,12 +774,9 @@ client_context_t init_client() {
     client->repl.slot_name = strdup(DEFAULT_REPLICATION_SLOT);
     client->repl.output_plugin = strdup(OUTPUT_PLUGIN);
     client->repl.frame_reader = frame_reader;
-    client->schema_pattern = DEFAULT_SCHEMA;
-    client->table_pattern = DEFAULT_TABLE;
-
-    // list id of table from Postgres, default is '%' means every id
-    // https://www.postgresql.org/docs/current/static/functions-matching.html
-    client->repl.table_ids = DEFAULT_TABLE;
+    client->schema_pattern = strdup(DEFAULT_SCHEMA_PATTERN);
+    client->table_pattern = strdup(DEFAULT_TABLE_PATTERN);
+    client->repl.table_ids = strdup(DEFAULT_TABLE_PATTERN);
     return client;
 }
 

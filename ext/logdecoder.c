@@ -76,15 +76,14 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                         errmsg("No value specified for parameter \"%s\"",
                              elem->defname)));
             } else {
-                if (strcmp(strVal(elem->arg), "%%") != 0) {
-                        // stringToQualifiedNameList splits up the dot-separated list of string
-                        // in our case is a list of table oids separated by dot.
-                        table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
-                        foreach(l, table_oid_list) {
-                             state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
-                        }
-                        list_free(table_oid_list);
+                // stringToQualifiedNameList splits up the dot-separated list of string
+                // in our case is a list of table oids separated by dot.
+                table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
+                foreach(l, table_oid_list) {
+                    state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
                 }
+                list_free(table_oid_list);
+
             }
 
       } else if (strcmp(elem->defname, "error_policy") == 0) {
