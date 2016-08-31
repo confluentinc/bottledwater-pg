@@ -199,7 +199,7 @@ Bottled Water as follows:
 
     ./kafka/bottledwater --postgres=postgres://localhost
 
-The first time this runs, it will create a replication slot called `bottedwater`,
+The first time this runs, it will create a replication slot called `bottledwater`,
 take a consistent snapshot of your database, and send it to Kafka. (You can change the
 name of the replication slot with a command line flag.) When the snapshot is complete,
 it switches to consuming the replication stream.
