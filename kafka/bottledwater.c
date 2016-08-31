@@ -279,7 +279,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
-                exit(1);
+                exit(0);
                 break;
             case 'h':
                 usage(0);
