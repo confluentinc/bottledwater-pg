@@ -335,6 +335,60 @@ break any consumer relying on seeing all updates relating to a given key (e.g.
 for a stream-table join).
 
 
+Command-line options
+--------------------
+
+This serves as a reference for the various command-line options accepted by the
+Bottled Water client, annotated with links to the relevant areas of documentation.
+If this disagrees with the output of `bottledwater --help`, then `--help` is correct
+(and please file a pull request to update this reference!).
+
+
+ * `-d`, `--postgres=postgres://user:pass@host:port/dbname` **(required)**:
+   Connection string or URI of the PostgreSQL server.
+
+ * `-s`, `--slot=slotname` *(default: bottledwater)*:
+   Name of replication slot.  The slot is automatically created on first use.
+
+ * `-b`, `--broker=host1[:port1],host2[:port2]...` *(default: localhost:9092)*:
+   Comma-separated list of Kafka broker hosts/ports.
+
+ * `-r`, `--schema-registry=http://hostname:port` *(default: http://localhost:8081)*:
+   URL of the service where Avro schemas are registered.  (Used only for
+   `--output-format=avro`.  Omit when `--output-format=json`.)
+
+ * `-f`, `--output-format=[avro|json]` *(default: avro)*:
+   How to encode the messages for writing to Kafka.
+
+ * `-u`, `--allow-unkeyed`:
+   Allow export of tables that don't have a primary key.  This is disallowed by
+   default, because updates and deletes need a primary key to identify their row.
+
+ * `-p`, `--topic-prefix=prefix`:
+   String to prepend to all topic names.  e.g. with `--topic-prefix=postgres`, updates
+   from table "users" will be written to topic "postgres.users".
+
+ * `-e`, `--on-error=[log|exit]` *(default: exit)*:
+   What to do in case of a transient error, such as failure to publish to Kafka.
+
+ * `-x`, `--skip-snapshot`:
+   Skip taking a consistent snapshot of the existing database contents and just start
+   streaming any new updates.  (Ignored if the replication slot already exists.)
+
+ * `-C`, `--kafka-config property=value`:
+   Set global configuration property for Kafka producer (see `--config-help` for list
+   of properties).
+
+ * `-T`, `--topic-config property=value`:
+   Set topic configuration property for Kafka producer.
+
+ * `--config-help`:
+   Print the list of configuration properties. See also:
+   https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+
+ * `-h`, `--help`: Print this help text.
+
+
 Developing
 ----------
 
