@@ -135,14 +135,14 @@ For that to work, you need the following dependencies installed:
   Ubuntu: `sudo apt-get install postgresql-server-dev-9.5 libpq-dev`)
 * [libsnappy](https://code.google.com/p/snappy/), a dependency of Avro.
   (Homebrew: `brew install snappy`; Ubuntu: `sudo apt-get install libsnappy-dev`)
-* [avro-c](http://avro.apache.org/) (1.7.7 or later), the C implementation of Avro.
+* [avro-c](http://avro.apache.org/) (1.8.0 or later), the C implementation of Avro.
   (Homebrew: `brew install avro-c`; others: build from source)
 * [Jansson](http://www.digip.org/jansson/), a JSON parser.
   (Homebrew: `brew install jansson`; Ubuntu: `sudo apt-get install libjansson-dev`)
 * [libcurl](http://curl.haxx.se/libcurl/), a HTTP client.
   (Homebrew: `brew install curl`; Ubuntu: `sudo apt-get install libcurl4-openssl-dev`)
 * [librdkafka](https://github.com/edenhill/librdkafka) (0.9.1 or later), a Kafka client.
-  (Ubuntu universe: `sudo apt-get install librdkafka-dev`, but see [known gotchas](#known-gotchas-with-older-librdkafka-versions); others: build from source)
+  (Ubuntu universe: `sudo apt-get install librdkafka-dev`, but see [known gotchas](#known-gotchas-with-older-dependencies); others: build from source)
 
 You can see the Dockerfile for
 [building the quickstart images](https://github.com/ept/bottledwater-pg/blob/master/build/Dockerfile.build)
@@ -199,13 +199,21 @@ Bottled Water as follows:
 
     ./kafka/bottledwater --postgres=postgres://localhost
 
-The first time this runs, it will create a replication slot called `bottedwater`,
+The first time this runs, it will create a replication slot called `bottledwater`,
 take a consistent snapshot of your database, and send it to Kafka. (You can change the
-name of the replication slot with a command line flag.) When the snapshot is complete,
-it switches to consuming the replication stream.
+name of the replication slot with the `--slot` [command line
+flag](#command-line-options).) When the snapshot is complete, it switches to consuming
+the replication stream.
 
 If the slot already exists, the tool assumes that no snapshot is needed, and simply
 resumes the replication stream where it last left off.
+
+In some scenarios, if you only care about streaming ongoing changes (and not
+replicating the existing database contents into Kafka), you may want to skip the
+snapshot - e.g. to avoid the performance overhead of taking the snapshot, or because
+you are repointing Bottled Water at a newly promoted replica.  In that case, you can
+pass `--skip-snapshot` at the [command line](#command-line-options).  (This option is
+ignored if the replication slot already exists.)
 
 When you no longer want to run Bottled Water, you have to drop its replication slot
 (otherwise you'll eventually run out of disk space, as the open replication slot
@@ -249,8 +257,9 @@ However, in some scenarios, exiting on the first error may not be desirable:
 To support these scenarios, Bottled Water supports an alternative error handling
 policy where it will simply log that the error occurred and drop the update it was
 attempting to process, acknowledging the update so that Postgres can stop retaining
-WAL.  This policy can be enabled via the `--on-error` command-line switch.  N.B. that
-in this mode Bottled Water can no longer guarantee to never miss an update.
+WAL.  This policy can be enabled via the `--on-error` [command-line
+switch](#command-line-options).  N.B. that in this mode Bottled Water can no longer
+guarantee to never miss an update.
 
 
 Consuming data
@@ -264,9 +273,10 @@ is null, which allows Kafka's [log compaction](http://kafka.apache.org/documenta
 to garbage-collect deleted values.
 
 If a table doesn't have a primary key or replica identity index, Bottled Water will
-complain and refuse to start. You can override this with the `--allow-unkeyed` option.
-Any inserts and updates to tables without primary key or replica identity will be
-sent to Kafka as messages without a key. Deletes to such tables are not sent to Kafka.
+complain and refuse to start. You can override this with the `--allow-unkeyed`
+[option](#command-line-options).  Any inserts and updates to tables without primary
+key or replica identity will be sent to Kafka as messages without a key. Deletes to
+such tables are not sent to Kafka.
 
 Messages are written to Kafka by default in a binary Avro encoding, which is
 efficient, but not human-readable. To view the contents of a Kafka topic, you can use
@@ -280,7 +290,7 @@ the Avro console consumer:
 
 Bottled Water currently supports writing messages to Kafka in one of two output
 formats: Avro, or JSON.  The output format is configured via the `--output-format`
-command-line switch.
+[command-line switch](#command-line-options).
 
 Avro is recommended for large scale use, since it uses a much more efficient binary
 encoding for messages, defines rules for [schema
@@ -295,12 +305,47 @@ without good Avro library support.  JSON is human readable, and widely supported
 programming languages.  JSON output does not require a schema registry.
 
 
-Known gotchas with older librdkafka versions
---------------------------------------------
+### Topic names
 
-It is recommended to compile Bottled Water against librdkafka version 0.9.1 or
-later.  However, Bottled Water will work with older librdkafka versions, with
-degraded functionality.
+For each table being streamed, Bottled Water publishes messages to a corresponding
+Kafka topic.  The naming convention for topics is
+*\[topic_prefix\].\[postgres_schema_name\].table_name*:
+
+ * *table_name* is the name of the table in Postgres.
+ * *postgres_schema_name* is the name of the Postgres
+   [schema](https://www.postgresql.org/docs/current/static/sql-createschema.html) the
+   table belongs to; this is omitted if the schema is "public" (the default schema
+   under the default Postgres configuration).  N.B. this requires the avro-c library
+   to be [at least version 0.8.0](#avro-c--080-schema-omitted-from-topic-name).
+ * *topic_prefix* is omitted by default, but may be configured via the
+   `--topic-prefix` [command-line option](#command-line-options).  A prefix is useful:
+       * to prevent name collisions with other topics, if the Kafka broker is also
+         being used for other purposes besides Bottled Water.
+       * if you want to stream several databases into the same broker, using a
+         separate Bottled Water instance with a different prefix for each database.
+       * to make it easier for a Kafka consumer to consume updates from all Postgres
+         tables, by using a topic regex that matches the prefix.
+
+For example:
+
+ * with no prefix configured, a table named "users" in the public (default) schema
+   would be streamed to a topic named "users".
+ * with `--topic-prefix=bottledwater`, a table named "transactions" in the
+   "point-of-sale" schema would be streamed to a topic named
+   "bottledwater.point-of-sale.transactions".
+
+(Support for [namespaces in
+Kafka](https://cwiki.apache.org/confluence/display/KAFKA/KIP-37+-+Add+Namespaces+to+Kafka)
+has been proposed that would replace this sort of ad-hoc prefixing, but it's still
+under discussion.)
+
+
+Known gotchas with older dependencies
+-------------------------------------
+
+It is recommended to compile Bottled Water against the versions of librdkafka and
+avro-c specified [above](#building-from-source).  However, Bottled Water may work with
+older versions, with degraded functionality.
 
 At time of writing, the librdkafka-dev packages in the official Ubuntu repositories
 (for all releases up to 15.10) contain a release prior to 0.8.6.  This means if you
@@ -334,6 +379,76 @@ log compaction will be unable to garbage-collect the insert).  It will also
 break any consumer relying on seeing all updates relating to a given key (e.g.
 for a stream-table join).
 
+### avro-c &lt; 0.8.0: schema omitted from topic name
+
+Bottled Water encodes the Postgres schema to which tables belong in the Avro schema
+namespace.  Support for accessing the schema namespace was added to the Avro C library
+in version 0.8.0, so prior releases do not have access to this information.
+
+If Bottled Water is compiled against a version of avro-c prior to 0.8.0, the schema
+will be omitted from the [Kafka topic name](#topic-names).  This means that tables
+with the same names in different schemas will have changes streamed to the same topic.
+
+
+Command-line options
+--------------------
+
+This serves as a reference for the various command-line options accepted by the
+Bottled Water client, annotated with links to the relevant areas of documentation.
+If this disagrees with the output of `bottledwater --help`, then `--help` is correct
+(and please file a pull request to update this reference!).
+
+
+ * `-d`, `--postgres=postgres://user:pass@host:port/dbname` **(required)**:
+   Connection string or URI of the PostgreSQL server.
+
+ * `-s`, `--slot=slotname` *(default: bottledwater)*:
+   Name of [replication slot](#configuration).  The slot is automatically created on
+   first use.
+
+ * `-b`, `--broker=host1[:port1],host2[:port2]...` *(default: localhost:9092)*:
+   Comma-separated list of Kafka broker hosts/ports.
+
+ * `-r`, `--schema-registry=http://hostname:port` *(default: http://localhost:8081)*:
+   URL of the service where Avro schemas are registered.  (Used only for
+   `--output-format=avro`.  Omit when `--output-format=json`.)
+
+ * `-f`, `--output-format=[avro|json]` *(default: avro)*:
+   How to encode the messages for writing to Kafka.  See discussion of [output
+   formats](#output-formats).
+
+ * `-u`, `--allow-unkeyed`:
+   Allow export of tables that don't have a primary key.  This is [disallowed by
+   default](#consuming-data), because updates and deletes need a primary key to
+   identify their row.
+
+ * `-p`, `--topic-prefix=prefix`:
+   String to prepend to all [topic names](#topic-names).  e.g. with
+   `--topic-prefix=postgres`, updates from table "users" will be written to topic
+   "postgres.users".
+
+ * `-e`, `--on-error=[log|exit]` *(default: exit)*:
+   What to do in case of a transient error, such as failure to publish to Kafka.  See
+   discussion of [error handling](#error-handling).
+
+ * `-x`, `--skip-snapshot`:
+   Skip taking a [consistent snapshot](#configuration) of the existing database
+   contents and just start streaming any new updates.  (Ignored if the replication
+   slot already exists.)
+
+ * `-C`, `--kafka-config property=value`:
+   Set global configuration property for Kafka producer (see [librdkafka
+   docs](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)).
+
+ * `-T`, `--topic-config property=value`:
+   Set topic configuration property for Kafka producer (see [librdkafka
+   docs](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)).
+
+ * `--config-help`:
+   Print the list of Kafka configuration properties.
+
+ * `-h`, `--help`: Print this help text.
+
 
 Developing
 ----------
@@ -342,7 +457,7 @@ If you want to work on the Bottled Water codebase, the [Docker setup](#running-i
 a good place to start.
 
 Bottled Water ships with a [test suite](spec) that [verifies basic
-functionality](spec/functional/smoke_spec.rb), [documents supported Postgres
+functionality](spec/functional/message_spec.rb), [documents supported Postgres
 types](spec/functional/type_specs.rb) and [tests message publishing
 semantics](spec/functional/partitioning_spec.rb).  The test suite also relies on Docker and
 Docker Compose.  To run it:
@@ -361,10 +476,14 @@ encouraged to include tests that exercise the changed code!
 Status
 ------
 
-This is early alpha-quality software. It will probably break. See [this discussion
-about production readiness](https://github.com/confluentinc/bottledwater-pg/issues/96),
-and [Github issues](https://github.com/confluentinc/bottledwater-pg/issues)
-for a list of known issues.
+Bottled Water has been tested on a variety of use cases and Postgres schemas, and is
+believed to be fairly stable.  In particular, because of its design, it is unlikely to
+corrupt the data in Postgres. However, it has not yet been run on large production
+databases, or for long periods of time, so proceed with caution if you intend to use
+it in production.  See [this discussion about production
+readiness](https://github.com/confluentinc/bottledwater-pg/issues/96), and [Github
+issues](https://github.com/confluentinc/bottledwater-pg/issues) for a list of known
+issues.
 
 Bug reports and pull requests welcome.
 
