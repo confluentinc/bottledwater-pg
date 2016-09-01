@@ -289,10 +289,7 @@ avro_schema_t schema_for_oid(predef_schema *predef, Oid typid) {
             value_schema = avro_schema_long();
             break;
         case NUMERICOID: /* numeric(p, s), decimal(p, s): arbitrary precision number */
-            /* There is no implementation for Decimal type in apache/avro package for c language.
-             * We use logic for "double" type to avoid "0.0" values.
-             */
-            value_schema = avro_schema_double();
+            value_schema = schema_for_numeric(predef);
             break;
 
         /* Date/time types. We don't bother with abstime, reltime and tinterval (which are based
