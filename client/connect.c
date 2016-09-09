@@ -345,7 +345,7 @@ int snapshot_start(client_context_t context) {
                            context->schema_pattern,
                            context->allow_unkeyed ? "t" : "f",
 			    context->error_policy};
- 
+
     if (!PQsendQueryParams(context->sql_conn,
         "SELECT bottledwater_export(table_pattern := $1, schema_pattern := $2, allow_unkeyed := $3, error_policy := $4)",
                 	4, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
@@ -432,6 +432,12 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
 /* Lookup for table oids from schema_pattern and table_pattern
    If schema_pattern == % and table_pattern == % then BW will get all tables in db */
 int lookup_table_oids(client_context_t context) {
+
+    if (strcmp(context->table_pattern, "%%") == 0 && strcmp(context->schema_pattern, "%%") == 0) {
+        // All tables will be streamed
+        return 0;
+    }
+    
     PQExpBuffer query = createPQExpBuffer();
     appendPQExpBuffer(query,
           "SELECT c.oid"
