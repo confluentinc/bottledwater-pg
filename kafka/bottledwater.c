@@ -135,7 +135,7 @@ static char *progname;
 static int received_shutdown_signal = 0;
 static int unfinished_snapshot = 1;
 
-void usage(int exit_status);
+void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
 char *parse_config_option(char *option);
 void init_schema_registry(producer_context_t context, const char *url);
@@ -181,7 +181,7 @@ void start_producer(producer_context_t context);
 void exit_nicely(producer_context_t context, int status);
 
 
-void usage(int exit_status) {
+void usage() {
     fprintf(stderr,
             "Exports a snapshot of a PostgreSQL database, followed by a stream of changes,\n"
             "and sends the data to a Kafka cluster.\n\n"
@@ -247,7 +247,7 @@ void usage(int exit_status) {
             DEFAULT_SCHEMA_REGISTRY,
             DEFAULT_OUTPUT_FORMAT_NAME,
             DEFAULT_ERROR_POLICY_NAME);
-    exit(exit_status);
+    exit(1);
 }
 
 static int handler(void* _context, const char* section,
@@ -391,9 +391,8 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 exit(0);
                 break;
             case 'h':
-                usage(0);
             default:
-                usage(1);
+                usage();
         }
     }
 
@@ -404,7 +403,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     } else if (context->output_format == OUTPUT_FORMAT_JSON && context->registry) {
         config_error("Specifying --schema-registry doesn't make sense for "
                      "--output-format=json");
-        usage(1);
+        usage();
     }
 }
 

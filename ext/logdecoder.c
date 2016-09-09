@@ -69,26 +69,27 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     state->table_oid_list = NULL;
     foreach(option, ctx->output_plugin_options) {
 
-      DefElem *elem = lfirst(option);
+        DefElem *elem = lfirst(option);
 
-      Assert(elem->arg == NULL || IsA(elem->arg, String));
+        Assert(elem->arg == NULL || IsA(elem->arg, String));
 
-      if (strcmp(elem->defname, "table_ids") == 0) {
+        if (strcmp(elem->defname, "table_ids") == 0) {
 
-        if (elem->arg == NULL) {
-          ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                          errmsg("No value specified for parameter \"%s\"",
-                          elem->defname)));
-        } else {
-            if (strcmp(strVal(elem->arg), "%%") != 0) {
-                 // the arg is a string contains list of table ids, which is seperated by dot '.'
-                 // stringToQualifiedNameList is a PG function that splits the string and stores them in side a list
-                 table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
-                 foreach(l, table_oid_list) {
-                         state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
-                 }
-                 list_free(table_oid_list);
-               }
+            if (elem->arg == NULL) {
+                ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                        errmsg("No value specified for parameter \"%s\"",
+                            elem->defname)));
+            } else {
+                if (strcmp(strVal(elem->arg), "%%") != 0) {
+                    // the arg is a string contains list of table ids, which is seperated by dot '.'
+                    // stringToQualifiedNameList is a PG function that splits the string and stores them in side a list
+                    table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
+                    foreach(l, table_oid_list) {
+                        state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
+                    }
+                    list_free(table_oid_list);
+                }
+            }
         } else if (strcmp(elem->defname, "error_policy") == 0) {
             if (elem->arg == NULL) {
                 ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
