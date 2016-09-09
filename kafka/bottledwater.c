@@ -263,13 +263,11 @@ static int handler(void* _context, const char* section,
         tmp_config_value = parse_config_option(tmp_config_name);
         set_kafka_config(context, tmp_config_name, tmp_config_value);
         free(tmp_config_name);
-        free(tmp_config_value);
     } else if (MATCH("kafka", "topic-config")) {
         tmp_config_name = strdup(value);
         tmp_config_value = parse_config_option(tmp_config_name);
-        set_kafka_config(context, tmp_config_name, tmp_config_value);
+        set_topic_config(context, tmp_config_name, tmp_config_value);
         free(tmp_config_name);
-        free(tmp_config_value);
     } else if (MATCH("bottledwater", "postgres")) {
         context->client->conninfo = strdup(value);
     } else if (MATCH("bottledwater", "slot")) {
@@ -759,7 +757,7 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
  * the message will go to. This function is a wrapper of rd_kafka_msg_partitioner_consistent.
  * It seems like this will be called before returning from rd_kafka_produce
  * NOTE this is from librdkafka, in the future please check that note in librakafka
- /**
+ *
  * Produce: creates a new message, runs the partitioner and enqueues
  *          into on the selected partition.
  *
