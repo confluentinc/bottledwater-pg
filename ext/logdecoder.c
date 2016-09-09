@@ -68,11 +68,9 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
 
         DefElem *elem = lfirst(option);
 
-        Assert(elem->arg == NULL || IsA(elem->arg, String));
-
         if (strcmp(elem->defname, "table_ids") == 0) {
             if (elem->arg == NULL) {
-                ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                         errmsg("No value specified for parameter \"%s\"",
                              elem->defname)));
             } else {
@@ -96,7 +94,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                 state->error_policy = parse_error_policy(strVal(elem->arg));
             }
         } else {
-            ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+            ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                     errmsg("Parameter \"%s\" = \"%s\" is unknown",
                         elem->defname,
                         elem->arg ? strVal(elem->arg) : "(null)")));
