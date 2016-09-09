@@ -1,6 +1,7 @@
 #include "io_util.h"
 #include "oid2avro.h"
 #include "protocol_server.h"
+#include "error_policy.h"
 
 #include <string.h>
 #include "postgres.h"
@@ -30,6 +31,7 @@ typedef struct {
 typedef struct {
     MemoryContext memcontext;
     export_table *tables;
+    error_policy_t error_policy;
     int num_tables, current_table;
     avro_schema_t frame_schema;
     avro_value_iface_t *frame_iface;
@@ -103,6 +105,9 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
     MemoryContext oldcontext;
     export_state *state;
     int ret;
+    text *table_pattern;
+    text *schema_pattern;
+    bool allow_unkeyed;
     bytea *result;
 
     oldcontext = CurrentMemoryContext;
@@ -135,7 +140,12 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         state->schema_cache = schema_cache_new(funcctx->multi_call_memory_ctx);
         funcctx->user_fctx = state;
 
-        get_table_list(state, PG_GETARG_TEXT_P(0), PG_GETARG_TEXT_P(1), PG_GETARG_BOOL(2));
+        table_pattern = PG_GETARG_TEXT_P(0);
+        schema_pattern = PG_GETARG_TEXT_P(1);
+	allow_unkeyed = PG_GETARG_BOOL(2);
+        state->error_policy = parse_error_policy(TextDatumGetCString(PG_GETARG_TEXT_P(3)));
+
+        get_table_list(state, table_pattern, schema_pattern, allow_unkeyed);
         if (state->num_tables > 0) open_next_table(state);
     }
 
@@ -166,7 +176,9 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
             /* don't forget to clear the SPI temp context */
             SPI_freetuptable(SPI_tuptable);
 
-            SRF_RETURN_NEXT(funcctx, PointerGetDatum(result));
+            if (result != NULL) {
+                SRF_RETURN_NEXT(funcctx, PointerGetDatum(result));
+            }
         }
     }
 
@@ -332,10 +344,16 @@ bytea *format_snapshot_row(export_state *state) {
             SPI_tuptable->tupdesc, SPI_tuptable->vals[0])) {
         elog(INFO, "Failed tuptable: %s", schema_debug_info(table->rel, SPI_tuptable->tupdesc));
         elog(INFO, "Failed relation: %s", schema_debug_info(table->rel, RelationGetDescr(table->rel)));
-        elog(ERROR, "bottledwater_export: Avro conversion failed: %s", avro_strerror());
+        error_policy_handle(state->error_policy, "bottledwater_export: Avro conversion failed", avro_strerror());
+        /* if handling the error didn't exit early, it should be safe to fall
+         * through, because we'll just write the frame without the message that
+         * failed (so potentially it'll be an empty frame)
+         */
     }
     if (try_writing(&output, &write_avro_binary, &state->frame_value)) {
-        elog(ERROR, "bottledwater_export: writing Avro binary failed: %s", avro_strerror());
+        error_policy_handle(state->error_policy, "bottledwater_export: writing Avro binary failed", avro_strerror());
+        /* if we didn't exit early, then output remains uninitialised */
+        return NULL;
     }
     return output;
 }

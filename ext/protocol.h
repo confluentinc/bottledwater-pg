@@ -24,6 +24,26 @@
 #define PROTOCOL_MSG_DELETE         5
 
 
+/* Error policies, determining what the snapshot function and output plugin
+ * should do if they encounter an error encoding a row.
+ *
+ * These should match the values of the bottledwater_error_policy_valid
+ * constraint in bottledwater--0.1.sql.
+ */
+/* The default policy is "exit": an error will terminate the snapshot or
+ * replication stream.  This policy should be used if avoiding data loss is the
+ * top priority, since after manually resolving the error Bottled Water can be
+ * restarted to retry the affected rows.
+ */
+#define PROTOCOL_ERROR_POLICY_EXIT "exit"
+/* Under the "log" policy, an error will cause Bottled Water to skip over the
+ * affected rows and continue, logging the error that occurred.  This means the
+ * snapshot or replication stream may omit some updates that were successfully
+ * committed to Postgres, if there was a problem encoding those updates.
+ */
+#define PROTOCOL_ERROR_POLICY_LOG "log"
+
+
 avro_schema_t schema_for_frame(void);
 
 #endif /* PROTOCOL_H */

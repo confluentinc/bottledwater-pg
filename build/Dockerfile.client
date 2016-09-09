@@ -13,7 +13,7 @@ FROM postgres:9.5
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        libcurl3 libjansson4 libpq5
+        libcurl3 libjansson4 libpq5 valgrind
 
 ADD avro.tar.gz /
 ADD librdkafka.tar.gz /

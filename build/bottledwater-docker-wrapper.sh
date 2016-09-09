@@ -39,5 +39,12 @@ if getent hosts schema-registry >/dev/null; then
 fi
 
 BOTTLEDWATER=/usr/local/bin/bottledwater
-log "Running: $BOTTLEDWATER ${bw_opts[@]} $@"
-exec "$BOTTLEDWATER" "${bw_opts[@]}" "$@"
+VALGRIND=/usr/bin/valgrind
+
+if [[ -n $VALGRIND_ENABLED ]]; then
+  log "Running: $VALGRIND $VALGRIND_OPTS $BOTTLEDWATER ${bw_opts[@]} $@"
+  exec "$VALGRIND" $VALGRIND_OPTS "$BOTTLEDWATER" "${bw_opts[@]}" "$@"
+else
+  log "Running: $BOTTLEDWATER ${bw_opts[@]} $@"
+  exec "$BOTTLEDWATER" "${bw_opts[@]}" "$@"
+fi

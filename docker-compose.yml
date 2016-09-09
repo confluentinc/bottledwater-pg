@@ -1,8 +1,16 @@
-# N.B. assumes you have set the environment variable
-# KAFKA_ADVERTISED_HOST_NAME, in the environment of the host where you are
-# running docker-compose, to the IP address of the Docker host.
+# N.B. assumes you have set the following environment variables in the
+# environment of the host where you are running docker-compose:
 #
-# You can determine the Docker host IP with a command like:
+# * KAFKA_ADVERTISED_HOST_NAME: set to the IP address of the Docker host
+#   (see below).
+#
+# * KAFKA_LOG_CLEANUP_POLICY: "delete" or "compact" (see log.cleanup.policy in
+#   the Kafka docs)
+#
+# * KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true" or "false" (see
+#   auto.create.topics.enable in the Kafka docs)
+#
+# You can determine the IP address of the Docker host with a command like:
 #
 #   docker run --rm debian:latest ip route | awk '/^default via / { print $3 }'
 
@@ -37,13 +45,13 @@ postgres-94:
   dockerfile: Dockerfile.postgres94
   hostname: postgres
   ports:
-    - '45432:5432'
+    - '54094:5432'
 postgres:
   build: ./tmp
   dockerfile: Dockerfile.postgres
   hostname: postgres
   ports:
-    - '45432:5432'
+    - '54095:5432'
 bottledwater:
   build: ./tmp
   dockerfile: Dockerfile.client
@@ -52,8 +60,12 @@ bottledwater:
     - /usr/local/bin/bottledwater-docker-wrapper.sh
     - --topic-config=message.timeout.ms=2000
   environment:
-    BOTTLED_WATER_ALLOW_UNKEYED: true
+    BOTTLED_WATER_ALLOW_UNKEYED: 'true'
     BOTTLED_WATER_ON_ERROR:
+    BOTTLED_WATER_SKIP_SNAPSHOT:
+    BOTTLED_WATER_TOPIC_PREFIX:
+    VALGRIND_ENABLED:
+    VALGRIND_OPTS:
 bottledwater-json:
   extends: {service: bottledwater}
   links:

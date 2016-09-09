@@ -201,6 +201,16 @@ int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, c
 
     table->table_name = strdup(table_name);
 
+    /* Kafka topic naming convention: [topic_prefix].[postgres_schema_name].table_name
+     *
+     *   - topic_prefix is optional, set via the --topic-prefix command-line option;
+     *   - postgres_schema_name is omitted if the schema is "public";
+     *   - dot separators are omitted if not needed
+     *   - schema and table names are sanitised in the extension to be valid
+     *     Avro identifiers: see make_avro_safe in ext/oid2avro.c
+     *
+     * See the README for more discussion of topic naming. */
+
     const char *topic_name;
     /* both branches set topic_name to a pointer we don't need to free,
      * since rd_kafka_topic_new below is going to copy it anyway */
