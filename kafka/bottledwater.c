@@ -296,6 +296,8 @@ static int handler(void* _context, const char* section,
     } else if (MATCH("bottledwater", "key")) {
         context->key = strdup(value);
         rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &on_customized_paritioner_cb);
+    } else if (MATCH("bottledwater", "skip-snapshot")) {
+        context->client->skip_snapshot = atoi(value);
     } else {
         return 0; // unknown section/option
     }
@@ -331,7 +333,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     int option_index;
     bool continue_parse_options = true;
     while (continue_parse_options) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:C:T:i:o:g:", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:xC:T:i:o:k:g:h", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
