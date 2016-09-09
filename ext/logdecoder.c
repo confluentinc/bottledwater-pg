@@ -66,11 +66,11 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     state->table_oid_list = NULL;
     foreach(option, ctx->output_plugin_options) {
 
-      DefElem *elem = lfirst(option);
+        DefElem *elem = lfirst(option);
 
-      Assert(elem->arg == NULL || IsA(elem->arg, String));
+        Assert(elem->arg == NULL || IsA(elem->arg, String));
 
-      if (strcmp(elem->defname, "table_ids") == 0) {
+        if (strcmp(elem->defname, "table_ids") == 0) {
             if (elem->arg == NULL) {
                 ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                         errmsg("No value specified for parameter \"%s\"",
@@ -87,7 +87,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                 }
             }
 
-      } else if (strcmp(elem->defname, "error_policy") == 0) {
+        } else if (strcmp(elem->defname, "error_policy") == 0) {
             if (elem->arg == NULL) {
                 ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                         errmsg("No value specified for parameter \"%s\"",
@@ -95,13 +95,13 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
             } else {
                 state->error_policy = parse_error_policy(strVal(elem->arg));
             }
-      } else {
+        } else {
             ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                     errmsg("Parameter \"%s\" = \"%s\" is unknown",
                         elem->defname,
                         elem->arg ? strVal(elem->arg) : "(null)")));
-      }
-   }
+        }
+    }
 }
 
 static void output_avro_shutdown(LogicalDecodingContext *ctx) {

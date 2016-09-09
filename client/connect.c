@@ -348,7 +348,7 @@ int snapshot_start(client_context_t context) {
 
     if (!PQsendQueryParams(context->sql_conn,
         "SELECT bottledwater_export(table_pattern := $1, schema_pattern := $2, allow_unkeyed := $3, error_policy := $4)",
-                	4, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
+                4, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));
         return EIO;
@@ -437,7 +437,7 @@ int lookup_table_oids(client_context_t context) {
         // All tables will be streamed
         return 0;
     }
-    
+
     PQExpBuffer query = createPQExpBuffer();
     appendPQExpBuffer(query,
           "SELECT c.oid"
