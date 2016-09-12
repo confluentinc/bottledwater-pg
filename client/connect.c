@@ -360,7 +360,8 @@ int snapshot_start(client_context_t context) {
         context->order_by ? context->order_by : "");
 
 
-    if (!PQsendQuery(context->sql_conn, snapshot_query->data)) {
+    if (!PQsendQueryParams(context->sql_conn, snapshot_query->data,
+            0, NULL, NULL, NULL, NULL, 1)) {
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));
         return EIO;
