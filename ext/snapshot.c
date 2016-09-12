@@ -270,7 +270,7 @@ void get_table_list(export_state *state, text *table_pattern,
         table->namespace  = pstrdup(NameStr(*DatumGetName(namespace_d)));
         table->rel_name   = pstrdup(NameStr(*DatumGetName(relname_d)));
         table->repl_ident = DatumGetChar(replident_d);
-        table->order_by_column = check_order_by_column(table->relname, order_columns);
+        table->order_by_column = check_order_by_column(table->rel_name, order_columns);
 
         if (!indname_null) {
             table->index_name = pstrdup(NameStr(*DatumGetName(indname_d)));
@@ -322,7 +322,7 @@ void open_next_table(export_state *state) {
             quote_qualified_identifier(table->namespace, table->rel_name));
 
     if (table->order_by_column){
-        appendStringInfo(&quey, "ORDER BY %s", table->order_by_column);
+        appendStringInfo(&query, "ORDER BY %s", table->order_by_column);
     }
 
     plan = SPI_prepare_cursor(query.data, 0, NULL, CURSOR_OPT_NO_SCROLL);
