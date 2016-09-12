@@ -9,7 +9,7 @@
 ## END INIT INFO
 
 #SCRIPT="/root/bottle-water/kafka/bottledwater --postgres=postgres://replicator:replication@10.60.7.55:5432/blocketdb --allow-unkeyed --on-error=log --key=ad_id --broker=10.60.3.49:9092,10.60.3.50:9092,10.60.3.51:9092 --output-format=json --slot=bottledwater --topics=ad_queues\|state_params\|ads\|ad_params\|ad_actions\|ad_media\|ad_changes\|action_states --schemas=public"
-SCRIPT="/root/bottle-water/kafka/bottledwater --config-file=/etc/bottlewater/bottledwater.conf
+SCRIPT="/root/bottle-water/kafka/bottledwater --config-file=/etc/bottledwater/bottledwater.conf
 RUNAS="root"
 
 PIDFILE=/var/run/bottledwater.pid

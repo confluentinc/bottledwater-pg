@@ -60,6 +60,7 @@ void db_client_free(client_context_t context) {
     if (context->error_policy) free(context->error_policy);
     if (context->app_name) free(context->app_name);
     if (context->conninfo) free(context->conninfo);
+    if (context->order_by) free(context->order_by);
     free(context);
 }
 
@@ -347,15 +348,19 @@ int snapshot_start(client_context_t context) {
     check(err, exec_sql(context, query->data));
     destroyPQExpBuffer(query);
 
-    Oid argtypes[] = { 25, 25, 16, 25}; // 25 == TEXTOID, 16 == BOOLOID
-    const char *args[] = { context->repl.table_pattern,
-                           context->repl.schema_pattern,
-                           context->allow_unkeyed ? "t" : "f",
-			   context->error_policy };
+    PQExpBuffer query = createPQExpBuffer();
+    appendPQExpBuffer(query,
+        "SELECT bottledwater_export(table_pattern := %s, schema_pattern := %s,
+                                    allow_unkeyed := %s, error_policy := %s,
+                                    order_by := %s)",
+        context->repl.table_pattern,
+        context->repl.schema_pattern,
+        context->allow_unkeyed ? "t" : "f",
+        context->error_policy,
+        context->order_by ? context->order_by : "");
 
-    if (!PQsendQueryParams(context->sql_conn,
-        "SELECT bottledwater_export(table_pattern := $1, schema_pattern := $2, allow_unkeyed := $3, error_policy := $4)",
-                 4, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
+
+    if (!PQsendQuery(context->sql_conn, query->data)) {
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));
         return EIO;
@@ -372,6 +377,8 @@ int snapshot_start(client_context_t context) {
     if (begin_txn) {
         check(err, begin_txn(cb_context, context->repl.start_lsn, 0));
     }
+
+    destroyPQExpBuffer(query);
     return 0;
 }
 

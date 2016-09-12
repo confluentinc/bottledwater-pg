@@ -25,6 +25,7 @@ typedef struct {
     char *rel_name;
     char repl_ident;
     char *index_name;
+    char *order_by;
 } export_table;
 
 /* State that we need to remember between calls of bottledwater_export */

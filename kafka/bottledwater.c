@@ -232,6 +232,9 @@ void usage() {
             "  -k, --key=value\n"
             "                          Field for using as key to send to Kafka, if not exists\n"
             "                          then use PRIMARY KEY or REPLICA IDENTITY\n"
+            "  -b, --order-by=table1=column,table2=column\n"
+            "                          This option is used for config snapshot these specified tables\n"
+            "                          order by specified column\n"
             "  -g, --config-file=value\n"
             "                          Instead of passing config by command line,\n"
             "                          you can use config-file to config bottledwater\n"
@@ -263,39 +266,81 @@ static int handler(void* _context, const char* section,
         tmp_config_value = parse_config_option(tmp_config_name);
         set_kafka_config(context, tmp_config_name, tmp_config_value);
         free(tmp_config_name);
+
     } else if (MATCH("kafka", "topic-config")) {
         tmp_config_name = strdup(value);
         tmp_config_value = parse_config_option(tmp_config_name);
         set_topic_config(context, tmp_config_name, tmp_config_value);
         free(tmp_config_name);
+
     } else if (MATCH("bottledwater", "postgres")) {
+        if (context->client->conninfo) {
+            free(context->client->conninfo);
+        }
         context->client->conninfo = strdup(value);
+
     } else if (MATCH("bottledwater", "slot")) {
+        if (context->client->repl.slot_name) {
+            free(context->client->repl.slot_name);
+        }
         context->client->repl.slot_name = strdup(value);
+
     } else if (MATCH("bottledwater", "broker")) {
+        if (context->brokers) {
+            free(context->brokers);
+        }
         context->brokers = strdup(value);
+
     } else if (MATCH("schema-registry", "schema-registry")) {
         if (context->registry) {
             schema_registry_free(context->registry);
         }
         init_schema_registry(context, value);
+
     } else if (MATCH("bottledwater", "output-format")) {
         set_output_format(context, value);
+
     } else if (MATCH("bottledwater", "allow-unkeyed")) {
         context->client->allow_unkeyed = atoi(value);
+
     } else if (MATCH("bottledwater", "topic-prefix")) {
+        if (context->topic_prefix) {
+            free(context->topic_prefix);
+        }
         context->topic_prefix = strdup(value);
+
     } else if (MATCH("bottledwater", "on-error")) {
         set_error_policy(context, value);
+
     } else if (MATCH("bottledwater", "schemas")) {
+        if (context->client->repl.schema_pattern) {
+            free(context->client->repl.schema_pattern);
+        }
         context->client->repl.schema_pattern = strdup(value);
+
     } else if (MATCH("bottledwater", "tables")) {
+        if (context->client->repl.table_pattern) {
+            free(context->client->repl.table_pattern);
+        }
         context->client->repl.table_pattern = strdup(value);
+
     } else if (MATCH("bottledwater", "key")) {
+        if (context->key) {
+            free(context->key);
+        }
         context->key = strdup(value);
+
         rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &on_customized_paritioner_cb);
+
     } else if (MATCH("bottledwater", "skip-snapshot")) {
         context->client->skip_snapshot = atoi(value);
+
+    } else if (MATCH("bottledwater", "order-by")){
+        if (context->client->order_by) {
+            free(context->client->order_by);
+        }
+        context->client->order_by = strdup(value);
+
     } else {
         return 0; // unknown section/option
     }
@@ -320,6 +365,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"schemas",         required_argument, NULL, 'o'},
         {"tables",          required_argument, NULL, 'i'},
         {"key",             required_argument, NULL, 'k'},
+        {"order-by",        required_argument, NULL, 'b'},
         {"config-file",     required_argument, NULL, 'g'},
         {"config-help",     no_argument,       NULL,  1 },
         {"help",            no_argument,       NULL, 'h'},
@@ -331,7 +377,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     int option_index;
     bool continue_parse_options = true;
     while (continue_parse_options) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:xC:T:i:o:k:g:h", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:xC:T:i:o:k:b:g:h", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -385,6 +431,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                     config_error("Error while parsing configuration file: %s", optarg);
                     usage();
                 }
+                break;
+            case 'b':
+                context->client->order_by = strdup(optarg);
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
@@ -945,6 +994,7 @@ client_context_t init_client() {
     client->app_name = strdup(APP_NAME);
     db_client_set_error_policy(client, DEFAULT_ERROR_POLICY_NAME);
     client->allow_unkeyed = false;
+    client->order_by = NULL;
     client->repl.slot_name = strdup(DEFAULT_REPLICATION_SLOT);
     client->repl.output_plugin = strdup(OUTPUT_PLUGIN);
     client->repl.frame_reader = frame_reader;
