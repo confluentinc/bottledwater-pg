@@ -350,9 +350,9 @@ int snapshot_start(client_context_t context) {
 
     PQExpBuffer snapshot_query = createPQExpBuffer();
     appendPQExpBuffer(snapshot_query,
-        "SELECT bottledwater_export(table_pattern := %s, schema_pattern := %s,"
-                                    " allow_unkeyed := %s, error_policy := %s,"
-                                    " order_by := %s)",
+        "SELECT bottledwater_export(table_pattern := '%s', schema_pattern := '%s',"
+                                    " allow_unkeyed := '%s', error_policy := '%s',"
+                                    " order_by := '%s')",
         context->repl.table_pattern,
         context->repl.schema_pattern,
         context->allow_unkeyed ? "t" : "f",
