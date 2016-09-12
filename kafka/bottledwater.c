@@ -382,13 +382,13 @@ void parse_options(producer_context_t context, int argc, char **argv) {
 
         switch (c) {
             case 'd':
-                context->client->conninfo = optarg;
+                context->client->conninfo = strdup(optarg);
                 break;
             case 's':
-                context->client->repl.slot_name = optarg;
+                context->client->repl.slot_name = strdup(optarg);
                 break;
             case 'b':
-                context->brokers = optarg;
+                context->brokers = strdup(optarg);
                 break;
             case 'r':
                 init_schema_registry(context, optarg);
@@ -400,7 +400,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 context->client->allow_unkeyed = true;
                 break;
             case 'p':
-                context->topic_prefix = optarg;
+                context->topic_prefix = strdup(optarg);
                 break;
             case 'e':
                 set_error_policy(context, optarg);
@@ -412,16 +412,16 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                 set_kafka_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'o':
-                context->client->repl.schema_pattern = optarg;
+                context->client->repl.schema_pattern = strdup(optarg);
                 break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
                 break;
             case 'i':
-                context->client->repl.table_pattern = optarg;
+                context->client->repl.table_pattern = strdup(optarg);
                 break;
             case 'k':
-                context->key = optarg;
+                context->key = strdup(optarg);
                 rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &on_customized_paritioner_cb);
                 break;
             case 'g':
@@ -1016,7 +1016,7 @@ producer_context_t init_producer(client_context_t client) {
     context->output_format = DEFAULT_OUTPUT_FORMAT;
     context->error_policy = DEFAULT_ERROR_POLICY;
 
-    context->brokers = DEFAULT_BROKER_LIST;
+    context->brokers = strdup(DEFAULT_BROKER_LIST);
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
 
@@ -1094,17 +1094,21 @@ void exit_nicely(producer_context_t context, int status) {
         }
     }
 
+    if (context->topic_prefix) free(context->topic_prefix);
+
+    if (context->key) free(context->key);
+
+    if (context->brokers) free(context->brokers);
+
     table_mapper_free(context->mapper);
 
-    if (context->registry)
-        schema_registry_free(context->registry);
+    if (context->registry) schema_registry_free(context->registry);
 
     frame_reader_free(context->client->repl.frame_reader);
 
     db_client_free(context->client);
 
-    if (context->kafka)
-        rd_kafka_destroy(context->kafka);
+    if (context->kafka) rd_kafka_destroy(context->kafka);
 
     curl_global_cleanup();
 
