@@ -348,8 +348,8 @@ int snapshot_start(client_context_t context) {
     check(err, exec_sql(context, query->data));
     destroyPQExpBuffer(query);
 
-    PQExpBuffer query = createPQExpBuffer();
-    appendPQExpBuffer(query,
+    PQExpBuffer snapshot_query = createPQExpBuffer();
+    appendPQExpBuffer(snapshot_query,
         "SELECT bottledwater_export(table_pattern := %s, schema_pattern := %s,
                                     allow_unkeyed := %s, error_policy := %s,
                                     order_by := %s)",
@@ -360,7 +360,7 @@ int snapshot_start(client_context_t context) {
         context->order_by ? context->order_by : "");
 
 
-    if (!PQsendQuery(context->sql_conn, query->data)) {
+    if (!PQsendQuery(context->sql_conn, snapshot_query->data)) {
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));
         return EIO;
@@ -378,7 +378,7 @@ int snapshot_start(client_context_t context) {
         check(err, begin_txn(cb_context, context->repl.start_lsn, 0));
     }
 
-    destroyPQExpBuffer(query);
+    destroyPQExpBuffer(snapshot_query);
     return 0;
 }
 
