@@ -365,7 +365,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"schemas",         required_argument, NULL, 'o'},
         {"tables",          required_argument, NULL, 'i'},
         {"key",             required_argument, NULL, 'k'},
-        {"order-by",        required_argument, NULL, 'b'},
+        {"order-by",        required_argument, NULL, 'a'},
         {"config-file",     required_argument, NULL, 'g'},
         {"config-help",     no_argument,       NULL,  1 },
         {"help",            no_argument,       NULL, 'h'},
@@ -377,7 +377,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     int option_index;
     bool continue_parse_options = true;
     while (continue_parse_options) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:xC:T:i:o:k:b:g:h", options, &option_index);
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:xC:T:i:o:k:a:g:h", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -432,7 +432,7 @@ void parse_options(producer_context_t context, int argc, char **argv) {
                     usage();
                 }
                 break;
-            case 'b':
+            case 'a':
                 context->client->order_by = strdup(optarg);
                 break;
             case 1:
