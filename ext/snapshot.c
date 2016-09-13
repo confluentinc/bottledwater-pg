@@ -189,7 +189,6 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         }
     }
 
-    list_free(order_columns);
     schema_cache_free(state->schema_cache);
     avro_value_decref(&state->frame_value);
     avro_value_iface_decref(state->frame_iface);
