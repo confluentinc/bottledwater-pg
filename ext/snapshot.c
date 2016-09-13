@@ -323,7 +323,7 @@ void open_next_table(export_state *state) {
 
     if (table->order_by_column){
         appendStringInfo(&query, " ORDER BY %s", table->order_by_column);
-        elog(INFO, "bottledwater_export: snapshot table %s order by %s",
+        elog(INFO, "bottledwater_export: table %s is ordered by %s",
                 quote_qualified_identifier(table->namespace, table->rel_name), table->order_by_column);
     }
 
@@ -447,9 +447,8 @@ check_order_by_column(char *relname, List *order_columns) {
 
     if (relname && order_columns) {
         foreach(l, order_columns) {
-            char *val = lfirst(l) ? strVal(lfirst(l)) : ""; // avoid if it's NULL again
-            char *equals;
-            if (strncmp(relname, val, strlen(relname)) == 0 && (equals = strchr(val, '='))) {
+            char *val = strVal(lfirst(l));
+            if (val && (equals = strchr(val, '=')) && (strncmp(relname, val, equals - val) == 0)) {
                 column_name = pstrdup(equals + 1);
                 break;
             }
