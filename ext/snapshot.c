@@ -422,7 +422,6 @@ textToQualifiedNameList1(text *textval)
 	rawname = text_to_cstring(textval);
 
 	if (!SplitIdentifierString(rawname, ',', &namelist) || namelist == NIL) {
-        elog(INFO, "invalid name syntax");
         return result;
     }
 
