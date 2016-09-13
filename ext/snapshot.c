@@ -323,7 +323,7 @@ void open_next_table(export_state *state) {
 
     if (table->order_by_column){
         appendStringInfo(&query, " ORDER BY %s", table->order_by_column);
-        elog(INFO, "bottledwater_export: table %s is ordered by %s",
+        elog(INFO, "bottledwater_export: Table %s is ordered by %s",
                 quote_qualified_identifier(table->namespace, table->rel_name), table->order_by_column);
     }
 

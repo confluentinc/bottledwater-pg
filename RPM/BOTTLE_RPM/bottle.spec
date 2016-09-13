@@ -1,6 +1,6 @@
 Summary: Bottledwater Extension for PostgreSQL 9.4
 Name: bottledwater
-Version: 0.4.2
+Version: 0.5
 Release: 1
 Group: Applications/Extension
 Packager: Dat Tran
