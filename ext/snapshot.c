@@ -322,7 +322,9 @@ void open_next_table(export_state *state) {
             quote_qualified_identifier(table->namespace, table->rel_name));
 
     if (table->order_by_column){
-        appendStringInfo(&query, "ORDER BY %s", table->order_by_column);
+        appendStringInfo(&query, " ORDER BY %s", table->order_by_column);
+        elog(INFO, "bottledwater_export: snapshot table %s order by %s",
+                quote_qualified_identifier(table->namespace, table->rel_name), table->order_by_column);
     }
 
     plan = SPI_prepare_cursor(query.data, 0, NULL, CURSOR_OPT_NO_SCROLL);
