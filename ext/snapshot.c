@@ -49,7 +49,7 @@ void open_next_table(export_state *state);
 void close_current_table(export_state *state);
 bytea *format_snapshot_row(export_state *state);
 bytea *schema_for_relname(char *relname, bool get_key);
-List *textToQualifiedNameList(text *textval);
+List *textToQualifiedNameList1(text *textval);
 char *check_order_by_column(char *relname, List *order_columns);
 
 
@@ -150,7 +150,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         schema_pattern = PG_GETARG_TEXT_P(1);
 	allow_unkeyed = PG_GETARG_BOOL(2);
         state->error_policy = parse_error_policy(TextDatumGetCString(PG_GETARG_TEXT_P(3)));
-        order_columns = textToQualifiedNameList(PG_GETARG_TEXT_P(4));
+        order_columns = textToQualifiedNameList1(PG_GETARG_TEXT_P(4));
 
         get_table_list(state, table_pattern, schema_pattern, allow_unkeyed, order_columns);
         if (state->num_tables > 0) open_next_table(state);
@@ -410,7 +410,7 @@ bytea *schema_for_relname(char *relname, bool get_key) {
  * I just wanna reuse it with different separator ',', for a more easier future
  * refactor, I keep it as the same as the original code (name, params, etc) */
 List *
-textToQualifiedNameList(text *textval)
+textToQualifiedNameList1(text *textval)
 {
 	char	   *rawname;
 	List	   *result = NIL;
@@ -421,15 +421,10 @@ textToQualifiedNameList(text *textval)
 	/* Note we rely on being able to modify rawname below. */
 	rawname = text_to_cstring(textval);
 
-	if (!SplitIdentifierString(rawname, ',', &namelist))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_NAME),
-				 errmsg("invalid name syntax")));
-
-	if (namelist == NIL)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_NAME),
-				 errmsg("invalid name syntax")));
+	if (!SplitIdentifierString(rawname, ',', &namelist) || namelist == NIL) {
+        elog(INFO, "invalid name syntax");
+        return result;
+    }
 
 	foreach(l, namelist)
 	{
@@ -451,13 +446,11 @@ check_order_by_column(char *relname, List *order_columns) {
 
     if (relname && order_columns) {
         foreach(l, order_columns) {
-            char *val = (char *) lfirst(l) ? (char *) lfirst(l) : ""; // avoid if NULL again
-            if (strncmp(relname, val, strlen(relname)) == 0) {
-                char *equals = strchr(val, '=');
-                if (equals) {
-                    column_name = pstrdup(equals + 1);
-                    break;
-                }
+            char *val = lfirst(l) ? strVal(lfirst(l)) : ""; // avoid if it's NULL again
+            char *equals;
+            if (strncmp(relname, val, strlen(relname)) == 0 && (equals = strchr(val, '='))) {
+                column_name = pstrdup(equals + 1);
+                break;
             }
         }
     }
