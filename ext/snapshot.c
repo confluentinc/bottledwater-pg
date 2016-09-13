@@ -448,6 +448,7 @@ check_order_by_column(char *relname, List *order_columns) {
     if (relname && order_columns) {
         foreach(l, order_columns) {
             char *val = strVal(lfirst(l));
+            char *equals;
             if (val && (equals = strchr(val, '=')) && (strncmp(relname, val, equals - val) == 0)) {
                 column_name = pstrdup(equals + 1);
                 break;
