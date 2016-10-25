@@ -342,7 +342,10 @@ static int handler(void* _context, const char* section,
         context->client->order_by = strdup(value);
 
     } else {
-        return 0; // unknown section/option
+        config_error("Error while parsing configuration file");
+        config_error("Unknown argument: %s", optarg);
+        config_error("Please run program with -h --help option for Usage information");
+        exit(1); // unknown section/option
     }
     return 1;
 }
@@ -427,9 +430,6 @@ void parse_options(producer_context_t context, int argc, char **argv) {
             case 'g':
                 if (ini_parse(optarg, handler, context) == 0) {
                     continue_parse_options = false;
-                } else {
-                    config_error("Error while parsing configuration file: %s", optarg);
-                    usage();
                 }
                 break;
             case 'a':
