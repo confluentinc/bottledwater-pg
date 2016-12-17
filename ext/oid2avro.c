@@ -407,7 +407,10 @@ int update_avro_with_datum(avro_value_t *output_val, Oid typid, Datum pg_datum) 
             check(err, avro_value_set_long(&branch_val, DatumGetCommandId(pg_datum)));
             break;
         case NUMERICOID:
-            DatumGetNumeric(pg_datum); // TODO
+            /* There is no implementation for Decimal type in apache/avro package for c language.
+             * We use logic for "double" type to avoid "0.0" values.
+             */
+            check(err, avro_value_set_double(&branch_val, atof(numeric_normalize(DatumGetNumeric(pg_datum)))));
             break;
         case DATEOID:
             check(err, update_avro_with_date(output_val, DatumGetDateADT(pg_datum)));

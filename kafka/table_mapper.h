@@ -37,6 +37,7 @@ typedef struct {
     int num_tables;                     /* Number of tables known */
     int capacity;                       /* Allocated size of tables array */
     table_metadata **tables;            /* Array of pointers to table_metadata structs */
+    char *key;
 } table_mapper;
 
 typedef table_mapper *table_mapper_t;
@@ -45,7 +46,8 @@ table_mapper_t table_mapper_new(
         rd_kafka_t *kafka,
         rd_kafka_topic_conf_t *topic_conf,
         schema_registry_t registry,
-        const char *topic_prefix);
+        const char *topic_prefix,
+        const char *key);
 table_metadata_t table_mapper_lookup(table_mapper_t mapper, Oid relid);
 table_metadata_t table_mapper_update(table_mapper_t mapper, Oid relid,
         const char* table_name,

@@ -9,6 +9,8 @@
 #include "utils/memutils.h"
 #include "utils/builtins.h"
 #include "nodes/parsenodes.h"
+#include "utils/lsyscache.h"
+#include "access/heapam.h"
 
 /* Entry point when Postgres loads the plugin */
 extern void _PG_init(void);
@@ -51,6 +53,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
         bool is_init) {
     ListCell *option, *l;
     List *table_oid_list;
+
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
     opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
@@ -68,15 +71,18 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
 
         DefElem *elem = lfirst(option);
 
+        Assert(elem->arg == NULL || IsA(elem->arg, String));
+
         if (strcmp(elem->defname, "table_ids") == 0) {
+
             if (elem->arg == NULL) {
-                ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                         errmsg("No value specified for parameter \"%s\"",
-                             elem->defname)));
+                            elem->defname)));
             } else {
                 if (strcmp(strVal(elem->arg), "%%") != 0) {
-                    // stringToQualifiedNameList splits up the dot-separated list of string
-                    // in our case is a list of table oids separated by dot.
+                    // the arg is a string contains list of table ids, which is seperated by dot '.'
+                    // stringToQualifiedNameList is a PG function that splits the string and stores them in side a list
                     table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
                     foreach(l, table_oid_list) {
                         state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
@@ -84,7 +90,6 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                     list_free(table_oid_list);
                 }
             }
-
         } else if (strcmp(elem->defname, "error_policy") == 0) {
             if (elem->arg == NULL) {
                 ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),

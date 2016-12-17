@@ -16,10 +16,7 @@ typedef struct {
     bool slot_created;
     int status; /* 1 = message was processed on last poll; 0 = no data available right now; -1 = stream ended */
     char error[CLIENT_CONTEXT_ERROR_LEN];
-
-    // schema_pattern and table_pattern for get list of table oids
-    char *schema_pattern;
-    char *table_pattern;
+    char *order_by;
 } client_context;
 
 typedef client_context *client_context_t;

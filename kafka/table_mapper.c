@@ -34,7 +34,8 @@ table_mapper_t table_mapper_new(
         rd_kafka_t *kafka,
         rd_kafka_topic_conf_t *topic_conf,
         schema_registry_t registry,
-        const char *topic_prefix) {
+        const char *topic_prefix,
+        const char *key) {
     table_mapper_t mapper = malloc(sizeof(table_mapper));
     memset(mapper, 0, sizeof(table_mapper));
 
@@ -50,6 +51,9 @@ table_mapper_t table_mapper_new(
         mapper->topic_prefix = strdup(topic_prefix);
     }
 
+    if (key != NULL) {
+        mapper->key = strdup(key);
+    }
     return mapper;
 }
 
@@ -150,6 +154,7 @@ error:
  * associated topics. */
 void table_mapper_free(table_mapper_t mapper) {
     if (mapper->topic_prefix) free(mapper->topic_prefix);
+    if (mapper->key) free(mapper->key);
 
     for (int i = 0; i < mapper->num_tables; i++) {
         table_metadata_t table = mapper->tables[i];
@@ -196,35 +201,15 @@ int table_metadata_update_topic(table_mapper_t mapper, table_metadata_t table, c
 
     table->table_name = strdup(table_name);
 
-
-    /* NOTE: About Kafka topic name convention:
+    /* Kafka topic naming convention: [topic_prefix].[postgres_schema_name].table_name
      *
-     * To avoid potential issues about Kafka topic name collisions (for example same table name, in
-     * distinct database schema names of the same Postgres database) Bottled Water builds the topic name
-     * as the union of the original Postgres table schema name and the original table name:
+     *   - topic_prefix is optional, set via the --topic-prefix command-line option;
+     *   - postgres_schema_name is omitted if the schema is "public";
+     *   - dot separators are omitted if not needed
+     *   - schema and table names are sanitised in the extension to be valid
+     *     Avro identifiers: see make_avro_safe in ext/oid2avro.c
      *
-     *      <pg_table_schema_name>.<table_name>
-     *
-     * The original Postgres schema name is omitted only in the case of the 'public' schema.
-     *
-     * There are also other potential issues:
-     *
-     *      1.  if the Kafka broker is being used for other purposes, topic names may also collide
-     *      2.  if a consumer wants to consume all tables, it can do so using a topic regex, but    */
-    //          currently that regex would have to be /.*/ which could lead to consuming unintended
-    /*          topics (e.g. metadata topics such as used internally by the schema registry, Samza
-     *          jobs etc).
-     *
-     * Support for namespaces in Kafka has been proposed that would help with these problems, but it's
-     * still under discussion.
-     * As a solution in the meantime, to the topic_name formed with the original Postgres schema name
-     * plus the original this adds a --topic-prefix=SOME_PREFIX option to Bottled Water that it would
-     * prepend to all topic names. Anticipated uses could be:
-     *
-     *      - topic-prefix=bottledwater     to simply prevent collisions, and allow consuming all tables  */
-    //                                      via the regex /bottledwater.*/
-    /*      - topic-prefix=DATABASE_NAME    if you want to stream several databases into the same Kafka
-     *                                      broker, using a separate BW instance for each database.			*/
+     * See the README for more discussion of topic naming. */
 
     const char *topic_name;
     /* both branches set topic_name to a pointer we don't need to free,
@@ -269,7 +254,7 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
     int err;
 
     if (mapper->registry) {
-        err = schema_registry_request(mapper->registry, rd_kafka_topic_name(table->topic), is_key,
+        err = schema_registry_request(mapper->registry, rd_kafka_topic_name(table->topic), is_key, mapper->key,
                 schema_json, schema_len,
                 &schema_id);
         if (err) {
@@ -303,6 +288,19 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
                         is_key ? "key" : "row", avro_strerror());
                 return err;
             }
+
+            // filter key, get field that we want to use as key for kafka
+            // TODO write a filter function instead of adding lines of code here
+
+            // if (is_key && mapper->key && avro_schema_record_field_get_index(schema, mapper->key) != -1) {
+            //     tmp = avro_schema_record(avro_schema_name(schema), avro_schema_namespace(schema));
+            //     key = avro_schema_record_field_get(schema, mapper->key);
+            //     avro_schema_record_field_append(tmp, mapper->key, key);
+            //     if (schema) avro_schema_decref(schema);
+            //     schema = avro_schema_copy(tmp);
+            //     if (tmp) avro_schema_decref(tmp);
+            // }
+
         } else {
             schema = NULL;
         }
@@ -335,7 +333,7 @@ void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t
         schema = &table->row_schema;
     }
 
-    if (*schema == new_schema) {
+    if (avro_schema_equal(*schema, new_schema)) {
         /* identical schema, nothing to do */
     } else if (!*schema) {
         log_info("Storing %s schema for table %" PRIu32, what, table->relid);

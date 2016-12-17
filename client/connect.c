@@ -8,6 +8,8 @@
 
 #include <internal/pqexpbuffer.h>
 
+#define DEFAULT_TABLE "%%"
+
 /* Wrap around a function call to bail on error. */
 #define check(err, call) { err = call; if (err) return err; }
 
@@ -31,6 +33,7 @@ int snapshot_start(client_context_t context);
 int snapshot_poll(client_context_t context);
 int snapshot_tuple(client_context_t context, PGresult *res, int row_number);
 
+// TODO refactor this code, I don't wanna get a list of oids inside connect.c
 int lookup_table_oids(client_context_t context);
 
 /* Allocates a client_context struct. After this is done and before
@@ -47,15 +50,16 @@ client_context_t db_client_new() {
 void db_client_free(client_context_t context) {
     client_sql_disconnect(context);
     if (context->repl.conn) PQfinish(context->repl.conn);
-    if (context->table_pattern) free(context->table_pattern);
-    if (context->schema_pattern) free(context->schema_pattern);
     if (context->repl.table_ids) free(context->repl.table_ids);
+    if (context->repl.schema_pattern) free(context->repl.schema_pattern);
+    if (context->repl.table_pattern) free(context->repl.table_pattern);
     if (context->repl.snapshot_name) free(context->repl.snapshot_name);
     if (context->repl.output_plugin) free(context->repl.output_plugin);
     if (context->repl.slot_name) free(context->repl.slot_name);
     if (context->error_policy) free(context->error_policy);
     if (context->app_name) free(context->app_name);
     if (context->conninfo) free(context->conninfo);
+    if (context->order_by) free(context->order_by);
     free(context);
 }
 
@@ -76,9 +80,13 @@ int db_client_start(client_context_t context) {
 
     check(err, client_connect(context));
     checkRepl(err, context, replication_stream_check(&context->repl));
-    // Get list table oids from context schema_pattern and table_pattern
-    check(err, lookup_table_oids(context));
 
+    // this a hacky way to get list of oids from stream->tables, stream->schemas
+    // TODO refactor it
+    // Get a list of oids, which we want to stream
+    // If error, there's something wrong, the extension will send nothing
+    // Default: the extension will send everything
+    check(err, lookup_table_oids(context));
     check(err, replication_slot_exists(context, &slot_exists));
 
     if (slot_exists) {
@@ -340,15 +348,20 @@ int snapshot_start(client_context_t context) {
     check(err, exec_sql(context, query->data));
     destroyPQExpBuffer(query);
 
-    Oid argtypes[] = { 25, 25, 16, 25 }; // 25 == TEXTOID, 16 == BOOLOID
-    const char *args[] = { context->table_pattern,
-                           context->schema_pattern,
-                           context->allow_unkeyed ? "t" : "f",
-			    context->error_policy};
+    PQExpBuffer snapshot_query = createPQExpBuffer();
+    appendPQExpBuffer(snapshot_query,
+        "SELECT bottledwater_export(table_pattern := '%s', schema_pattern := '%s',"
+                                    " allow_unkeyed := '%s', error_policy := '%s',"
+                                    " order_by := '%s')",
+        context->repl.table_pattern,
+        context->repl.schema_pattern,
+        context->allow_unkeyed ? "t" : "f",
+        context->error_policy,
+        context->order_by ? context->order_by : "");
 
-    if (!PQsendQueryParams(context->sql_conn,
-        "SELECT bottledwater_export(table_pattern := $1, schema_pattern := $2, allow_unkeyed := $3, error_policy := $4)",
-                4, argtypes, args, NULL, NULL, 1)) { // The final 1 requests results in binary format
+
+    if (!PQsendQueryParams(context->sql_conn, snapshot_query->data,
+            0, NULL, NULL, NULL, NULL, 1)) {
         client_error(context, "Could not dispatch snapshot fetch: %s",
                 PQerrorMessage(context->sql_conn));
         return EIO;
@@ -365,6 +378,8 @@ int snapshot_start(client_context_t context) {
     if (begin_txn) {
         check(err, begin_txn(cb_context, context->repl.start_lsn, 0));
     }
+
+    destroyPQExpBuffer(snapshot_query);
     return 0;
 }
 
@@ -432,8 +447,7 @@ int snapshot_tuple(client_context_t context, PGresult *res, int row_number) {
 /* Lookup for table oids from schema_pattern and table_pattern
    If schema_pattern == % and table_pattern == % then BW will get all tables in db */
 int lookup_table_oids(client_context_t context) {
-
-    if (strcmp(context->table_pattern, "%%") == 0 && strcmp(context->schema_pattern, "%%") == 0) {
+    if (strcmp(context->repl.table_pattern, "%%") == 0 && strcmp(context->repl.schema_pattern, "%%") == 0) {
         // All tables will be streamed
         return 0;
     }
@@ -452,8 +466,8 @@ int lookup_table_oids(client_context_t context) {
                                            // pattern syntax follows
                                            // https://www.postgresql.org/docs/current/static/functions-matching.html
           " c.relpersistence = 'p'",
-        context->table_pattern,
-        context->schema_pattern);
+        context->repl.table_pattern,
+        context->repl.schema_pattern);
 
     PGresult *res = PQexec(context->sql_conn, query->data);
 
@@ -466,15 +480,15 @@ int lookup_table_oids(client_context_t context) {
     // Query returns zero row, mean there's no tables match with table_pattern and schema_pattern
     if (PQntuples(res) == 0) {
         client_error(context, "Couldn't find any tables matching: schemas %s, tables %s.",
-                    context->schema_pattern, context->table_pattern);
+                    context->repl.schema_pattern, context->repl.table_pattern);
         PQclear(res);
         return EIO;
     }
 
-    // Query returns zero field, it means there something wrong with the query :D
+    // Query returns zero fields, it means there something wrong with the query :D
     if (PQnfields(res) == 0) {
         client_error(context, "Unexpected result when looking up table ids with (table_schema %s, schema_pattern %s).",
-                context->table_pattern, context->schema_pattern);
+                context->repl.table_pattern, context->repl.schema_pattern);
         PQclear(res);
         return EIO;
     }

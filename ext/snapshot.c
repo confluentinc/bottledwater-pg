@@ -25,6 +25,7 @@ typedef struct {
     char *rel_name;
     char repl_ident;
     char *index_name;
+    char *order_by_column;
 } export_table;
 
 /* State that we need to remember between calls of bottledwater_export */
@@ -41,11 +42,15 @@ typedef struct {
 } export_state;
 
 void print_tupdesc(char *title, TupleDesc tupdesc);
-void get_table_list(export_state *state, text *table_pattern, text *schema_pattern, bool allow_unkeyed);
+void get_table_list(export_state *state, text *table_pattern,
+                    text *schema_pattern, bool allow_unkeyed,
+                    List *order_columns);
 void open_next_table(export_state *state);
 void close_current_table(export_state *state);
 bytea *format_snapshot_row(export_state *state);
 bytea *schema_for_relname(char *relname, bool get_key);
+List *textToQualifiedNameList1(text *textval);
+char *check_order_by_column(char *relname, List *order_columns);
 
 
 PG_FUNCTION_INFO_V1(bottledwater_key_schema);
@@ -107,6 +112,7 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
     int ret;
     text *table_pattern;
     text *schema_pattern;
+    List *order_columns;
     bool allow_unkeyed;
     bytea *result;
 
@@ -141,11 +147,12 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
         funcctx->user_fctx = state;
 
         table_pattern = PG_GETARG_TEXT_P(0);
-	schema_pattern = PG_GETARG_TEXT_P(1);
-        allow_unkeyed = PG_GETARG_BOOL(2);
+        schema_pattern = PG_GETARG_TEXT_P(1);
+	allow_unkeyed = PG_GETARG_BOOL(2);
         state->error_policy = parse_error_policy(TextDatumGetCString(PG_GETARG_TEXT_P(3)));
+        order_columns = textToQualifiedNameList1(PG_GETARG_TEXT_P(4));
 
-        get_table_list(state, table_pattern, schema_pattern, allow_unkeyed);
+        get_table_list(state, table_pattern, schema_pattern, allow_unkeyed, order_columns);
         if (state->num_tables > 0) open_next_table(state);
     }
 
@@ -198,7 +205,9 @@ Datum bottledwater_export(PG_FUNCTION_ARGS) {
  * Also takes a shared lock on all the tables we're going to export, to make sure they
  * aren't dropped or schema-altered before we get around to reading them. (Ordinary
  * writes to the table, i.e. insert/update/delete, are not affected.) */
-void get_table_list(export_state *state, text *table_pattern, text *schema_pattern, bool allow_unkeyed) {
+void get_table_list(export_state *state, text *table_pattern,
+                    text *schema_pattern, bool allow_unkeyed,
+                    List *order_columns) {
     Oid argtypes[] = { TEXTOID, TEXTOID };
     Datum args[] = { PointerGetDatum(table_pattern), PointerGetDatum(schema_pattern) };
     StringInfoData errors;
@@ -260,6 +269,7 @@ void get_table_list(export_state *state, text *table_pattern, text *schema_patte
         table->namespace  = pstrdup(NameStr(*DatumGetName(namespace_d)));
         table->rel_name   = pstrdup(NameStr(*DatumGetName(relname_d)));
         table->repl_ident = DatumGetChar(replident_d);
+        table->order_by_column = check_order_by_column(table->rel_name, order_columns);
 
         if (!indname_null) {
             table->index_name = pstrdup(NameStr(*DatumGetName(indname_d)));
@@ -309,6 +319,12 @@ void open_next_table(export_state *state) {
     initStringInfo(&query);
     appendStringInfo(&query, "SELECT * FROM %s",
             quote_qualified_identifier(table->namespace, table->rel_name));
+
+    if (table->order_by_column){
+        appendStringInfo(&query, " ORDER BY %s", table->order_by_column);
+        elog(INFO, "bottledwater_export: Table %s is ordered by %s",
+                quote_qualified_identifier(table->namespace, table->rel_name), table->order_by_column);
+    }
 
     plan = SPI_prepare_cursor(query.data, 0, NULL, CURSOR_OPT_NO_SCROLL);
     if (!plan) {
@@ -389,4 +405,55 @@ bytea *schema_for_relname(char *relname, bool get_key) {
                 avro_strerror());
     }
     return json;
+}
+
+/* This is a function from postgres src/backend/utils/adt/varlena.c line 3110
+ * I just wanna reuse it with different separator ',', for a more easier future
+ * refactor, I keep it as the same as the original code (name, params, etc) */
+List *
+textToQualifiedNameList1(text *textval)
+{
+	char	   *rawname;
+	List	   *result = NIL;
+	List	   *namelist;
+	ListCell   *l;
+
+	/* Convert to C string (handles possible detoasting). */
+	/* Note we rely on being able to modify rawname below. */
+	rawname = text_to_cstring(textval);
+
+	if (!SplitIdentifierString(rawname, ',', &namelist) || namelist == NIL) {
+        return result;
+    }
+
+	foreach(l, namelist)
+	{
+		char	   *curname = (char *) lfirst(l);
+
+		result = lappend(result, makeString(pstrdup(curname)));
+	}
+
+	pfree(rawname);
+	list_free(namelist);
+
+	return result;
+}
+
+char *
+check_order_by_column(char *relname, List *order_columns) {
+    ListCell *l;
+    char *column_name = NULL;
+
+    if (relname && order_columns) {
+        foreach(l, order_columns) {
+            char *val = strVal(lfirst(l));
+            char *equals;
+            if (val && (equals = strchr(val, '=')) && (strncmp(relname, val, equals - val) == 0)) {
+                column_name = pstrdup(equals + 1);
+                break;
+            }
+        }
+    }
+
+    return column_name;
 }

@@ -1,0 +1,8 @@
+Package: bottledwater
+Version: 0.5
+Section: base
+Priority: optional
+Architecture: all
+Depends: libjansson4, libcurl3, librdkafka1 (>= 0.9), libpqxx-4.0, libsnappy1
+Maintainer: Dat Tran <protrandat@gmail.com>
+Description: This is a bottle of water for a thristy Postgres
