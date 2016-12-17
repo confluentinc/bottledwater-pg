@@ -34,7 +34,8 @@ table_mapper_t table_mapper_new(
         rd_kafka_t *kafka,
         rd_kafka_topic_conf_t *topic_conf,
         schema_registry_t registry,
-        const char *topic_prefix) {
+        const char *topic_prefix,
+        const char *key) {
     table_mapper_t mapper = malloc(sizeof(table_mapper));
     memset(mapper, 0, sizeof(table_mapper));
 
@@ -50,6 +51,9 @@ table_mapper_t table_mapper_new(
         mapper->topic_prefix = strdup(topic_prefix);
     }
 
+    if (key != NULL) {
+        mapper->key = strdup(key);
+    }
     return mapper;
 }
 
@@ -150,6 +154,7 @@ error:
  * associated topics. */
 void table_mapper_free(table_mapper_t mapper) {
     if (mapper->topic_prefix) free(mapper->topic_prefix);
+    if (mapper->key) free(mapper->key);
 
     for (int i = 0; i < mapper->num_tables; i++) {
         table_metadata_t table = mapper->tables[i];
@@ -249,7 +254,7 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
     int err;
 
     if (mapper->registry) {
-        err = schema_registry_request(mapper->registry, rd_kafka_topic_name(table->topic), is_key,
+        err = schema_registry_request(mapper->registry, rd_kafka_topic_name(table->topic), is_key, mapper->key,
                 schema_json, schema_len,
                 &schema_id);
         if (err) {
@@ -283,6 +288,19 @@ int table_metadata_update_schema(table_mapper_t mapper, table_metadata_t table, 
                         is_key ? "key" : "row", avro_strerror());
                 return err;
             }
+
+            // filter key, get field that we want to use as key for kafka
+            // TODO write a filter function instead of adding lines of code here
+
+            // if (is_key && mapper->key && avro_schema_record_field_get_index(schema, mapper->key) != -1) {
+            //     tmp = avro_schema_record(avro_schema_name(schema), avro_schema_namespace(schema));
+            //     key = avro_schema_record_field_get(schema, mapper->key);
+            //     avro_schema_record_field_append(tmp, mapper->key, key);
+            //     if (schema) avro_schema_decref(schema);
+            //     schema = avro_schema_copy(tmp);
+            //     if (tmp) avro_schema_decref(tmp);
+            // }
+
         } else {
             schema = NULL;
         }
@@ -315,7 +333,7 @@ void table_metadata_set_schema(table_metadata_t table, int is_key, avro_schema_t
         schema = &table->row_schema;
     }
 
-    if (*schema == new_schema) {
+    if (avro_schema_equal(*schema, new_schema)) {
         /* identical schema, nothing to do */
     } else if (!*schema) {
         log_info("Storing %s schema for table %" PRIu32, what, table->relid);

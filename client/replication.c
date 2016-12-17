@@ -14,7 +14,7 @@
 
 #define CHECKPOINT_INTERVAL_SEC 10
 
-// #define DEBUG 1
+//#define DEBUG 1
 
 int replication_stream_finish(replication_stream_t stream);
 int parse_keepalive_message(replication_stream_t stream, char *buf, int buflen);
@@ -142,12 +142,15 @@ int replication_stream_check(replication_stream_t stream) {
 
 
 /* Starts streaming logical changes from replication slot stream->slot_name,
- * starting from position stream->start_lsn. */
+ * starting from position stream->start_lsn.
+ * add options similar to that pattern after () separated by comma */
 int replication_stream_start(replication_stream_t stream, const char *error_policy) {
     PQExpBuffer query = createPQExpBuffer();
-    appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"error_policy\" '%s')",
+    appendPQExpBuffer(query,
+	    "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (\"table_ids\" '%s', \"error_policy\" '%s')",
             stream->slot_name,
             (uint32) (stream->start_lsn >> 32), (uint32) stream->start_lsn,
+            stream->table_ids,
             error_policy);
 
     PGresult *res = PQexec(stream->conn, query->data);
@@ -198,6 +201,7 @@ int replication_stream_poll(replication_stream_t stream) {
         if (buf) PQfreemem(buf);
         stream->status = ret;
         return err;
+        // goto repl_error_handle;
     }
 
     if (ret > 0) {
@@ -217,9 +221,10 @@ int replication_stream_poll(replication_stream_t stream) {
         stream->status = 0;
     }
 
+
+// repl_error_handle:
     /* Periodically let the server know up to which point we've consumed the stream. */
     if (!err) err = replication_stream_keepalive(stream);
-
     if (buf) PQfreemem(buf);
     return err;
 }

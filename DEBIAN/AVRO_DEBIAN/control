@@ -1,0 +1,8 @@
+Package: avro-c
+Version: 1.8
+Section: base
+Priority: optional
+Depends: libjansson4, libsnappy1
+Architecture: all
+Maintainer: Dat Tran <protrandat@gmail.com>
+Description: Avro-c version 1.8

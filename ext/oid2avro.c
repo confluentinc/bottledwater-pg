@@ -756,7 +756,12 @@ int update_avro_with_string(avro_value_t *output_val, Oid typid, Datum pg_datum)
     char *str;
 
     getTypeOutputInfo(typid, &output_func, &is_varlena);
-    if (is_varlena) {
+
+    // According to this link
+    // http://postgresql.nabble.com/ERROR-missing-chunk-number-0-for-toast-value-while-using-logical-decoder-td5909194.html#a5912389
+    // bottledwater should check this condition VARATT_IS_EXTERNAL_ONDISK
+    // before detoasting the pg_datum
+    if (is_varlena && !VARATT_IS_EXTERNAL_ONDISK(pg_datum)) {
         pg_datum = PointerGetDatum(PG_DETOAST_DATUM(pg_datum));
     }
 

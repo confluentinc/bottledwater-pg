@@ -20,9 +20,9 @@ typedef struct {
 
 typedef schema_registry *schema_registry_t;
 
-schema_registry_t schema_registry_new(char *url);
+schema_registry_t schema_registry_new(const char *url);
 int schema_registry_request(schema_registry_t registry, const char* name,
-        int is_key,
+        int is_key, const char *key,
         const char *schema_json, size_t schema_len,
         int *schema_id_out);
 int schema_registry_encode_msg(int key_schema_id, int row_schema_id,

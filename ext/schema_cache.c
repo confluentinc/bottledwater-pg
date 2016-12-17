@@ -54,7 +54,7 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
         if (!schema_cache_entry_changed(entry, rel)) {
             /* Schema has not changed */
             *entry_out = entry;
-            return 0;
+            return SCHEMA_EXIST;
 
         } else {
             /* Schema has changed since we last saw it -- update the cache */
@@ -65,17 +65,17 @@ int schema_cache_lookup(schema_cache_t cache, Relation rel, schema_cache_entry *
                 return -1;
             }
             *entry_out = entry;
-            return 1;
+            return SCHEMA_UPDATE;
         }
     } else {
-        /* Schema not previously seen -- populate a new cache entry */
+      /* Schema not previously seen -- populate a new cache entry */
         err = schema_cache_entry_update(cache, entry, rel);
         if (err) {
             *entry_out = NULL;
             return -2;
         }
         *entry_out = entry;
-        return 2;
+        return SCHEMA_NEW;
     }
 }
 

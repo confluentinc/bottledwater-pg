@@ -507,4 +507,104 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
+Build packages
+--------------
+
+avro package :
+deb : build_avro_deb_package.sh
+
+> avro-c-1.8.deb
+
+rpm : rpm_avro_build.sh
+
+> avro-c-1.8-1.noarch.rpm
+
+bottledwater extension:
+install on centos : rpm_bottle_extension.sh
+
+bottledwater package:
+deb : build_bottle_water_debian_package.sh
+
+> bottledwater-0.1.deb
+
+Database Configuration
+----------------------
+
+> vi /opt/pgsql/data/pg_hba.conf
+
+> host    replication     replicator        ::1/128              trust
+
+> host    replication     replicator     10.60.3.55/32           trust
+
+> host    all     replicator     10.60.3.55/32           trust
+
+> vi /opt/pgsql/data/postgresql.conf
+
+> max_wal_senders = 4
+
+> wal_keep_segments = 16
+
+> max_replication_slots = 50
+
+> wal_level = logical
+
+
+Install bottledwater extension on postgresql database
+-----------------------------------------------------
+
+```
+yum install jansson snappy
+rpm -ivh avro-c-1.8-1.noarch.rpm
+rpm -ivh bottledwater-0.1-1.noarch.rpm
+ldconfig
+
+[root@stg-dbs-36 bottle-water]# su - postgres
+-bash-4.1$ psql blocketdb
+psql (9.4.8)
+Type "help" for help.
+
+blocketdb=# create extension bottledwater;
+
+```
+
+Bottledwater server
+--------------------
+```
+wget -qO - http://packages.confluent.io/deb/3.0/archive.key | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] http://packages.confluent.io/deb/3.0 stable main"
+sudo apt-get update
+
+dpkg -i avro-c-1.8.deb
+apt-get -f
+apt-get -f install
+dpkg -i avro-c-1.8.deb
+
+dpkg -i bottledwater-0.1.deb
+apt-get -f install
+dpkg -i bottledwater-0.1.deb
+
+copy init script
+
+/etc/init.d/bottledwater restart
+
+nếu start ko lên, check log thấy :˜
+Writing messages to Kafka in JSON format
+Created replication slot "bottledwater", capturing consistent snapshot "000AC30F-1".
+INFO:  bottledwater_export: Table public.ads is keyed by index ads_pkey
+INFO:  bottledwater_export: Table public.action_states is keyed by index action_states_pkey
+INFO:  bottledwater_export: Table public.ad_changes is keyed by index ad_changes_pkey
+INFO:  bottledwater_export: Table public.ad_params is keyed by index ad_params_pkey
+INFO:  bottledwater_export: Table public.ad_media is keyed by index ad_media_pkey
+INFO:  bottledwater_export: Table public.ad_actions is keyed by index ad_actions_pkey
+/root/bottle-water/kafka/bottledwater: While reading snapshot: PGRES_FATAL_ERROR: ERROR:  permission denied for relation ads
+
+Exit nicely. Bye bye !
+Dropping replication slot since the snapshot did not complete successfully.
+
+=> Fix :
+blocketdb=# GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO replicator;
+GRANT
+
+/etc/init.d/bottledwater restart
+
 See [`CONTRIBUTORS.md`](CONTRIBUTORS.md) for a list of contributors.

@@ -8,9 +8,13 @@
 #include <access/xlogdefs.h>
 
 #define REPLICATION_STREAM_ERROR_LEN 512
+#define REPLICATION_STREAM_OID_LIST_LEN 1024
 
 typedef struct {
     char *slot_name, *output_plugin, *snapshot_name;
+    char *schema_pattern;
+    char *table_pattern;
+    char *table_ids;
     PGconn *conn;
     XLogRecPtr start_lsn;
     XLogRecPtr recvd_lsn;
@@ -29,5 +33,6 @@ int replication_stream_check(replication_stream_t stream);
 int replication_stream_start(replication_stream_t stream, const char *error_policy);
 int replication_stream_poll(replication_stream_t stream);
 int replication_stream_keepalive(replication_stream_t stream);
+int replication_stream_get_list_oids(replication_stream_t stream);
 
 #endif /* REPLICATION_H */

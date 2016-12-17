@@ -6,8 +6,8 @@
 #include "access/htup.h"
 #include "utils/rel.h"
 
-#define GENERATED_SCHEMA_NAMESPACE "com.martinkl.bottledwater.dbschema"
-#define PREDEFINED_SCHEMA_NAMESPACE "com.martinkl.bottledwater.datatypes"
+#define GENERATED_SCHEMA_NAMESPACE "com.dattran.bottledwater.dbschema"
+#define PREDEFINED_SCHEMA_NAMESPACE "com.dattran.bottledwater.datatypes"
 
 Relation table_key_index(Relation rel);
 int schema_for_table_key(Relation rel, avro_schema_t *schema_out);

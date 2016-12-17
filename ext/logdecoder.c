@@ -7,6 +7,10 @@
 #include "replication/output_plugin.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
+#include "utils/builtins.h"
+#include "nodes/parsenodes.h"
+#include "utils/lsyscache.h"
+#include "access/heapam.h"
 
 /* Entry point when Postgres loads the plugin */
 extern void _PG_init(void);
@@ -24,11 +28,13 @@ typedef struct {
     avro_value_iface_t *frame_iface;
     avro_value_t frame_value;
     schema_cache_t schema_cache;
+    List *table_oid_list;
     error_policy_t error_policy;
 } plugin_state;
 
 void reset_frame(plugin_state *state);
 int write_frame(LogicalDecodingContext *ctx, plugin_state *state);
+int oid_filter(List *list, Oid oid);
 
 
 void _PG_init() {
@@ -45,7 +51,8 @@ void _PG_output_plugin_init(OutputPluginCallbacks *cb) {
 
 static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
         bool is_init) {
-    ListCell *option;
+    ListCell *option, *l;
+    List *table_oid_list;
 
     plugin_state *state = palloc(sizeof(plugin_state));
     ctx->output_plugin_private = state;
@@ -59,11 +66,31 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
     avro_generic_value_new(state->frame_iface, &state->frame_value);
     state->schema_cache = schema_cache_new(ctx->context);
 
+    state->table_oid_list = NULL;
     foreach(option, ctx->output_plugin_options) {
+
         DefElem *elem = lfirst(option);
+
         Assert(elem->arg == NULL || IsA(elem->arg, String));
 
-        if (strcmp(elem->defname, "error_policy") == 0) {
+        if (strcmp(elem->defname, "table_ids") == 0) {
+
+            if (elem->arg == NULL) {
+                ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                        errmsg("No value specified for parameter \"%s\"",
+                            elem->defname)));
+            } else {
+                if (strcmp(strVal(elem->arg), "%%") != 0) {
+                    // the arg is a string contains list of table ids, which is seperated by dot '.'
+                    // stringToQualifiedNameList is a PG function that splits the string and stores them in side a list
+                    table_oid_list = stringToQualifiedNameList(strVal(elem->arg));
+                    foreach(l, table_oid_list) {
+                        state->table_oid_list = lappend_oid(state->table_oid_list, atoi(strVal(lfirst(l))));
+                    }
+                    list_free(table_oid_list);
+                }
+            }
+        } else if (strcmp(elem->defname, "error_policy") == 0) {
             if (elem->arg == NULL) {
                 ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                         errmsg("No value specified for parameter \"%s\"",
@@ -72,7 +99,7 @@ static void output_avro_startup(LogicalDecodingContext *ctx, OutputPluginOptions
                 state->error_policy = parse_error_policy(strVal(elem->arg));
             }
         } else {
-            ereport(INFO, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+            ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                     errmsg("Parameter \"%s\" = \"%s\" is unknown",
                         elem->defname,
                         elem->arg ? strVal(elem->arg) : "(null)")));
@@ -126,10 +153,16 @@ static void output_avro_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN
 static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
         Relation rel, ReorderBufferChange *change) {
     int err = 0;
+    Oid oid;
     HeapTuple oldtuple = NULL, newtuple = NULL;
     plugin_state *state = ctx->output_plugin_private;
     MemoryContext oldctx = MemoryContextSwitchTo(state->memctx);
     reset_frame(state);
+
+    oid = RelationGetRelid(rel);
+    if (state->table_oid_list && oid_filter(state->table_oid_list, oid) == 0) {
+        goto context_reset;
+    }
 
     switch (change->action) {
         case REORDER_BUFFER_CHANGE_INSERT:
@@ -175,6 +208,7 @@ static void output_avro_change(LogicalDecodingContext *ctx, ReorderBufferTXN *tx
         error_policy_handle(state->error_policy, "output_avro_change: writing Avro binary failed", avro_strerror());
     }
 
+context_reset:
     MemoryContextSwitchTo(oldctx);
     MemoryContextReset(state->memctx);
 }
@@ -197,4 +231,13 @@ int write_frame(LogicalDecodingContext *ctx, plugin_state *state) {
 
     pfree(output);
     return err;
+}
+
+int oid_filter(List *list, Oid oid) {
+    ListCell *l;
+    foreach (l, list) {
+       if (oid == lfirst_oid(l))
+               return 1;
+    }
+    return 0;
 }

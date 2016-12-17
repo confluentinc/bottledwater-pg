@@ -2,15 +2,19 @@
 #include "json.h"
 #include "logger.h"
 #include "registry.h"
+#include "ini.h"
 #include "oid2avro.h"
 
 #include <librdkafka/rdkafka.h>
 #include <assert.h>
 #include <getopt.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+
+//#define DEBUG 1
 
 #define DEFAULT_REPLICATION_SLOT "bottledwater"
 #define APP_NAME "bottledwater"
@@ -21,6 +25,9 @@
 
 #define DEFAULT_BROKER_LIST "localhost:9092"
 #define DEFAULT_SCHEMA_REGISTRY "http://localhost:8081"
+
+#define DEFAULT_SCHEMA_PATTERN "%%"
+#define DEFAULT_TABLE_PATTERN "%%"
 
 #define TABLE_NAME_BUFFER_LENGTH 128
 
@@ -93,6 +100,7 @@ typedef struct {
     char *topic_prefix;                 /* String to be prepended to all topic names */
     error_policy_t error_policy;        /* What to do in case of a transient error */
     char error[PRODUCER_CONTEXT_ERROR_LEN];
+    char *key;                          /* Key to use as Kafka key*/
 } producer_context;
 
 typedef producer_context *producer_context_t;
@@ -117,23 +125,26 @@ typedef struct {
     uint64_t wal_pos;
     Oid relid;
     transaction_info *xact;
+    avro_value_t *key_val;// primary key/replica identity encoded in avro_value_t use for partitioner if any
+    // avro_value_t *new_val;
 } msg_envelope;
 
 typedef msg_envelope *msg_envelope_t;
 
 static char *progname;
 static int received_shutdown_signal = 0;
+static int unfinished_snapshot = 1;
 
-void usage(int exit_status);
+void usage(void);
 void parse_options(producer_context_t context, int argc, char **argv);
 char *parse_config_option(char *option);
-void init_schema_registry(producer_context_t context, char *url);
+void init_schema_registry(producer_context_t context, const char *url);
 const char* output_format_name(format_t format);
-void set_output_format(producer_context_t context, char *format);
-void set_error_policy(producer_context_t context, char *policy);
+void set_output_format(producer_context_t context, const char *format);
+void set_error_policy(producer_context_t context, const char *policy);
 const char* error_policy_name(error_policy_t format);
-void set_kafka_config(producer_context_t context, char *property, char *value);
-void set_topic_config(producer_context_t context, char *property, char *value);
+void set_kafka_config(producer_context_t context, const char *property, const char *value);
+void set_topic_config(producer_context_t context, const char *property, const char *value);
 char* topic_name_from_avro_schema(avro_schema_t schema);
 
 static int handle_error(producer_context_t context, int err, const char *fmt, ...) __attribute__ ((format (printf, 3, 4)));
@@ -157,8 +168,11 @@ static int on_keepalive(void *_context, uint64_t wal_pos);
 static int on_client_error(void *_context, int err, const char *message);
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
-        const void *val_bin, size_t val_len);
+        const void *val_bin, size_t val_len,
+        avro_value_t *key_val); // add new key_val, this is encoded primary key
 static void on_deliver_msg(rd_kafka_t *kafka, const rd_kafka_message_t *msg, void *envelope);
+static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const void *keydata, size_t keylen,
+                                        int32_t partition_cnt, void *rkt_opaque, void *msg_opaque);
 void maybe_checkpoint(producer_context_t context);
 void backpressure(producer_context_t context);
 client_context_t init_client(void);
@@ -167,7 +181,7 @@ void start_producer(producer_context_t context);
 void exit_nicely(producer_context_t context, int status);
 
 
-void usage(int exit_status) {
+void usage() {
     fprintf(stderr,
             "Exports a snapshot of a PostgreSQL database, followed by a stream of changes,\n"
             "and sends the data to a Kafka cluster.\n\n"
@@ -194,6 +208,18 @@ void usage(int exit_status) {
             "  -e, --on-error=[log|exit]   (default: %s)\n"
             "                          What to do in case of a transient error, such as\n"
             "                          failure to publish to Kafka.\n"
+            "  -o, --schemas=schema1|schema2  (default: all schemas)\n"
+            "                          Pattern specifying which schemas to stream.  If this\n"
+            "                          is not specified, all schemas\n"
+            "                          will be selected.  The pattern syntax is as per the\n"
+            "                          SQL `SIMILAR TO` operator: see\n"
+            "         https://www.postgresql.org/docs/current/static/functions-matching.html\n"
+            "  -i, --tables=table1|table2   (default: all tables)\n"
+            "                          Pattern specifying which tables to stream.  If this\n"
+            "                          is not specified, all tables in the selected schemas\n"
+            "                          will be streamed.  The pattern syntax is as per the\n"
+            "                          SQL `SIMILAR TO` operator: see\n"
+            "         https://www.postgresql.org/docs/current/static/functions-matching.html\n"
             "  -x, --skip-snapshot     Skip taking a consistent snapshot of the existing\n"
             "                          database contents and just start streaming any new\n"
             "                          updates.  (Ignored if the replication slot already\n"
@@ -203,6 +229,16 @@ void usage(int exit_status) {
             "                          (see --config-help for list of properties).\n"
             "  -T, --topic-config property=value\n"
             "                          Set topic configuration property for Kafka producer.\n"
+            "  -k, --key=value\n"
+            "                          Field for using as key to send to Kafka, if not exists\n"
+            "                          then use PRIMARY KEY or REPLICA IDENTITY\n"
+            "  -b, --order-by=table1=column,table2=column\n"
+            "                          This option is used for config snapshot these specified tables\n"
+            "                          order by specified column\n"
+            "  -g, --config-file=value\n"
+            "                          Instead of passing config by command line,\n"
+            "                          you can use config-file to config bottledwater\n"
+            "                          if you use config-file, others option will has no effect\n"
             "  --config-help           Print the list of configuration properties. See also:\n"
             "            https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md\n"
             "  -h, --help\n"
@@ -214,7 +250,104 @@ void usage(int exit_status) {
             DEFAULT_SCHEMA_REGISTRY,
             DEFAULT_OUTPUT_FORMAT_NAME,
             DEFAULT_ERROR_POLICY_NAME);
-    exit(exit_status);
+    exit(1);
+}
+
+static int handler(void* _context, const char* section,
+          const char* name, const char* value) {
+
+    producer_context_t context = (producer_context_t) _context;
+    char *tmp_config_name; // temporary variable for store kafka config and kafka topic config name
+    char *tmp_config_value; // temporary variable for store kafka config and kafka topic config value
+
+    #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+    if (MATCH("kafka", "kafka-config")) {
+        tmp_config_name = strdup(value);
+        tmp_config_value = parse_config_option(tmp_config_name);
+        set_kafka_config(context, tmp_config_name, tmp_config_value);
+        free(tmp_config_name);
+
+    } else if (MATCH("kafka", "topic-config")) {
+        tmp_config_name = strdup(value);
+        tmp_config_value = parse_config_option(tmp_config_name);
+        set_topic_config(context, tmp_config_name, tmp_config_value);
+        free(tmp_config_name);
+
+    } else if (MATCH("bottledwater", "postgres")) {
+        if (context->client->conninfo) {
+            free(context->client->conninfo);
+        }
+        context->client->conninfo = strdup(value);
+
+    } else if (MATCH("bottledwater", "slot")) {
+        if (context->client->repl.slot_name) {
+            free(context->client->repl.slot_name);
+        }
+        context->client->repl.slot_name = strdup(value);
+
+    } else if (MATCH("bottledwater", "broker")) {
+        if (context->brokers) {
+            free(context->brokers);
+        }
+        context->brokers = strdup(value);
+
+    } else if (MATCH("schema-registry", "schema-registry")) {
+        if (context->registry) {
+            schema_registry_free(context->registry);
+        }
+        init_schema_registry(context, value);
+
+    } else if (MATCH("bottledwater", "output-format")) {
+        set_output_format(context, value);
+
+    } else if (MATCH("bottledwater", "allow-unkeyed")) {
+        context->client->allow_unkeyed = atoi(value);
+
+    } else if (MATCH("bottledwater", "topic-prefix")) {
+        if (context->topic_prefix) {
+            free(context->topic_prefix);
+        }
+        context->topic_prefix = strdup(value);
+
+    } else if (MATCH("bottledwater", "on-error")) {
+        set_error_policy(context, value);
+
+    } else if (MATCH("bottledwater", "schemas")) {
+        if (context->client->repl.schema_pattern) {
+            free(context->client->repl.schema_pattern);
+        }
+        context->client->repl.schema_pattern = strdup(value);
+
+    } else if (MATCH("bottledwater", "tables")) {
+        if (context->client->repl.table_pattern) {
+            free(context->client->repl.table_pattern);
+        }
+        context->client->repl.table_pattern = strdup(value);
+
+    } else if (MATCH("bottledwater", "key")) {
+        if (context->key) {
+            free(context->key);
+        }
+        context->key = strdup(value);
+
+        rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &on_customized_paritioner_cb);
+
+    } else if (MATCH("bottledwater", "skip-snapshot")) {
+        context->client->skip_snapshot = atoi(value);
+
+    } else if (MATCH("bottledwater", "order-by")){
+        if (context->client->order_by) {
+            free(context->client->order_by);
+        }
+        context->client->order_by = strdup(value);
+
+    } else {
+        config_error("Error while parsing configuration file");
+        config_error("Unknown argument: %s", optarg);
+        config_error("Please run program with -h --help option for Usage information");
+        exit(1); // unknown section/option
+    }
+    return 1;
 }
 
 /* Parse command-line options */
@@ -229,9 +362,16 @@ void parse_options(producer_context_t context, int argc, char **argv) {
         {"allow-unkeyed",   no_argument,       NULL, 'u'},
         {"topic-prefix",    required_argument, NULL, 'p'},
         {"on-error",        required_argument, NULL, 'e'},
+        {"schemas",         required_argument, NULL, 'o'},
+        {"tables",          required_argument, NULL, 'i'},
         {"skip-snapshot",   no_argument,       NULL, 'x'},
         {"kafka-config",    required_argument, NULL, 'C'},
         {"topic-config",    required_argument, NULL, 'T'},
+        {"schemas",         required_argument, NULL, 'o'},
+        {"tables",          required_argument, NULL, 'i'},
+        {"key",             required_argument, NULL, 'k'},
+        {"order-by",        required_argument, NULL, 'a'},
+        {"config-file",     required_argument, NULL, 'g'},
         {"config-help",     no_argument,       NULL,  1 },
         {"help",            no_argument,       NULL, 'h'},
         {NULL,              0,                 NULL,  0 }
@@ -240,8 +380,9 @@ void parse_options(producer_context_t context, int argc, char **argv) {
     progname = argv[0];
 
     int option_index;
-    while (true) {
-        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:xC:T:h", options, &option_index);
+    bool continue_parse_options = true;
+    while (continue_parse_options) {
+        int c = getopt_long(argc, argv, "d:s:b:r:f:up:e:xC:T:i:o:k:a:g:h", options, &option_index);
         if (c == -1) break;
 
         switch (c) {
@@ -275,28 +416,45 @@ void parse_options(producer_context_t context, int argc, char **argv) {
             case 'C':
                 set_kafka_config(context, optarg, parse_config_option(optarg));
                 break;
+            case 'o':
+                context->client->repl.schema_pattern = strdup(optarg);
+                break;
             case 'T':
                 set_topic_config(context, optarg, parse_config_option(optarg));
+                break;
+            case 'i':
+                context->client->repl.table_pattern = strdup(optarg);
+                break;
+            case 'k':
+                context->key = strdup(optarg);
+                rd_kafka_topic_conf_set_partitioner_cb(context->topic_conf, &on_customized_paritioner_cb);
+                break;
+            case 'g':
+                if (ini_parse(optarg, handler, context) == 0) {
+                    continue_parse_options = false;
+                }
+                break;
+            case 'a':
+                context->client->order_by = strdup(optarg);
                 break;
             case 1:
                 rd_kafka_conf_properties_show(stderr);
                 exit(0);
                 break;
             case 'h':
-                usage(0);
             default:
-                usage(1);
+                usage();
         }
     }
 
-    if (!context->client->conninfo || optind < argc) usage(1);
+    if ((!context->client->conninfo || optind < argc) && continue_parse_options) usage();
 
     if (context->output_format == OUTPUT_FORMAT_AVRO && !context->registry) {
         init_schema_registry(context, DEFAULT_SCHEMA_REGISTRY);
     } else if (context->output_format == OUTPUT_FORMAT_JSON && context->registry) {
         config_error("Specifying --schema-registry doesn't make sense for "
                      "--output-format=json");
-        usage(1);
+        usage();
     }
 }
 
@@ -316,7 +474,7 @@ char *parse_config_option(char *option) {
     return equals + 1;
 }
 
-void init_schema_registry(producer_context_t context, char *url) {
+void init_schema_registry(producer_context_t context, const char *url) {
     context->registry = schema_registry_new(url);
 
     if (!context->registry) {
@@ -325,7 +483,7 @@ void init_schema_registry(producer_context_t context, char *url) {
     }
 }
 
-void set_output_format(producer_context_t context, char *format) {
+void set_output_format(producer_context_t context, const char *format) {
     if (!strcmp("avro", format)) {
         context->output_format = OUTPUT_FORMAT_AVRO;
     } else if (!strcmp("json", format)) {
@@ -345,7 +503,7 @@ const char* output_format_name(format_t format) {
     }
 }
 
-void set_error_policy(producer_context_t context, char *policy) {
+void set_error_policy(producer_context_t context, const char *policy) {
     if (!strcmp(PROTOCOL_ERROR_POLICY_LOG, policy)) {
         context->error_policy = ERROR_POLICY_LOG;
     } else if (!strcmp(PROTOCOL_ERROR_POLICY_EXIT, policy)) {
@@ -367,7 +525,7 @@ const char* error_policy_name(error_policy_t policy) {
     }
 }
 
-void set_kafka_config(producer_context_t context, char *property, char *value) {
+void set_kafka_config(producer_context_t context, const char *property, const char *value) {
     if (rd_kafka_conf_set(context->kafka_conf, property, value,
                 context->error, PRODUCER_CONTEXT_ERROR_LEN) != RD_KAFKA_CONF_OK) {
         config_error("%s: %s", progname, context->error);
@@ -375,7 +533,7 @@ void set_kafka_config(producer_context_t context, char *property, char *value) {
     }
 }
 
-void set_topic_config(producer_context_t context, char *property, char *value) {
+void set_topic_config(producer_context_t context, const char *property, const char *value) {
     if (rd_kafka_topic_conf_set(context->topic_conf, property, value,
                 context->error, PRODUCER_CONTEXT_ERROR_LEN) != RD_KAFKA_CONF_OK) {
         config_error("%s: %s", progname, context->error);
@@ -435,7 +593,6 @@ static int handle_error(producer_context_t context, int err, const char *fmt, ..
     return err;
 }
 
-
 static int on_begin_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     producer_context_t context = (producer_context_t) _context;
     replication_stream_t stream = &context->client->repl;
@@ -473,6 +630,7 @@ static int on_commit_txn(void *_context, uint64_t wal_pos, uint32_t xid) {
     transaction_info *xact = &context->xact_list[context->xact_head];
 
     if (xid == 0) {
+        unfinished_snapshot = 0;
         log_info("Snapshot complete, streaming changes from %X/%X.",
                  (uint32) (wal_pos >> 32), (uint32) wal_pos);
     }
@@ -519,7 +677,7 @@ static int on_insert_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len, avro_value_t *key_val,
         const void *new_bin, size_t new_len, avro_value_t *new_val) {
     producer_context_t context = (producer_context_t) _context;
-    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len);
+    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len, key_val);
 }
 
 static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
@@ -527,7 +685,7 @@ static int on_update_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *old_bin, size_t old_len, avro_value_t *old_val,
         const void *new_bin, size_t new_len, avro_value_t *new_val) {
     producer_context_t context = (producer_context_t) _context;
-    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len);
+    return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, new_bin, new_len, key_val);
 }
 
 static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
@@ -535,7 +693,7 @@ static int on_delete_row(void *_context, uint64_t wal_pos, Oid relid,
         const void *old_bin, size_t old_len, avro_value_t *old_val) {
     producer_context_t context = (producer_context_t) _context;
     if (key_bin)
-        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, NULL, 0);
+        return send_kafka_msg(context, wal_pos, relid, key_bin, key_len, NULL, 0, key_val);
     else
         return 0; // delete on unkeyed table --> can't do anything
 }
@@ -558,7 +716,14 @@ static int on_client_error(void *_context, int err, const char *message) {
 
 int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
         const void *key_bin, size_t key_len,
-        const void *val_bin, size_t val_len) {
+        const void *val_bin, size_t val_len,
+        avro_value_t *key_val) {
+
+    table_metadata_t table = table_mapper_lookup(context->mapper, relid);
+    if (!table) {
+        log_error("relid %d" PRIu32 " has no registered schema", relid);
+        return 1;
+    }
 
     transaction_info *xact = &context->xact_list[context->xact_head];
     xact->recvd_events++;
@@ -570,15 +735,11 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
     envelope->wal_pos = wal_pos;
     envelope->relid = relid;
     envelope->xact = xact;
+    envelope->key_val = key_val; // this will be used in partitioner call back
+    //envelope->new_val = new_val;
 
     void *key = NULL, *val = NULL;
     size_t key_encoded_len, val_encoded_len;
-    table_metadata_t table = table_mapper_lookup(context->mapper, relid);
-    if (!table) {
-        log_error("relid %" PRIu32 " has no registered schema", relid);
-        return 1;
-    }
-
     int err;
 
     switch (context->output_format) {
@@ -639,9 +800,90 @@ int send_kafka_msg(producer_context_t context, uint64_t wal_pos, Oid relid,
 
     if (key)
         free(key);
+
     return 0;
 }
 
+/* Called by Kafka producer once per message before it's sent, to compute which partition
+ * the message will go to. This function is a wrapper of rd_kafka_msg_partitioner_consistent.
+ * It seems like this will be called before returning from rd_kafka_produce
+ * NOTE this is from librdkafka, in the future please check that note in librakafka
+ *
+ * Produce: creates a new message, runs the partitioner and enqueues
+ *          into on the selected partition.
+ *
+ * Returns 0 on success or -1 on error.
+ *
+ * If the function returns -1 and RD_KAFKA_MSG_F_FREE was specified, then
+ * the memory associated with the payload is still the caller's
+ * responsibility.
+ */
+static int32_t on_customized_paritioner_cb(const rd_kafka_topic_t *rkt, const void *keydata, size_t keylen,
+                                        int32_t partition_cnt, void *rkt_opaque, void *msg_opaque) {
+    msg_envelope_t envelope = (msg_envelope_t) msg_opaque;
+    char *key = envelope->context->mapper->key;
+    avro_value_t *key_val = envelope->key_val;
+    int err;
+
+    // Only check for keylen because we've already checked that keydata is NULL or not before calling this function
+    if (keylen != 0 && key_val) {
+
+        // We only get specified key in primary key
+        // Because of the structure
+        // First get key_field from key_val by name
+        // Then get branch from key_field
+        avro_value_t key_field;
+        err = avro_value_get_by_name(key_val, key, &key_field, NULL);
+        if (err) {
+#ifdef DEBUG
+            log_warn("on_customized_paritioner_cb : %s", avro_strerror());
+#endif
+            goto default_partitioner;
+        }
+
+        avro_value_t key_field_branch;
+        err = avro_value_get_current_branch(&key_field, &key_field_branch);
+        if (err) {
+#ifdef DEBUG
+            log_warn("on_customized_paritioner_cb : %s", avro_strerror());
+#endif
+            goto default_partitioner;
+        }
+
+        // the key_field_branch is avro int
+        // we use avro_value_hash to hash the key_field_branch then mod it with partition_cnt
+        return avro_value_hash(&key_field_branch) % partition_cnt;
+    }
+
+default_partitioner:
+#if RD_KAFKA_VERSION >= 0x000901ff
+    /* librdkafka 0.9.1 provides a "consistent_random" partitioner, which is
+     * a good choice for us: "Uses consistent hashing to map identical keys
+     * onto identical partitions, and messages without keys will be assigned
+     * via the random partitioner." */
+     return rd_kafka_msg_partitioner_consistent_random(rkt,
+                                                       keydata,
+                                                       keylen,
+                                                       partition_cnt,
+                                                       rkt_opaque,
+                                                       msg_opaque);
+#else
+    // #if RD_KAFKA_VERSION >= 0x00090000
+    /* librdkafka 0.9.0 provides a "consistent hashing partitioner", which we
+     * can use to ensure that all updates for a given key go to the same
+     * partition.  However, for unkeyed messages (such as we send for tables
+     * with no primary key), it sends them all to the same partition, rather
+     * than randomly partitioning them as would be preferable for scalability.
+     */
+    return rd_kafka_msg_partitioner_consistent(rkt,
+                                               keydata,
+                                               keylen,
+                                               partition_cnt,
+                                               rkt_opaque,
+                                               msg_opaque);
+#endif
+
+}
 
 /* Called by Kafka producer once per message sent, to report the delivery status
  * (whether success or failure). */
@@ -725,7 +967,7 @@ void backpressure(producer_context_t context) {
 
     if (received_shutdown_signal) {
         log_info("%s during backpressure. Shutting down...", strsignal(received_shutdown_signal));
-        exit_nicely(context, 0);
+        exit_nicely(context, unfinished_snapshot);
     }
 
     // Keep the replication connection alive, even if we're not consuming data from it.
@@ -754,9 +996,13 @@ client_context_t init_client() {
     client->app_name = strdup(APP_NAME);
     db_client_set_error_policy(client, DEFAULT_ERROR_POLICY_NAME);
     client->allow_unkeyed = false;
+    client->order_by = NULL;
     client->repl.slot_name = strdup(DEFAULT_REPLICATION_SLOT);
     client->repl.output_plugin = strdup(OUTPUT_PLUGIN);
     client->repl.frame_reader = frame_reader;
+    client->repl.schema_pattern = strdup(DEFAULT_SCHEMA);
+    client->repl.table_pattern = strdup(DEFAULT_TABLE);
+    client->repl.table_ids = strdup(DEFAULT_TABLE);
     return client;
 }
 
@@ -772,7 +1018,7 @@ producer_context_t init_producer(client_context_t client) {
     context->output_format = DEFAULT_OUTPUT_FORMAT;
     context->error_policy = DEFAULT_ERROR_POLICY;
 
-    context->brokers = DEFAULT_BROKER_LIST;
+    context->brokers = strdup(DEFAULT_BROKER_LIST);
     context->kafka_conf = rd_kafka_conf_new();
     context->topic_conf = rd_kafka_topic_conf_new();
 
@@ -831,7 +1077,8 @@ void start_producer(producer_context_t context) {
             context->kafka,
             context->topic_conf,
             context->registry,
-            context->topic_prefix);
+            context->topic_prefix,
+            context->key);
 
     log_info("Writing messages to Kafka in %s format",
              output_format_name(context->output_format));
@@ -839,6 +1086,7 @@ void start_producer(producer_context_t context) {
 
 /* Shuts everything down and exits the process. */
 void exit_nicely(producer_context_t context, int status) {
+    fprintf(stderr, "Exit nicely. Bye bye !\n");
     // If a snapshot was in progress and not yet complete, and an error occurred, try to
     // drop the replication slot, so that the snapshot is retried when the user tries again.
     if (context->client->taking_snapshot && status != 0) {
@@ -849,12 +1097,23 @@ void exit_nicely(producer_context_t context, int status) {
     }
 
     if (context->topic_prefix) free(context->topic_prefix);
+
+    if (context->key) free(context->key);
+
+    if (context->brokers) free(context->brokers);
+
     table_mapper_free(context->mapper);
+
     if (context->registry) schema_registry_free(context->registry);
+
     frame_reader_free(context->client->repl.frame_reader);
+
     db_client_free(context->client);
+
     if (context->kafka) rd_kafka_destroy(context->kafka);
+
     curl_global_cleanup();
+
     rd_kafka_wait_destroyed(2000);
     exit(status);
 }
@@ -889,6 +1148,7 @@ int main(int argc, char **argv) {
     }
 
     while (context->client->status >= 0 && !received_shutdown_signal) {
+
         ensure(context, db_client_poll(context->client));
 
         if (context->client->status == 0) {
@@ -902,6 +1162,6 @@ int main(int argc, char **argv) {
         log_info("%s, shutting down...", strsignal(received_shutdown_signal));
     }
 
-    exit_nicely(context, 0);
+    exit_nicely(context, unfinished_snapshot);
     return 0;
 }
