@@ -3,7 +3,7 @@ EXEC_SRC=bwtest.c
 EXECUTABLE=bwtest
 STATICLIB=libbottledwater.a
 
-PG_CFLAGS = -I$(shell pg_config --includedir) -I$(shell pg_config --includedir-server)
+PG_CFLAGS = -I$(shell pg_config --includedir) -I$(shell pg_config --pkgincludedir) -I$(shell pg_config --includedir-server)
 PG_LDFLAGS = -L$(shell pg_config --libdir) -lpq
 AVRO_CFLAGS = $(shell pkg-config --cflags avro-c)
 AVRO_LDFLAGS = $(shell pkg-config --libs avro-c)
