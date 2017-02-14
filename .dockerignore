@@ -1,2 +1,14 @@
-tmp
+.DS_Store
+.dockerignore
+.git
+.gitignore
+.ruby-version
+build
+Dockerfile
+Gemfile*
+LICENSE
+Makefile
 spec
+tmp
+*.md
+*.yml

@@ -2,7 +2,7 @@ SOURCES=bottledwater.c json.c registry.c table_mapper.c logger.c
 EXECUTABLE=bottledwater
 STATICLIB=../client/libbottledwater.a
 
-PG_CFLAGS = -I$(shell pg_config --includedir) -I$(shell pg_config --includedir-server)
+PG_CFLAGS = -I$(shell pg_config --includedir) -I$(shell pg_config --pkgincludedir) -I$(shell pg_config --includedir-server)
 PG_LDFLAGS = -L$(shell pg_config --libdir) -lpq
 KAFKA_CFLAGS =
 KAFKA_LDFLAGS = -lrdkafka -lz -lpthread # TODO -lrt needed on Linux for clock_gettime, but not on OSX?
