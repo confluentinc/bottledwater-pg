@@ -82,6 +82,35 @@ RUN BUILD_DIR="$(mktemp -d)" && \
     apk del .fetch-deps .build-deps && \
     rm -rf $BUILD_DIR
 
+# Install bottledwater client
+COPY . /tmp/bottledwater/
+RUN apk add --no-cache --virtual .build-deps \
+      build-base \
+      curl-dev \
+      jansson-dev \
+      postgresql-dev \
+      snappy-dev \
+      zlib-dev && \
+    echo -e "Libs: -L/usr/lib -lsnappy\nCflags: -I/usr/include" >> /usr/lib/pkgconfig/libsnappy.pc && \
+    cd /tmp/bottledwater && \
+    make -C client all && \
+    make -C kafka all && \
+    cp client/bwtest kafka/bottledwater /usr/local/bin && \
+\
+    runDeps="$( \
+      scanelf --needed --nobanner --recursive /usr/local \
+        | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
+        | sort -u \
+        | xargs -r apk info --installed \
+        | sort -u \
+      )" && \
+    apk add --no-cache --virtual .bottledwater-rundeps \
+      $runDeps \
+      snappy && \
+\
+    apk del .build-deps && \
+    rm -rf /tmp/bottledwater
+
 LABEL maintainer="King Chung Huang <kchuang@ucalgary.ca>" \
 	  org.label-schema.schema-version="1.0" \
 	  org.label-schema.name="Bottled Water Client" \
