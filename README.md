@@ -1,3 +1,6 @@
+Client: [![](https://images.microbadger.com/badges/image/ucalgary/bottledwater.svg)](https://microbadger.com/images/ucalgary/bottledwater)
+PostgreSQL with Extension: [![](https://images.microbadger.com/badges/image/ucalgary/postgres-bw.svg)](https://microbadger.com/images/ucalgary/postgres-bw)
+
 Bottled Water for PostgreSQL
 ============================
 
