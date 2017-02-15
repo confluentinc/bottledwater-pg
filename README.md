@@ -8,6 +8,10 @@ Bottled Water is a PostgreSQL extension and client that transforms your PostgreS
 * [Blog post explaining the background](http://blog.confluent.io/2015/04/23/bottled-water-real-time-integration-of-postgresql-and-kafka/)
 * [Watch a short demo!](http://showterm.io/fde6260d684ee3a6ee692)
 
+## Project Fork and Maintenance
+
+This repository is a fork of the original at [confluentinc/bottledwater-pg](https://github.com/confluentinc/bottledwater-pg). It is currently maintained by the Research Management Systems project at the [University of Calgary](http://www.ucalgary.ca/).
+
 How it works
 ------------
 
