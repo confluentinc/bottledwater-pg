@@ -1,21 +1,16 @@
-Bottled Water for PostgreSQL
-============================
+Client: [![](https://images.microbadger.com/badges/image/ucalgary/bottledwater.svg)](https://microbadger.com/images/ucalgary/bottledwater)
+PostgreSQL with Extension: [![](https://images.microbadger.com/badges/image/ucalgary/postgres-bw.svg)](https://microbadger.com/images/ucalgary/postgres-bw)
 
-How do you export water from your country? Well, you first go to your reservoir, pump out all the
-water, and fill it into bottles. You then go to the streams of clear mountain water flowing into
-the reservoir, and tap into them, filling the fresh water into bottles as it arrives. Then you
-ship those bottles all around the world.
+# Bottled Water for PostgreSQL
 
-How do you export data from your database? Well, you first take a consistent snapshot of your
-entire database, and encode it in a language-independent format. You then look at the stream of
-transactions writing to your database, and parse the transaction log, encoding the
-inserts/updates/deletes into the same language-independent format as they happen. Then you take
-that data and ship it to your other systems: build search indexes, update caches, load it into
-a data warehouse, calculate analytics, monitor it for fraud, and so on.
+Bottled Water is a PostgreSQL extension and client that transforms your PostgreSQL database into a stream of structured Kafka events. It leverages the [logical decoding](https://www.postgresql.org/docs/current/static/logicaldecoding.html) feature introduced in PostgreSQL 9.4 to extract a consistent snap and a continuous stream of change events from a database. Data is extract at a row level, encoded using [Avro](http://avro.apache.org/). A client program connects to your database, extracts this data, and relays it to [Kafka](http://kafka.apache.org). You can then take the data in Kafka and ship it to other systems: build search indexes, update caches, load it into a data warehouse, calculate analytics, monitor it for fraud, and so on.
 
 * [Blog post explaining the background](http://blog.confluent.io/2015/04/23/bottled-water-real-time-integration-of-postgresql-and-kafka/)
 * [Watch a short demo!](http://showterm.io/fde6260d684ee3a6ee692)
 
+## Project Fork and Maintenance
+
+This repository is a fork of the original at [confluentinc/bottledwater-pg](https://github.com/confluentinc/bottledwater-pg). It is currently maintained by the Research Management Systems project at the [University of Calgary](http://www.ucalgary.ca/).
 
 How it works
 ------------
