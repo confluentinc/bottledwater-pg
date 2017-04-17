@@ -27,6 +27,7 @@ RUN apt-get update && \
         build-essential \
         ca-certificates \
         cmake \
+	zlib1g-dev \
         curl \
         libcurl4-openssl-dev \
         libjansson-dev \

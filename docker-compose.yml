@@ -43,7 +43,7 @@ schema-registry:
 postgres-94:
   build: ./tmp
   dockerfile: Dockerfile.postgres94
-  hostname: postgres
+  hostname: postgres94
   ports:
     - '54094:5432'
 postgres:

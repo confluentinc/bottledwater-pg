@@ -25,6 +25,7 @@ RUN apt-get update && \
     # image tag to pin the libpq version.
     apt-get install -y --no-install-recommends --force-yes \
         build-essential \
+	zlib1g-dev \
         ca-certificates \
         cmake \
         curl \
