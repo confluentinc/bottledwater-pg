@@ -1,3 +1,21 @@
+NOTE: Bottled Water is unmaintained
+===================================
+
+**Please note that Bottled Water is no longer being actively developed.**
+
+Bottled Water pioneered change data capture from PostgreSQL into Kafka using the logical decoding
+API, but now other projects have adopted the technique and are continuing to develop it. Please see
+the following resources for supported solutions for CDC from PostgreSQL into Kafka:
+
+* The [Kafka Connector list](https://www.confluent.io/product/connectors/) provides an overview
+  of projects that integrate databases with the
+  [Kafka Connect framework](http://docs.confluent.io/current/connect/index.html).
+* [Debezium](http://debezium.io/) integrates PostgreSQL with Kafka in a way that is similar to
+  Bottled Water.
+
+The remaining README is kept here for historical interest.
+
+
 Bottled Water for PostgreSQL
 ============================
 
