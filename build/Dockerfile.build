@@ -33,7 +33,8 @@ RUN apt-get update && \
         libpq5=${PG_MAJOR}\* \
         libpq-dev=${PG_MAJOR}\* \
         pkg-config \
-        postgresql-server-dev-${PG_MAJOR}=${PG_MAJOR}\*
+        postgresql-server-dev-${PG_MAJOR}=${PG_MAJOR}\* \
+        zlib1g-dev
 
 # Avro
 RUN curl -o /root/avro-c-${AVRO_C_VERSION}.tar.gz -SL http://archive.apache.org/dist/avro/avro-${AVRO_C_VERSION}/c/avro-c-${AVRO_C_VERSION}.tar.gz && \
